@@ -37,7 +37,7 @@ class DOOMUE_API ADoomLevel : public AActor
 public:
 	ADoomLevel();
 
-	void Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bModern);
+	void Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bModern, FName SkyTexture);
 
 	/** A sector's floor/ceiling or a side's texture changed: rebuild the affected chunks on Flush. */
 	void SectorChanged(int32 Sector);

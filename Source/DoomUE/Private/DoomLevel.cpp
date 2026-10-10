@@ -51,14 +51,14 @@ UProceduralMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool
 	return C;
 }
 
-void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bInModern)
+void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bInModern, FName SkyTexture)
 {
 	Map = &InMap;
 	Gfx = &InGfx;
 	bModern = bInModern;
 	WorldMaterial = DoomAssets::WorldMaterial(bModern);
 	SkyMaterial = DoomAssets::SkyMaterial();
-	SkyKey = SectionKey(FDoomGraphics::SkyTextureFor(Map->Name), false, true);
+	SkyKey = SectionKey(SkyTexture, false, true);
 
 	// sector light texture: 256 sectors per row
 	SectorLightRows = FMath::Max(1, FMath::DivideAndRoundUp(Map->Sectors.Num(), 256));

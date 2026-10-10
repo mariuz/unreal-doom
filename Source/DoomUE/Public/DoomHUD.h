@@ -37,6 +37,7 @@ private:
 	void DrawAutomap(ADoomPlayer* P);
 	void DrawMenu();
 	void DrawIntermission();
+	void DrawFinale();
 	void Rect(float X, float Y, float W, float H, FLinearColor C);
 
 	UDoomWorld* DW() const;

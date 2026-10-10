@@ -101,6 +101,8 @@ private:
 	TMap<FName, TSharedPtr<FDoomPicture>> TextureCache, FlatCache, PatchCache;
 	TMap<int32, TSharedPtr<FDoomPicture>> SpriteCache;
 	TArray<FAnimGroup> Anims;
+	TMap<FName, FName> SwitchPairs;
+	bool bSwitchLump = false;
 	TMap<FName, TPair<int32, int32>> AnimLookupWall, AnimLookupFlat; // name -> (group, index)
 	TArray<TObjectPtr<UTexture2D>> Owned;
 	TObjectPtr<UTexture2D> Colormap = nullptr;

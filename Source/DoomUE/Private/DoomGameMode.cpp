@@ -7,6 +7,8 @@
 #include "DoomWad.h"
 #include "DoomUE.h"
 #include "DoomMusic.h"
+#include "DoomMonster.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -72,6 +74,54 @@ void ADoomGameMode::StartPlay()
 		W->PlayTitleMusic();
 	}
 
+	// -maptest=a.wad,b.wad[:MAP]: load a map from each PWAD over the IWAD, log its node format and area
+	FString MapTest;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-maptest="), MapTest, false))
+	{
+		TArray<FString> Files;
+		MapTest.ParseIntoArray(Files, TEXT(","));
+		for (const FString& Entry : Files)
+		{
+			FString File = Entry, MapName = TEXT("E1M1");
+			Entry.Split(TEXT(":"), &File, &MapName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (File.Len() <= 2) { File = Entry; MapName = TEXT("E1M1"); } // drive letter, not a map
+			FDoomWad TestWad;
+			TestWad.AddFile(FPaths::Combine(FPaths::ProjectContentDir(), TEXT("WADs"), W->GetWad()->IsDoom2() ? TEXT("freedoom2.wad") : TEXT("freedoom1.wad")));
+			TestWad.AddFile(File);
+			TestWad.Finalize();
+			FDoomMap TestMap;
+			const bool bOk = TestMap.Load(TestWad, MapName);
+			double Area = 0;
+			for (const FDoomSubsector& Ss : TestMap.Subsectors)
+			{
+				for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
+				{
+					const FVector2f A = Ss.Polygon[k] - Ss.Polygon[0], B = Ss.Polygon[k + 1] - Ss.Polygon[0];
+					Area += 0.5 * (A.X * B.Y - A.Y * B.X);
+				}
+			}
+			UE_LOG(LogDoom, Display, TEXT("Maptest %s %s: %s, %s nodes, %d subsectors, area %.0f"), *FPaths::GetCleanFilename(File), *MapName,
+				bOk ? TEXT("ok") : TEXT("FAILED"), *TestMap.NodesFormat, TestMap.Subsectors.Num(), Area);
+		}
+	}
+
+	// -patchtest: log what DeHackEd / UMAPINFO / Boom lumps changed
+	if (FParse::Param(FCommandLine::Get(), TEXT("patchtest")))
+	{
+		const FDoomThingDef* Imp = DoomInfo::FindThing(3001);
+		const FDoomProjectileDef* Ball = DoomInfo::FindProjectile(TEXT("ImpBall"));
+		const FDoomRules& R = DoomInfo::Rules();
+		const FDoomMapInfo* Info = W->MapInfo(TEXT("E1M1"));
+		UE_LOG(LogDoom, Display, TEXT("Patchtest imp: health %d radius %.0f | rules: health %d bullets %d maxbullets %d clip %d | impball speed %.0f damage %d"),
+			Imp->Health, Imp->Radius, R.InitialHealth, R.InitialBullets, R.MaxAmmo[0], R.ClipAmmo[0], Ball->Speed, Ball->DamageMul);
+		UE_LOG(LogDoom, Display, TEXT("Patchtest E1M1: title \"%s\" par %d music %s sky %s next %s | E1M3 title \"%s\" | GOTCLIP \"%s\""),
+			*W->LevelTitle(TEXT("E1M1")), DoomInfo::ParTime(TEXT("E1M1")), Info ? *Info->Music : TEXT("-"), Info ? *Info->Sky : TEXT("-"),
+			Info ? *Info->Next : TEXT("-"), *W->LevelTitle(TEXT("E1M3")), *DoomInfo::PickupMessage(EPickup::Clip));
+		UE_LOG(LogDoom, Display, TEXT("Patchtest switches: SW1BRN1 -> %s, SW1GRAY -> %s, SW1HOT -> %s | NUKAGE1 animated %d, FWATER1 animated %d"),
+			*W->GetGraphics()->SwitchPartner(TEXT("SW1BRN1")).ToString(), *W->GetGraphics()->SwitchPartner(TEXT("SW1GRAY")).ToString(),
+			*W->GetGraphics()->SwitchPartner(TEXT("SW1HOT")).ToString(), W->GetGraphics()->IsAnimated(TEXT("NUKAGE1"), true), W->GetGraphics()->IsAnimated(TEXT("FWATER1"), true));
+	}
+
 	// -dumpmusic=D_E1M1[,seconds]: render a song to Saved/music_<lump>.wav and log its statistics
 	FString Dump;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-dumpmusic="), Dump, false))
@@ -82,6 +132,26 @@ void ADoomGameMode::StartPlay()
 		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
 		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
 		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
+	}
+
+	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
+	int32 KillType = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W, KillType]()
+		{
+			int32 Killed = 0;
+			for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+			{
+				if (M.IsValid() && M->Def->DoomEdNum == KillType && !M->IsDead())
+				{
+					UGameplayStatics::ApplyDamage(M.Get(), 100000.f, nullptr, W->GetPlayer(), nullptr);
+					++Killed;
+				}
+			}
+			UE_LOG(LogDoom, Display, TEXT("Killtype %d: killed %d, active movers %d"), KillType, Killed, W->NumMovers());
+		}, 2.f, false);
 	}
 
 	// -savetest: save mid-action, scramble, load, compare (needs -warp)

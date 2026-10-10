@@ -22,12 +22,14 @@ with `-iwad=` / `-file=`.
 |---|---|
 | WAD lumps, `PLAYPAL`, `COLORMAP` | `FDoomWad` (plain C++), stacked IWAD + PWADs, last lump wins |
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
-| `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP |
+| `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP. Vanilla nodes, ZDoom extended nodes (`XNOD`/`ZNOD`, `XGLN`/`ZGLN`, `XGL2`/`ZGL2`, `XGL3`/`ZGL3`; the `Z` variants inflated with the engine's zlib) and glBSP GL nodes (`GL_<map>` lumps, versions 1 to 5) all load into the same structures |
 | Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components |
 | Sector light, fake contrast, light diminishing | One texel per sector in a light texture updated each tic (`UpdateTextureRegions`), so flickering lights never rebuild meshes. A **Custom HLSL** node runs Doom's `scalelight` / `zlight` colormap selection per pixel from `PixelDepth` |
 | Gun flash light, invulnerability, light amp | `UMaterialParameterCollection` (`MPC_Doom`) globals: `ExtraLight`, `FixedColormap`, `Tic` |
 | Sky | Unlit material that projects the sky texture from the camera vector (1024 columns per turn, rows at slope `(100-R)/160`). Applied to sky ceilings and to the sky gaps Doom leaves undrawn |
-| Animated flats/walls, scrolling walls (48) | `UMaterialInstanceDynamic` texture swaps every 8 tics; a `ScrollU` parameter |
+| Animated flats/walls, scrolling walls (48), switches | `UMaterialInstanceDynamic` texture swaps (every 8 tics, or each group's own speed from a Boom `ANIMATED` lump); a `ScrollU` parameter; `SW1`/`SW2` pairs or a Boom `SWITCHES` lump (pairs up to the game's episode level) |
+| `DEHACKED` lumps and `-deh` patches | `DoomDehacked`: Thing fields (health, speed, size, pain chance, missile speed and damage), Misc (starting health and bullets, caps, armor classes, BFG cells), Ammo (max and pickup sizes), BEX `[PARS]` and `[STRINGS]`. The WAD's strings name the levels (Freedoom's "E1M1: Outer Prison") and replace pickup messages. Frame, code pointer, sound and sprite edits are skipped (the port uses frame sequences, not Doom's state table) |
+| `UMAPINFO` | `FDoomMapInfoSet`: level names and labels, music, sky, next / secret next map, par times, end of game, no intermission, story texts on a tiled backdrop, and boss actions (replacing the vanilla boss specials for that map) |
 | Player | `ACharacter` + `UCharacterMovementComponent`: 16×56 capsule, eye at 41, 24-unit steps, Doom's heavy gravity. **Enhanced Input** actions and mapping contexts built in code, with gamepad support |
 | Monsters | `ACharacter` possessed by an `AAIController`. Character movement does walking, stepping, ledge avoidance and flying. Decisions follow `p_enemy.c`: look, chase in 8 directions, new-chase-dir, melee/missile range checks, pain chance, infighting, door opening. Also the lost soul charge, arch-vile fire and resurrection, pain elemental spawning, revenant homing, mancubus spreads and boss-death specials |
 | Line attacks, autoaim | `LineTraceSingleByChannel` / sphere sweeps, with Doom's `P_AimLineAttack` vertical window |
@@ -87,6 +89,7 @@ loose files.
 |---|---|
 | `-iwad=freedoom2.wad` | IWAD in `Content/WADs` or an absolute path |
 | `-file=a.wad,b.wad` | PWADs on top |
+| `-deh=patch.deh[,...]` | DeHackEd / BEX patches after the WADs' own `DEHACKED` lumps |
 | `-warp=E1M1` / `-warp=MAP07` / `-warp=7` | start on a map (otherwise the title screen) |
 | `-skill=1..5` | |
 | `-modern` / `-classic` | renderer |
@@ -94,6 +97,9 @@ loose files.
 | `-nomips` | debug: no texture mip chain |
 | `-nomusic` | silence the music |
 | `-loadgame=N` | start from save slot N (0 = quicksave) |
+| `-maptest=a.wad,b.wad[:MAP]` | load a map from each PWAD (over the IWAD) and log its node format and subsector area |
+| `-patchtest` | log the values DeHackEd, UMAPINFO and Boom lumps changed |
+| `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
@@ -139,6 +145,13 @@ not a cycle-accurate emulation). Save games: `-savetest` on E1M1 saves with a do
 motion, 2 corpses and 3 hunting monsters, scrambles the world and loads it back to an
 identical state fingerprint (PASS). Missiles in flight are not saved yet.
 
+WAD formats, with the castle-doom test data (`Tests/wads`, regenerated by its
+`tools/make_znodes.py` and this repository's `Tools/make_gl_wads.py`): E1M1 rebuilt with
+XNOD, ZNOD, XGLN, ZGL2, XGL3, ZGL3 and glBSP v2, v3, v5 nodes all give the vanilla
+682 subsectors and area 6,712,686 (glBSP v1 stores 16-bit vertices: 6,709,159);
+`test.deh`, `boom.wad` and `umapinfo.wad` apply as expected (`-patchtest`), and killing
+E1M1's imps fires the UMAPINFO boss action.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -147,8 +160,8 @@ cases, knockback strength, and HUD offsets.
 
 Not done yet (roughly in priority order):
 
-1. ZDoom extended nodes and glBSP GL nodes (vanilla BSP only today), UMAPINFO, DeHackEd, Boom `ANIMATED` / `SWITCHES`.
-2. Finale texts, end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
-3. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
-4. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
+1. The vanilla finale texts (UMAPINFO story texts work), end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
+2. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
+3. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
+4. DeHackEd frame / code pointer edits and classic `Text` replacements, UDMF maps.
 5. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

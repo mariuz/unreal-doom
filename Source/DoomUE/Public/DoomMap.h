@@ -108,6 +108,8 @@ public:
 	TArray<FDoomNode> Nodes;
 	TArray<FDoomMapThing> Things;
 	FBox2f Bounds;
+	/** Which BSP format the map used: vanilla, XNOD, ZGL3, glBSP v5... */
+	FString NodesFormat = TEXT("vanilla");
 	/** Lines with a special, for walk-over checks. */
 	TArray<int32> SpecialLines;
 
@@ -147,6 +149,11 @@ public:
 
 private:
 	bool LoadVanillaNodes(TConstArrayView<uint8> NodesLump, TConstArrayView<uint8> SegsLump, TConstArrayView<uint8> SsLump);
+	/** ZDoom extended nodes: XNOD/ZNOD and GL variants XGLN/ZGLN, XGL2/ZGL2, XGL3/ZGL3. */
+	bool LoadExtendedNodes(TConstArrayView<uint8> Lump);
+	/** glBSP GL nodes (GL_<map>: GL_VERT, GL_SEGS, GL_SSECT, GL_NODES), versions 1-5. */
+	bool LoadGlNodes(const FDoomWad& Wad, int32 Marker);
+	void AssignSubsectorSectors();
 	void BuildSubsectorPolygons();
 	void ClipToNode(int32 NodeOrLeaf, TArray<FVector2f> Poly, int32 Depth);
 	void Derive();
