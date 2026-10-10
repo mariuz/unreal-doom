@@ -132,8 +132,10 @@ int32 FDoomMapInfoSet::Parse(const FString& Text)
 			else if (Key == TEXT("next")) Info.Next = First.ToUpper();
 			else if (Key == TEXT("nextsecret")) Info.NextSecret = First.ToUpper();
 			else if (Key == TEXT("partime")) Info.ParTime = FCString::Atoi(*First);
-			else if (Key == TEXT("endgame") || Key == TEXT("endbunny") || Key == TEXT("endcast")) Info.bEndGame |= bTrue;
-			else if (Key == TEXT("endpic")) Info.bEndGame = true;
+			else if (Key == TEXT("endgame")) Info.bEndGame |= bTrue;
+			else if (Key == TEXT("endbunny")) { Info.bEndBunny = bTrue; Info.bEndGame |= bTrue; }
+			else if (Key == TEXT("endcast")) { Info.bEndCast = bTrue; Info.bEndGame |= bTrue; }
+			else if (Key == TEXT("endpic")) { Info.EndPic = First.ToUpper(); Info.bEndGame = true; }
 			else if (Key == TEXT("nointermission")) Info.bNoIntermission = bTrue;
 			else if (Key == TEXT("interbackdrop")) Info.InterBackdrop = First.ToUpper();
 			else if (Key == TEXT("intermusic")) Info.InterMusic = First.ToUpper();

@@ -87,7 +87,7 @@ public:
 	// input handlers
 	void Move(const FInputActionValue& V);
 	void Look(const FInputActionValue& V);
-	void FirePressed(const FInputActionValue& V) { bFireHeld = true; }
+	void FirePressed(const FInputActionValue& V) { bFireHeld = !InputLocked(); }
 	void FireReleased(const FInputActionValue& V) { bFireHeld = false; }
 	void UsePressed(const FInputActionValue& V);
 	void RunPressed(const FInputActionValue& V) { bRunHeld = true; }
@@ -95,6 +95,7 @@ public:
 	void SelectSlot(int32 Slot);
 	void CycleWeapon(int32 Dir);
 	void ToggleAutomap(const FInputActionValue& V);
+	bool InputLocked() const;
 
 private:
 	enum class EWeaponPhase : uint8 { Raising, Ready, Firing, Lowering };

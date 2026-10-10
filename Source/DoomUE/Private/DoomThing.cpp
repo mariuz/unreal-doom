@@ -62,13 +62,13 @@ void ADoomThing::InitThing(UDoomWorld* InWorld, const FDoomThingDef* InDef, floa
 	}
 }
 
-void ADoomThing::InitEffect(UDoomWorld* InWorld, const FString& SpriteName, const FString& Frames, int32 Tics, bool bFullBright)
+void ADoomThing::InitEffect(UDoomWorld* InWorld, const FString& SpriteName, const FString& Frames, int32 Tics, bool bFullBright, bool bLoop)
 {
 	DoomWorld = InWorld;
 	bEffect = true;
 	Capsule->SetCapsuleSize(1, 1);
 	Sprite->Init(DoomWorld, SpriteName);
-	Sprite->PlaySequence(Frames, Tics, false, bFullBright);
+	Sprite->PlaySequence(Frames, Tics, bLoop, bFullBright);
 	Sprite->SetSector(DoomWorld->SectorAt(GetActorLocation()));
 	if (DoomWorld->IsModern() && bFullBright)
 	{

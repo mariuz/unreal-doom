@@ -41,6 +41,8 @@ with `-iwad=` / `-file=`.
 | Music (`D_*` MUS or MIDI lumps + `GENMIDI`) | `FDoomSong` parses MUS (140 Hz ticks) and standard MIDI (tempo map) into timed events; `FDoomMusicPlayer` is an OPL-style FM synthesizer written for this port: 18 two-operator voices programmed from the WAD's GENMIDI bank (multipliers, ADSR envelopes in dB, 8 waveforms, feedback, FM / additive connection, key scaling, tremolo and vibrato, double-voice instruments, the percussion bank), with stereo panning. It renders on the audio render thread through a `USoundWaveProcedural` subclass on a 2D music `UAudioComponent`: level tracks, Doom 2's MAPxx table, intermission and title music |
 | Save games (`p_saveg.c`) | Unreal's **SaveGame** system: `UDoomSaveGame` header (IWAD, map, skill, description, date) plus a versioned `FArchive` blob with sectors, lines, switch textures, movers, light effects, buttons, the player, monsters (AI state, animation, corpses, targets) and things. Loading rebuilds the map without its things, applies the state and rebuilds only the affected geometry. F6 / F9 quick save and load, six menu slots, `-loadgame=N` |
 | Status bar, face, weapon sprites, messages, automap, intermission, menu | `AHUD` drawing the WAD's own patches with `UCanvas` in Doom's 320×200 frame at 4:3 |
+| Endings (`f_finale.c`) | Episode and chapter texts (`E1TEXT`.., `C1TEXT`.. from the WAD's strings) typed out on their backdrop flats, end pictures (`CREDIT`, `VICTORY2`, `ENDPIC`), the bunny scroller (`PFUB2` to `PFUB1`, then `END0`..`END6`), and the Doom 2 cast call on `BOSSBACK`: each monster walks, attacks and dies when you fire, named by the WAD's `CC_*` strings. UMAPINFO `endpic` / `endbunny` / `endcast` choose the ending |
+| MAP30's Icon of Sin | The spawn shooters (type 89) wake when they see you and spit cubes at the spawn targets (87) in turn; each cube hatches a monster with Doom's weighted pick; the brain's death sets off explosions before the level ends |
 | Simulation | `UTickableWorldSubsystem` (`UDoomWorld`) running a fixed 35 Hz tic |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
 | Authored assets | **None checked in.** The editor module (`DoomUEEditor`) generates the 4 materials, the parameter collection and a default texture in code with `UMaterialEditingLibrary` on first editor launch, or `-run=DoomContent` |
@@ -99,6 +101,8 @@ loose files.
 | `-loadgame=N` | start from save slot N (0 = quicksave) |
 | `-maptest=a.wad,b.wad[:MAP]` | load a map from each PWAD (over the IWAD) and log its node format and subsector area |
 | `-patchtest` | log the values DeHackEd, UMAPINFO and Boom lumps changed |
+| `-endtest [-endpress=N]` | with `-warp`: exit the map straight into its ending and press Enter N times (texts, pictures, bunny, cast) |
+| `-brainawake` | wake MAP30's monster spawner at once |
 | `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
@@ -152,6 +156,10 @@ XNOD, ZNOD, XGLN, ZGL2, XGL3, ZGL3 and glBSP v2, v3, v5 nodes all give the vanil
 `test.deh`, `boom.wad` and `umapinfo.wad` apply as expected (`-patchtest`), and killing
 E1M1's imps fires the UMAPINFO boss action.
 
+Endings (`-endtest`): E1M8 shows Freedoom's episode text, then `CREDIT`; E3M8 goes to the
+bunny; Freedoom 2's MAP30 starts the cast call. With `-brainawake`, MAP30's spawner hatched
+hell knights, arachnotrons, a cacodemon and barons at the spawn spots.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -160,8 +168,7 @@ cases, knockback strength, and HUD offsets.
 
 Not done yet (roughly in priority order):
 
-1. The vanilla finale texts (UMAPINFO story texts work), end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
-2. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
-3. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
-4. DeHackEd frame / code pointer edits and classic `Text` replacements, UDMF maps.
-5. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.
+1. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
+2. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
+3. DeHackEd frame / code pointer edits and classic `Text` replacements, UDMF maps.
+4. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

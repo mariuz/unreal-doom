@@ -22,7 +22,7 @@ public:
 	ADoomThing();
 
 	void InitThing(UDoomWorld* InWorld, const FDoomThingDef* InDef, float InDoomAngle, bool bInDropped);
-	void InitEffect(UDoomWorld* InWorld, const FString& Sprite, const FString& Frames, int32 Tics, bool bFullBright);
+	void InitEffect(UDoomWorld* InWorld, const FString& Sprite, const FString& Frames, int32 Tics, bool bFullBright, bool bLoop = false);
 
 	/** 35 Hz update from UDoomWorld. */
 	void DoomTic();

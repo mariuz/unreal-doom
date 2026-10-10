@@ -120,10 +120,34 @@ public:
 	/** Runs a linedef special on a tag as if a line had been triggered (UMAPINFO boss actions). */
 	bool ExecuteSpecial(int32 Special, int32 Tag);
 
-	/** Story text screen (EDoomGameState::Finale). */
+	/** Story text screen and endings (EDoomGameState::Finale; DoomFinale.cpp). */
+	enum class EFinaleStage : uint8 { Text, Picture, Bunny, Cast };
+	EFinaleStage FinaleStage = EFinaleStage::Text;
 	TArray<FString> FinaleText;
 	FString FinaleBackdrop;
+	FString FinalePicture;
 	int32 FinaleTic = 0;
+	/** Enter / fire on a finale screen: finish typing, go on, or kill the cast member. */
+	void FinaleInput();
+	bool IsFinaleTextComplete() const;
+
+	/** Doom 2 cast call. */
+	struct FCastState
+	{
+		int32 Index = 0;
+		FString Sequence;
+		int32 Frame = 0;
+		int32 FrameTics = 0;
+		int32 Walked = 0;
+		bool bAttacking = false;
+		bool bDying = false;
+		int32 DeadTics = 0;
+	} CastCall;
+	FString CastSprite() const;
+	FString CastName() const;
+
+	/** Test runs: ignore all player input (-autotest). */
+	bool bInputLocked = false;
 
 	// --- queries ----------------------------------------------------------------------------------
 	FDoomMap* GetMap() const { return Map.Get(); }
@@ -161,7 +185,7 @@ public:
 	bool TryMonsterUse(ADoomMonster* Monster, const FVector2f& From, const FVector2f& To);
 
 	ADoomThing* SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle, bool bDropped = false);
-	ADoomThing* SpawnEffect(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true);
+	ADoomThing* SpawnEffect(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
 	ADoomProjectile* SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer = nullptr);
 	ADoomMonster* SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 	void RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage);
@@ -243,6 +267,30 @@ private:
 	FString CurrentMusic;
 	FString IWadName;
 	FDoomMapInfoSet MapInfos;
+
+	// finales (DoomFinale.cpp)
+	bool StartVanillaText();
+	void StartFinaleText(const TArray<FString>& Lines, const FString& Backdrop);
+	void StartEnding();
+	void TicFinale();
+	void StartCastMember(int32 Index);
+	void SetCastSequence(const FString& Frames);
+
+	// the Icon of Sin's monster spawner (DoomFinale.cpp)
+	struct FBrainCube
+	{
+		TWeakObjectPtr<ADoomThing> Visual;
+		FVector Velocity;
+		FVector Target;
+		int32 TicsLeft = 0;
+	};
+	TArray<FVector> BrainShooters, BrainTargets;
+	TArray<FBrainCube> BrainCubes;
+	bool bBrainAwake = false;
+	int32 BrainTimer = 0;
+	int32 BrainTargetIndex = 0;
+	int32 BrainExitTics = 0;
+	void TicBrain();
 	void LoadPatches(const TArray<FString>& DehFiles);
 	TMap<int32, FString> SlotCache;
 	void SerializeState(FArchive& Ar);

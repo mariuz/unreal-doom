@@ -149,9 +149,14 @@ bool ADoomPlayer::HasKey(int32 KeyColor) const
 // Input
 // ------------------------------------------------------------------------------------------------
 
+bool ADoomPlayer::InputLocked() const
+{
+	return DoomWorld && DoomWorld->bInputLocked;
+}
+
 void ADoomPlayer::Move(const FInputActionValue& V)
 {
-	if (IsDead() || ReactionTime > 0 || !DoomWorld || DoomWorld->GetState() != EDoomGameState::Playing)
+	if (InputLocked() || IsDead() || ReactionTime > 0 || !DoomWorld || DoomWorld->GetState() != EDoomGameState::Playing)
 	{
 		return;
 	}
@@ -165,7 +170,7 @@ void ADoomPlayer::Move(const FInputActionValue& V)
 
 void ADoomPlayer::Look(const FInputActionValue& V)
 {
-	if (IsDead() || !DoomWorld || DoomWorld->GetState() != EDoomGameState::Playing)
+	if (InputLocked() || IsDead() || !DoomWorld || DoomWorld->GetState() != EDoomGameState::Playing)
 	{
 		return;
 	}
@@ -176,7 +181,7 @@ void ADoomPlayer::Look(const FInputActionValue& V)
 
 void ADoomPlayer::UsePressed(const FInputActionValue& V)
 {
-	if (!DoomWorld)
+	if (!DoomWorld || InputLocked())
 	{
 		return;
 	}
@@ -201,7 +206,7 @@ void ADoomPlayer::ToggleAutomap(const FInputActionValue& V)
 
 void ADoomPlayer::SelectSlot(int32 Slot)
 {
-	if (IsDead())
+	if (IsDead() || InputLocked())
 	{
 		return;
 	}
