@@ -184,6 +184,49 @@ void ADoomGameMode::StartPlay()
 		}
 	}
 
+	// -steptest=x,y,angle,seconds[,sector]: place the player at Doom (x, y) facing angle, walk forward,
+	// log position / height (and that sector's floor) every 0.25 s; for movement and step checks
+	FString StepTest;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-steptest="), StepTest, false) && W->GetMap())
+	{
+		TArray<FString> A;
+		StepTest.ParseIntoArray(A, TEXT(","));
+		if (A.Num() >= 4)
+		{
+			const FVector2f Start(FCString::Atof(*A[0]), FCString::Atof(*A[1]));
+			const float Angle = FCString::Atof(*A[2]);
+			const float Seconds = FCString::Atof(*A[3]);
+			const int32 WatchSector = A.Num() >= 5 ? FCString::Atoi(*A[4]) : -1;
+			FTimerHandle T;
+			GetWorldTimerManager().SetTimer(T, [this, W, Start, Angle, Seconds, WatchSector]()
+			{
+				ADoomPlayer* P = W->GetPlayer();
+				if (!P) return;
+				const int32 Sec = W->GetMap()->SectorAt(Start);
+				const float Floor = Sec >= 0 ? W->GetMap()->Sectors[Sec].Floor : 0;
+				P->SetActorLocation(Doom::ToUE(Start, Floor) + FVector(0, 0, P->GetSimpleCollisionHalfHeight() + 1), false, nullptr, ETeleportType::TeleportPhysics);
+				P->GetController()->SetControlRotation(FRotator(0, Doom::AngleToYaw(Angle), 0));
+				const double End = GetWorld()->GetTimeSeconds() + Seconds;
+				double NextLog = 0;
+				FTimerHandle Walk;
+				GetWorldTimerManager().SetTimer(Walk, [this, W, P, End, NextLog, WatchSector]() mutable
+				{
+					const double Now = GetWorld()->GetTimeSeconds();
+					if (Now > End) return;
+					P->AddMovementInput(FRotator(0, P->GetControlRotation().Yaw, 0).Vector(), 1.f);
+					if (Now >= NextLog)
+					{
+						NextLog = Now + 0.25;
+						const FVector2f D = P->DoomPos();
+						UE_LOG(LogDoom, Display, TEXT("Steptest t=%.2f doom(%.0f,%.0f) z=%.1f sector %d vel %.0f%s"), Now, D.X, D.Y, P->DoomZ(),
+							W->GetMap()->SectorAt(D), P->GetVelocity().Size2D() / Doom::Scale,
+							WatchSector >= 0 ? *FString::Printf(TEXT(" | sector %d floor %.0f"), WatchSector, W->GetMap()->Sectors[WatchSector].Floor) : TEXT(""));
+					}
+				}, 0.01f, true);
+			}, 1.f, false);
+		}
+	}
+
 	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
 	int32 KillType = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())

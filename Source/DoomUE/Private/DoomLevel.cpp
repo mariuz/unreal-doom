@@ -261,11 +261,11 @@ void ADoomLevel::EmitPlanes(int32 SectorIndex, TMap<FName, FSectionData>& Out)
 			{
 				if (bCeiling)
 				{
-					S.I.Append({ Base, Base + k, Base + k + 1 });
+					S.I.Append({ Base, Base + k + 1, Base + k });
 				}
 				else
 				{
-					S.I.Append({ Base, Base + k + 1, Base + k });
+					S.I.Append({ Base, Base + k, Base + k + 1 });
 				}
 			}
 		}
@@ -294,7 +294,7 @@ void ADoomLevel::EmitLine(int32 LineIndex, bool bDynamic, TMap<FName, FSectionDa
 
 		auto Wall = [&](FName Tex, float Bottom, float Top, float TexTop, bool bMasked)
 		{
-			if (Tex.IsNone() || (!bDynamic && Top <= Bottom))
+			if (Tex.IsNone() || Top <= Bottom) // no zero-height quads: in collision they report bogus normals and block steps
 			{
 				return;
 			}
@@ -324,7 +324,7 @@ void ADoomLevel::EmitLine(int32 LineIndex, bool bDynamic, TMap<FName, FSectionDa
 			if (FDoomGraphics::IsSkyFlat(S.CeilingPic) && FDoomGraphics::IsSkyFlat(O.CeilingPic))
 			{
 				// Doom leaves this gap undrawn and the sky shows through: draw it with the sky.
-				if (O.Ceiling < S.Ceiling || bDynamic)
+				if (O.Ceiling < S.Ceiling)
 				{
 					FSectionData& Sd = OutSolid.FindOrAdd(SkyKey);
 					EmitQuad(Sd, A, B, O.Ceiling, FMath::Max(O.Ceiling, S.Ceiling), U0, U1, 0, 256, 128, Side.Sector, 0, KindFullBright);
@@ -391,7 +391,10 @@ void ADoomLevel::Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FNam
 		}
 		int32* Existing = Sections.Find(Pair.Key);
 		const int32 Signature = D.V.Num() * 7919 + D.I.Num();
-		if (Existing && Counts.IsValidIndex(*Existing) && Counts[*Existing] == Signature)
+		// In-place updates only without collision: for colliding sections the plugin rewrites the
+		// cooked triangle mesh's vertices directly, which breaks (out of range) as soon as any other
+		// section of the component appeared or vanished while async cooking catches up.
+		if (!bCollision && Existing && Counts.IsValidIndex(*Existing) && Counts[*Existing] == Signature)
 		{
 			Comp->UpdateMeshSection_LinearColor(*Existing, D.V, D.N, D.UV0, D.UV1, Empty, Empty, D.C, NoTangents, false);
 			continue;

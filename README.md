@@ -174,6 +174,14 @@ collision is now cooked synchronously at load: before, the player could spawn be
 floor's collision existed and fall out of the map (seven consecutive runs now start at the
 exact player start).
 
+Movement fixes found playing E1M1: floor and ceiling triangles were wound backwards for
+Unreal's collision, which made every step up next to a lift or door report a downward
+surface and refuse the step (the E1M1 lift could not be boarded); moving sectors no longer
+emit zero-height wall quads and rebuild their collision instead of rewriting a cooked mesh
+in place (a crash while a lift moved); textures are filled completely before their GPU
+resource is created (an intermittent startup assertion). `-steptest=x,y,angle,seconds[,sector]`
+walks the player from a point and logs height and a sector's floor.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
