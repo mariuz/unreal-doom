@@ -291,6 +291,20 @@ void ADoomPlayerController::MenuBack(const FInputActionValue& V)
 	}
 }
 
+bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	UDoomWorld* W = GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bEditing && !W->bInputLocked)
+	{
+		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
+		{
+			W->Menu.EditKey(*W, Params.Key);
+		}
+		return true; // swallowed: no menu navigation or game input while typing
+	}
+	return Super::InputKey(Params);
+}
+
 void ADoomPlayerController::OpenMenuPage(int32 Page)
 {
 	UDoomWorld* W = MenuWorld(GetWorld());

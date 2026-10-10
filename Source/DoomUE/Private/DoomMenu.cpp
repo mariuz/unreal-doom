@@ -192,8 +192,65 @@ void FDoomMenu::Open(UDoomWorld& W, EMenuPage P)
 	W.PlaySound(TEXT("SWTCHN"), nullptr);
 }
 
+void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
+{
+	if (Key == EKeys::Enter)
+	{
+		bEditing = false;
+		if (W.SaveGame(Item + 1, EditText))
+		{
+			W.PlaySound(TEXT("PISTOL"), nullptr);
+			Close(W);
+		}
+		return;
+	}
+	if (Key == EKeys::Escape)
+	{
+		bEditing = false;
+		W.PlaySound(TEXT("SWTCHX"), nullptr);
+		return;
+	}
+	if (Key == EKeys::BackSpace)
+	{
+		if (EditText.Len()) EditText.LeftChopInline(1);
+		W.PlaySound(TEXT("STNMOV"), nullptr);
+		return;
+	}
+	// what Doom's font can draw: capitals, digits and common punctuation
+	static const TMap<FKey, TCHAR> Punctuation = {
+		{ EKeys::SpaceBar, ' ' }, { EKeys::Hyphen, '-' }, { EKeys::Period, '.' }, { EKeys::Comma, ',' },
+		{ EKeys::Slash, '/' }, { EKeys::Semicolon, ';' }, { EKeys::Apostrophe, '\'' }, { EKeys::Equals, '=' },
+		{ EKeys::LeftBracket, '[' }, { EKeys::RightBracket, ']' }, { EKeys::Backslash, '\\' }, { EKeys::Underscore, '_' } };
+	TCHAR C = 0;
+	const FString KeyName = Key.GetFName().ToString();
+	if (KeyName.Len() == 1 && FChar::IsAlpha(KeyName[0]))
+	{
+		C = FChar::ToUpper(KeyName[0]);
+	}
+	else if (const TCHAR* P = Punctuation.Find(Key))
+	{
+		C = *P;
+	}
+	else
+	{
+		static const FKey Digits[10] = { EKeys::Zero, EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine };
+		static const FKey Pad[10] = { EKeys::NumPadZero, EKeys::NumPadOne, EKeys::NumPadTwo, EKeys::NumPadThree, EKeys::NumPadFour,
+			EKeys::NumPadFive, EKeys::NumPadSix, EKeys::NumPadSeven, EKeys::NumPadEight, EKeys::NumPadNine };
+		for (int32 d = 0; d < 10; ++d)
+		{
+			if (Key == Digits[d] || Key == Pad[d]) C = '0' + d;
+		}
+	}
+	if (C && EditText.Len() < MaxNameLength)
+	{
+		EditText.AppendChar(C);
+		W.PlaySound(TEXT("STNMOV"), nullptr);
+	}
+}
+
 void FDoomMenu::Close(UDoomWorld& W)
 {
+	bEditing = false;
 	Stack.Reset();
 	W.SetState(W.GetMap() ? EDoomGameState::Playing : EDoomGameState::Title);
 }
@@ -398,11 +455,19 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		}
 		break;
 	case EMenuPage::Save:
-		if (W.SaveGame(Item + 1))
+	{
+		const ADoomPlayer* P = W.GetPlayer();
+		if (!W.GetMap() || !P || P->IsDead())
 		{
-			Close(W);
+			W.ShowMessage(TEXT("You can't save now."));
+			break;
 		}
+		// name the save like Doom: the slot's old name (if any) with a cursor
+		const FString Old = W.SlotDescription(Item + 1);
+		EditText = Old == TEXT("EMPTY") || Old.StartsWith(TEXT("(")) ? FString() : Old.Left(MaxNameLength);
+		bEditing = true;
 		break;
+	}
 	case EMenuPage::Load:
 		Stack.Reset();
 		W.LoadGame(Item + 1);

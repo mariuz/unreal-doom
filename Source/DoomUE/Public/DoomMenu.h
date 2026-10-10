@@ -58,6 +58,13 @@ public:
 	FString Prompt() const;
 	bool IsSaveLoad() const { return Page == EMenuPage::Load || Page == EMenuPage::Save; }
 
+	/** Typing a save name (Doom's string entry): the slot being named and the text so far. */
+	bool bEditing = false;
+	FString EditText;
+	static constexpr int32 MaxNameLength = 24;
+	/** A key while typing: Enter saves, Escape cancels, Backspace deletes, printable keys type. */
+	void EditKey(UDoomWorld& W, const FKey& Key);
+
 private:
 	void Push(UDoomWorld& W, EMenuPage P);
 	void Adjust(UDoomWorld& W, int32 Dir);

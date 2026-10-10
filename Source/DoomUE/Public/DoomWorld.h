@@ -96,7 +96,7 @@ public:
 
 	// --- save games (DoomSave.cpp) ------------------------------------------------------------
 	/** Slot 0 = quicksave, 1..6 = menu slots. */
-	bool SaveGame(int32 Slot);
+	bool SaveGame(int32 Slot, const FString& Name = FString());
 	bool LoadGame(int32 Slot);
 	FString SlotDescription(int32 Slot);
 	void RefreshSlots();

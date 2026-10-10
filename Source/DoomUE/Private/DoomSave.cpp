@@ -198,7 +198,7 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 	}
 }
 
-bool UDoomWorld::SaveGame(int32 Slot)
+bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 {
 	ADoomPlayer* P = GetPlayer();
 	if (!Map.IsValid() || !P || P->IsDead() || (State != EDoomGameState::Playing && State != EDoomGameState::Menu))
@@ -212,7 +212,8 @@ bool UDoomWorld::SaveGame(int32 Slot)
 	Save->Skill = Skill;
 	Save->Saved = FDateTime::Now();
 	const int32 Secs = LevelTic / Doom::TicRate;
-	Save->Description = FString::Printf(TEXT("%s %d:%02d K%d/%d"), *CurrentMap, Secs / 60, Secs % 60, Kills, TotalKills);
+	Save->Description = !Name.TrimStartAndEnd().IsEmpty() ? Name.TrimStartAndEnd()
+		: FString::Printf(TEXT("%s %d:%02d K%d/%d"), *CurrentMap, Secs / 60, Secs % 60, Kills, TotalKills);
 	FMemoryWriter Writer(Save->State, true);
 	SerializeState(Writer);
 	const bool bOk = !Writer.IsError() && UGameplayStatics::SaveGameToSlot(Save, SlotName(Slot), 0);
