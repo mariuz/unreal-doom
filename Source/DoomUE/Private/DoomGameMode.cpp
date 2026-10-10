@@ -117,6 +117,8 @@ void ADoomGameMode::StartPlay()
 		UE_LOG(LogDoom, Display, TEXT("Patchtest E1M1: title \"%s\" par %d music %s sky %s next %s | E1M3 title \"%s\" | GOTCLIP \"%s\""),
 			*W->LevelTitle(TEXT("E1M1")), DoomInfo::ParTime(TEXT("E1M1")), Info ? *Info->Music : TEXT("-"), Info ? *Info->Sky : TEXT("-"),
 			Info ? *Info->Next : TEXT("-"), *W->LevelTitle(TEXT("E1M3")), *DoomInfo::PickupMessage(EPickup::Clip));
+		UE_LOG(LogDoom, Display, TEXT("Patchtest renames: TROO -> %s, BON1 -> %s, sound PISTOL -> %s"),
+			*DoomInfo::SpriteName(TEXT("TROO")), *DoomInfo::SpriteName(TEXT("BON1")), *DoomInfo::SoundName(TEXT("PISTOL")));
 		UE_LOG(LogDoom, Display, TEXT("Patchtest switches: SW1BRN1 -> %s, SW1GRAY -> %s, SW1HOT -> %s | NUKAGE1 animated %d, FWATER1 animated %d"),
 			*W->GetGraphics()->SwitchPartner(TEXT("SW1BRN1")).ToString(), *W->GetGraphics()->SwitchPartner(TEXT("SW1GRAY")).ToString(),
 			*W->GetGraphics()->SwitchPartner(TEXT("SW1HOT")).ToString(), W->GetGraphics()->IsAnimated(TEXT("NUKAGE1"), true), W->GetGraphics()->IsAnimated(TEXT("FWATER1"), true));

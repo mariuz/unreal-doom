@@ -148,6 +148,9 @@ public:
 	float DistanceToLine(const FVector2f& P, int32 Line) const;
 
 private:
+	bool LoadBinary(const FDoomWad& Wad, int32 Marker);
+	/** UDMF (TEXTMAP + ZNODES): the doom / zdoom namespaces' vanilla-compatible fields. */
+	bool LoadUdmf(const FDoomWad& Wad, int32 Marker);
 	bool LoadVanillaNodes(TConstArrayView<uint8> NodesLump, TConstArrayView<uint8> SegsLump, TConstArrayView<uint8> SsLump);
 	/** ZDoom extended nodes: XNOD/ZNOD and GL variants XGLN/ZGLN, XGL2/ZGL2, XGL3/ZGL3. */
 	bool LoadExtendedNodes(TConstArrayView<uint8> Lump);

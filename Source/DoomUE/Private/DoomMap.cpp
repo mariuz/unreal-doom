@@ -77,6 +77,245 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 		UE_LOG(LogDoom, Error, TEXT("Map %s not found"), *Name);
 		return false;
 	}
+	const bool bLoaded = (Marker + 1 < Wad.NumLumps() && Wad.Lump(Marker + 1).NameStr == TEXT("TEXTMAP"))
+		? LoadUdmf(Wad, Marker)
+		: LoadBinary(Wad, Marker);
+	if (!bLoaded || Subsectors.Num() == 0)
+	{
+		UE_LOG(LogDoom, Error, TEXT("%s: no usable BSP (vanilla, ZDoom extended or glBSP GL nodes)"), *Name);
+		return false;
+	}
+	AssignSubsectorSectors();
+	Derive();
+	BuildSubsectorPolygons();
+
+	double Area = 0;
+	for (const FDoomSubsector& Ss : Subsectors)
+	{
+		for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
+		{
+			Area += 0.5 * Cross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
+		}
+	}
+	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
+		*Name, Vertices.Num(), Lines.Num(), Sectors.Num(), Subsectors.Num(), Area, Things.Num(), *NodesFormat);
+	return true;
+}
+
+namespace
+{
+	/** UDMF tokens: identifiers / numbers, "strings", and the symbols { } = ; */
+	struct FUdmfLexer
+	{
+		const FString& S;
+		int32 P = 0;
+
+		void Skip()
+		{
+			while (P < S.Len())
+			{
+				if (FChar::IsWhitespace(S[P])) { ++P; continue; }
+				if (S[P] == '/' && P + 1 < S.Len() && S[P + 1] == '/') { while (P < S.Len() && S[P] != '\n') ++P; continue; }
+				if (S[P] == '/' && P + 1 < S.Len() && S[P + 1] == '*')
+				{
+					const int32 E = S.Find(TEXT("*/"), ESearchCase::CaseSensitive, ESearchDir::FromStart, P + 2);
+					P = E == INDEX_NONE ? S.Len() : E + 2;
+					continue;
+				}
+				break;
+			}
+		}
+
+		/** Next token; bString tells a quoted string from a bare word. Empty at the end. */
+		FString Next(bool& bString)
+		{
+			Skip();
+			bString = false;
+			if (P >= S.Len()) return FString();
+			const TCHAR C = S[P];
+			if (C == '{' || C == '}' || C == '=' || C == ';') { ++P; return FString(1, &C); }
+			FString T;
+			if (C == '"')
+			{
+				bString = true;
+				++P;
+				while (P < S.Len() && S[P] != '"')
+				{
+					if (S[P] == '\\' && P + 1 < S.Len()) ++P;
+					T.AppendChar(S[P++]);
+				}
+				++P;
+				return T;
+			}
+			while (P < S.Len() && !FChar::IsWhitespace(S[P]) && S[P] != '{' && S[P] != '}' && S[P] != '=' && S[P] != ';' && S[P] != '"')
+			{
+				T.AppendChar(S[P++]);
+			}
+			return T;
+		}
+	};
+
+	using FUdmfBlock = TMap<FString, FString>;
+
+	float UdmfFloat(const FUdmfBlock& B, const TCHAR* Key, float Default)
+	{
+		const FString* V = B.Find(Key);
+		return V ? FCString::Atof(**V) : Default;
+	}
+	int32 UdmfInt(const FUdmfBlock& B, const TCHAR* Key, int32 Default)
+	{
+		const FString* V = B.Find(Key);
+		return V ? FCString::Atoi(**V) : Default;
+	}
+	bool UdmfBool(const FUdmfBlock& B, const TCHAR* Key, bool Default = false)
+	{
+		const FString* V = B.Find(Key);
+		return V ? V->Equals(TEXT("true"), ESearchCase::IgnoreCase) : Default;
+	}
+	FName UdmfTexture(const FUdmfBlock& B, const TCHAR* Key)
+	{
+		const FString* V = B.Find(Key);
+		return (!V || V->IsEmpty() || *V == TEXT("-")) ? NAME_None : FName(*V->ToUpper().Left(8));
+	}
+}
+
+bool FDoomMap::LoadUdmf(const FDoomWad& Wad, int32 Marker)
+{
+	TConstArrayView<uint8> Raw = Wad.LumpData(Marker + 1);
+	const FString Text(Raw.Num(), reinterpret_cast<const ANSICHAR*>(Raw.GetData()));
+	FUdmfLexer Lex{ Text };
+	FString Namespace;
+	TArray<TPair<FString, FUdmfBlock>> Blocks;
+	bool bString = false;
+	for (FString Tok = Lex.Next(bString); !Tok.IsEmpty(); Tok = Lex.Next(bString))
+	{
+		const FString Key = Tok.ToLower();
+		const FString After = Lex.Next(bString);
+		if (After == TEXT("="))
+		{
+			const FString Value = Lex.Next(bString);
+			Lex.Next(bString); // ;
+			if (Key == TEXT("namespace")) Namespace = Value.ToLower();
+			continue;
+		}
+		if (After != TEXT("{"))
+		{
+			UE_LOG(LogDoom, Error, TEXT("%s: TEXTMAP syntax error near '%s'"), *Name, *Tok);
+			return false;
+		}
+		FUdmfBlock Block;
+		for (FString F = Lex.Next(bString); !F.IsEmpty() && F != TEXT("}"); F = Lex.Next(bString))
+		{
+			Lex.Next(bString); // =
+			const FString V = Lex.Next(bString);
+			Lex.Next(bString); // ;
+			Block.Add(F.ToLower(), V);
+		}
+		Blocks.Emplace(Key, MoveTemp(Block));
+	}
+
+	for (const TPair<FString, FUdmfBlock>& B : Blocks)
+	{
+		const FUdmfBlock& F = B.Value;
+		if (B.Key == TEXT("vertex"))
+		{
+			Vertices.Add(FVector2f(UdmfFloat(F, TEXT("x"), 0), UdmfFloat(F, TEXT("y"), 0)));
+		}
+		else if (B.Key == TEXT("sector"))
+		{
+			FDoomSector& S = Sectors.AddDefaulted_GetRef();
+			S.Floor = UdmfFloat(F, TEXT("heightfloor"), 0);
+			S.Ceiling = UdmfFloat(F, TEXT("heightceiling"), 0);
+			S.FloorPic = UdmfTexture(F, TEXT("texturefloor"));
+			S.CeilingPic = UdmfTexture(F, TEXT("textureceiling"));
+			S.Light = S.OriginalLight = (int16)UdmfInt(F, TEXT("lightlevel"), 160);
+			S.Special = (int16)UdmfInt(F, TEXT("special"), 0);
+			S.Tag = (int16)UdmfInt(F, TEXT("id"), 0);
+		}
+		else if (B.Key == TEXT("sidedef"))
+		{
+			FDoomSide& S = Sides.AddDefaulted_GetRef();
+			S.XOffset = UdmfFloat(F, TEXT("offsetx"), 0);
+			S.YOffset = UdmfFloat(F, TEXT("offsety"), 0);
+			S.Upper = UdmfTexture(F, TEXT("texturetop"));
+			S.Lower = UdmfTexture(F, TEXT("texturebottom"));
+			S.Middle = UdmfTexture(F, TEXT("texturemiddle"));
+			S.Sector = UdmfInt(F, TEXT("sector"), 0);
+		}
+		else if (B.Key == TEXT("linedef"))
+		{
+			FDoomLine& L = Lines.AddDefaulted_GetRef();
+			L.V1 = UdmfInt(F, TEXT("v1"), 0);
+			L.V2 = UdmfInt(F, TEXT("v2"), 0);
+			L.Special = (int16)UdmfInt(F, TEXT("special"), 0);
+			// Doom-namespace specials keep their sector tag in arg0 (else the line id)
+			L.Tag = (int16)UdmfInt(F, TEXT("arg0"), FMath::Max(0, UdmfInt(F, TEXT("id"), 0)));
+			L.Side[0] = UdmfInt(F, TEXT("sidefront"), -1);
+			L.Side[1] = UdmfInt(F, TEXT("sideback"), -1);
+			static const TPair<const TCHAR*, uint16> FlagNames[] = {
+				{ TEXT("blocking"), DoomLineFlags::Blocking }, { TEXT("blockmonsters"), DoomLineFlags::BlockMonsters },
+				{ TEXT("twosided"), DoomLineFlags::TwoSided }, { TEXT("dontpegtop"), DoomLineFlags::DontPegTop },
+				{ TEXT("dontpegbottom"), DoomLineFlags::DontPegBottom }, { TEXT("secret"), DoomLineFlags::Secret },
+				{ TEXT("blocksound"), DoomLineFlags::SoundBlock }, { TEXT("dontdraw"), DoomLineFlags::DontDraw },
+				{ TEXT("mapped"), DoomLineFlags::Mapped } };
+			for (const auto& Flag : FlagNames)
+			{
+				if (UdmfBool(F, Flag.Key)) L.Flags |= Flag.Value;
+			}
+		}
+		else if (B.Key == TEXT("thing"))
+		{
+			FDoomMapThing& T = Things.AddDefaulted_GetRef();
+			T.P = FVector2f(UdmfFloat(F, TEXT("x"), 0), UdmfFloat(F, TEXT("y"), 0));
+			T.Angle = UdmfFloat(F, TEXT("angle"), 0);
+			T.Type = UdmfInt(F, TEXT("type"), 0);
+			uint16 Flags = 0;
+			if (UdmfBool(F, TEXT("skill1")) || UdmfBool(F, TEXT("skill2"))) Flags |= 1;
+			if (UdmfBool(F, TEXT("skill3"))) Flags |= 2;
+			if (UdmfBool(F, TEXT("skill4")) || UdmfBool(F, TEXT("skill5"))) Flags |= 4;
+			if (UdmfBool(F, TEXT("ambush"))) Flags |= 8;
+			if (!UdmfBool(F, TEXT("single"), false)) Flags |= 16;
+			T.Flags = Flags;
+		}
+	}
+	// validate references
+	for (FDoomSide& S : Sides)
+	{
+		S.Sector = FMath::Clamp(S.Sector, 0, FMath::Max(0, Sectors.Num() - 1));
+	}
+	for (FDoomLine& L : Lines)
+	{
+		for (int32& Side : L.Side)
+		{
+			if (!Sides.IsValidIndex(Side)) Side = INDEX_NONE;
+		}
+	}
+	if (Sectors.Num() == 0 || Vertices.Num() == 0)
+	{
+		UE_LOG(LogDoom, Error, TEXT("%s: TEXTMAP has no geometry"), *Name);
+		return false;
+	}
+	if (Namespace != TEXT("doom"))
+	{
+		UE_LOG(LogDoom, Warning, TEXT("%s: UDMF namespace \"%s\": only Doom-format specials are supported"), *Name, *Namespace);
+	}
+
+	// nodes: the ZNODES lump between TEXTMAP and ENDMAP (as written by ZDBSP and other builders)
+	for (int32 i = Marker + 2; i < Wad.NumLumps() && Wad.Lump(i).NameStr != TEXT("ENDMAP"); ++i)
+	{
+		if (Wad.Lump(i).NameStr == TEXT("ZNODES"))
+		{
+			const bool bOk = LoadExtendedNodes(Wad.LumpData(i));
+			NodesFormat = TEXT("UDMF + ") + NodesFormat;
+			return bOk;
+		}
+	}
+	UE_LOG(LogDoom, Error, TEXT("%s: UDMF map without ZNODES (build its nodes with ZDBSP or a map editor)"), *Name);
+	return false;
+}
+
+bool FDoomMap::LoadBinary(const FDoomWad& Wad, int32 Marker)
+{
 	auto Get = [&](int32 Offset, const TCHAR* Expected) -> TConstArrayView<uint8>
 	{
 		const int32 Index = Marker + Offset;
@@ -169,44 +408,20 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 		}
 		return false;
 	};
-	bool bLoaded = false;
 	if (HasMagic(NodesL, { "XNOD", "ZNOD", "XGLN", "ZGLN", "XGL2", "ZGL2", "XGL3", "ZGL3" }))
 	{
-		bLoaded = LoadExtendedNodes(NodesL);
+		return LoadExtendedNodes(NodesL);
 	}
 	else if (HasMagic(SsL, { "XGLN", "ZGLN", "XGL2", "ZGL2", "XGL3", "ZGL3" }))
 	{
-		bLoaded = LoadExtendedNodes(SsL);
+		return LoadExtendedNodes(SsL);
 	}
 	else if (NodesL.Num() == 0 || SsL.Num() == 0 || SegsL.Num() == 0)
 	{
 		const int32 GlMarker = Wad.FindLump(TEXT("GL_") + Name);
-		bLoaded = GlMarker != INDEX_NONE && LoadGlNodes(Wad, GlMarker);
+		return GlMarker != INDEX_NONE && LoadGlNodes(Wad, GlMarker);
 	}
-	else
-	{
-		bLoaded = LoadVanillaNodes(NodesL, SegsL, SsL);
-	}
-	if (!bLoaded || Subsectors.Num() == 0)
-	{
-		UE_LOG(LogDoom, Error, TEXT("%s: no usable BSP (vanilla, ZDoom extended or glBSP GL nodes)"), *Name);
-		return false;
-	}
-	AssignSubsectorSectors();
-	Derive();
-	BuildSubsectorPolygons();
-
-	double Area = 0;
-	for (const FDoomSubsector& Ss : Subsectors)
-	{
-		for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
-		{
-			Area += 0.5 * Cross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
-		}
-	}
-	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
-		*Name, Vertices.Num(), Lines.Num(), Sectors.Num(), Subsectors.Num(), Area, Things.Num(), *NodesFormat);
-	return true;
+	return LoadVanillaNodes(NodesL, SegsL, SsL);
 }
 
 bool FDoomMap::LoadVanillaNodes(TConstArrayView<uint8> NodesLump, TConstArrayView<uint8> SegsLump, TConstArrayView<uint8> SsLump)

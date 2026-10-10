@@ -1,6 +1,7 @@
 #include "DoomGraphics.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
+#include "DoomInfo.h"
 #include "Engine/Texture2D.h"
 #include "TextureResource.h"
 #include "Misc/CommandLine.h"
@@ -704,13 +705,15 @@ const FDoomPicture* FDoomGraphics::Patch(const FString& LumpName)
 	return Result;
 }
 
-bool FDoomGraphics::SpriteHasRotations(const FString& Prefix, TCHAR Frame) const
+bool FDoomGraphics::SpriteHasRotations(const FString& InPrefix, TCHAR Frame) const
 {
+	const FString Prefix = DoomInfo::SpriteName(InPrefix);
 	return !SpriteLumps.Contains(Prefix + Frame + TEXT('0'));
 }
 
-FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& Prefix, TCHAR Frame, int32 Rotation)
+FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& InPrefix, TCHAR Frame, int32 Rotation)
 {
+	const FString Prefix = DoomInfo::SpriteName(InPrefix);
 	FDoomSpriteFrame Result;
 	const FSpriteLump* L = SpriteLumps.Find(Prefix + Frame + TEXT('0'));
 	if (!L)

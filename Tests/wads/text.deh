@@ -1,0 +1,14 @@
+Patch File for DeHackEd v3.0
+# DoomUE test patch: Text blocks (sprite rename, sound rename, string replacement) and BEX [SPRITES]
+Doom version = 19
+Patch format = 6
+
+Text 4 4
+TROOBOSS
+Text 6 6
+PISTOLSHOTGN
+Text 23 12
+Picked up some bullets.Got bullets!
+
+[SPRITES]
+BON1 = BON2
