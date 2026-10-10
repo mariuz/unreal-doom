@@ -259,6 +259,7 @@ void ADoomMonster::DoomTic()
 		}
 		break;
 	case EMonsterState::Dead:
+		++DeadTics;
 		break;
 	}
 }
@@ -874,7 +875,8 @@ void ADoomMonster::DoomSerialize(FArchive& Ar)
 	uint8 S = (uint8)State;
 	FVector Velocity = GetCharacterMovement()->Velocity;
 	Ar << Health << DoomAngle << bAmbush << S << MoveDir << MoveCount << ReactionTime << Threshold
-		<< bJustAttacked << bJustHit << ChargeVelocity << ChargeTics << FireFrameSeen << Velocity;
+		<< bJustAttacked << bJustHit << ChargeVelocity << ChargeTics << FireFrameSeen << Velocity
+		<< SpawnFeet << SpawnAngle << bCanRespawn << DeadTics;
 	Sprite->DoomSerialize(Ar);
 	if (Ar.IsLoading())
 	{

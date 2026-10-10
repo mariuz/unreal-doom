@@ -35,6 +35,12 @@ UMaterialInterface* DoomAssets::SpriteMaterial()
 	return M ? M : UMaterial::GetDefaultMaterial(MD_Surface);
 }
 
+UMaterialInterface* DoomAssets::SpriteFuzzMaterial()
+{
+	UMaterialInterface* M = LoadOrWarn<UMaterialInterface>(SpriteFuzzPath);
+	return M ? M : SpriteMaterial();
+}
+
 UMaterialParameterCollection* DoomAssets::Collection()
 {
 	return LoadOrWarn<UMaterialParameterCollection>(CollectionPath);

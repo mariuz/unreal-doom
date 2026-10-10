@@ -12,6 +12,7 @@
 #include "Materials/MaterialExpressionPixelDepth.h"
 #include "Materials/MaterialExpressionComponentMask.h"
 #include "Materials/MaterialExpressionConstant.h"
+#include "Materials/MaterialExpressionSceneColor.h"
 #include "Engine/Texture2D.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "UObject/SavePackage.h"
@@ -227,6 +228,38 @@ else if (doomLevel >= 0.0)
 		return L;
 	}
 
+	/**
+	 * Palette-exact lighting: the texel's palette index (TexIndex) and the colormap row (Level,
+	 * 0 bright .. 31 dark, 32 = the invulnerability greys) pick the colour from the WAD's
+	 * COLORMAP rows run through PLAYPAL (the Colormap texture, 256 x 34). With PaletteExact off
+	 * the smooth approximation (Approx) is used instead.
+	 */
+	UMaterialExpression* PaletteExact(UMaterial* M, UMaterialParameterCollection* MPC, UMaterialExpression* UV, UMaterialExpression* Level,
+		UMaterialExpression* Approx, UTexture* ColorDefault, UTexture* LinearDefaultTex, int32 X, int32 Y)
+	{
+		UMaterialExpressionTextureSampleParameter2D* Index = TexParam(M, X - 600, Y, TEXT("TexIndex"), LinearDefaultTex, SAMPLERTYPE_LinearColor);
+		Index->Coordinates.Connect(0, UV);
+		UMaterialExpressionCustom* CmapUV = Custom(M, X - 400, Y, TEXT("ColormapUV"), TEXT(
+			"float i = floor(Index * 255.0 + 0.5);\n"
+			"return float2((i + 0.5) / 256.0, (clamp(Level, 0.0, 33.0) + 0.5) / 34.0);"),
+			CMOT_Float2, { TEXT("Index"), TEXT("Level") });
+		Wire(Index, TEXT("R"), CmapUV, TEXT("Index"));
+		WireIndex(Level, 0, CmapUV, TEXT("Level"));
+		UMaterialExpressionTextureSampleParameter2D* Cmap = TexParam(M, X - 200, Y, TEXT("Colormap"), ColorDefault, SAMPLERTYPE_Color);
+		Cmap->Coordinates.Connect(0, CmapUV);
+		Cmap->MipValueMode = TMVM_MipLevel;
+		UMaterialExpressionConstant* Zero = Expr<UMaterialExpressionConstant>(M, X - 400, Y + 120);
+		Zero->R = 0.f;
+		Cmap->MipValue.Connect(0, Zero);
+		UMaterialExpressionCollectionParameter* Flag = Global(M, MPC, X - 200, Y + 200, TEXT("PaletteExact"));
+		UMaterialExpressionCustom* Final = Custom(M, X, Y, TEXT("PaletteSelect"), TEXT("return Flag > 0.5 ? Exact : Approx;"),
+			CMOT_Float3, { TEXT("Exact"), TEXT("Approx"), TEXT("Flag") });
+		Wire(Cmap, TEXT("RGB"), Final, TEXT("Exact"));
+		WireIndex(Approx, 0, Final, TEXT("Approx"));
+		Wire(Flag, TEXT(""), Final, TEXT("Flag"));
+		return Final;
+	}
+
 	UMaterial* BuildWorld(UMaterialParameterCollection* MPC, UTexture* ColorDefault, UTexture* LinearDefaultTex, bool bModern)
 	{
 		UMaterial* M = NewMaterial(bModern ? TEXT("M_DoomWorldLit") : TEXT("M_DoomWorld"));
@@ -288,7 +321,22 @@ else if (doomLevel >= 0.0)
 		Wire(Fixed, TEXT(""), Shade, TEXT("Fixed"));
 		Wire(Scale, TEXT(""), Shade, TEXT("Scale"));
 
-		UMaterialEditingLibrary::ConnectMaterialProperty(Shade, TEXT(""), MP_EmissiveColor);
+		UMaterialExpression* Emissive = Shade;
+		if (!bModern)
+		{
+			UMaterialExpressionCustom* Level = Custom(M, -350, 300, TEXT("DoomLevel"), FString(TEXT("float Light = LightTex * 255.0 + UV1.y;\n")) + DoomLevelHLSL
+				+ TEXT("if (Fixed > 31.5) doomLevel = 32.0;\nreturn max(doomLevel, 0.0);"),
+				CMOT_Float1, { TEXT("LightTex"), TEXT("UV1"), TEXT("Kind"), TEXT("Depth"), TEXT("Extra"), TEXT("Fixed"), TEXT("Scale") });
+			Wire(Light, TEXT("R"), Level, TEXT("LightTex"));
+			Wire(UV1, TEXT(""), Level, TEXT("UV1"));
+			WireIndex(VC, 1, Level, TEXT("Kind"));
+			Wire(Depth, TEXT(""), Level, TEXT("Depth"));
+			Wire(Extra, TEXT(""), Level, TEXT("Extra"));
+			Wire(Fixed, TEXT(""), Level, TEXT("Fixed"));
+			Wire(Scale, TEXT(""), Level, TEXT("Scale"));
+			Emissive = PaletteExact(M, MPC, Scroll, Level, Shade, ColorDefault, LinearDefaultTex, 0, 500);
+		}
+		UMaterialEditingLibrary::ConnectMaterialProperty(Emissive, TEXT(""), MP_EmissiveColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Tex, TEXT("A"), MP_OpacityMask);
 		if (bModern)
 		{
@@ -405,8 +453,66 @@ else if (doomLevel >= 0.0)
 		UMaterialExpressionComponentMask* A = Expr<UMaterialExpressionComponentMask>(M, -100, 50);
 		A->R = 0; A->G = 0; A->B = 0; A->A = 1;
 		A->Input.Connect(0, Shade);
-		UMaterialEditingLibrary::ConnectMaterialProperty(RGB, TEXT(""), MP_EmissiveColor);
+
+		// the sprite's colormap row (spritelights), then the exact COLORMAP colour
+		UMaterialExpressionCustom* Level = Custom(M, -350, 400, TEXT("SpriteLevel"), FString(TEXT(
+			"float Light = LightTex * 255.0;\n"
+			"float Kind = FullBright > 0.5 ? 1.0 : 0.0;\n"))
+			+ DoomLevelHLSL
+			+ TEXT("if (Modern > 0.5 && Kind < 0.75 && Fixed < 0.0) doomLevel = clamp((255.0 - Light) / 8.0 - Extra * 2.0, 0.0, 31.0);\n"
+				"if (Fixed > 31.5) doomLevel = 32.0;\nreturn max(doomLevel, 0.0);"),
+			CMOT_Float1, { TEXT("LightTex"), TEXT("FullBright"), TEXT("Depth"), TEXT("Extra"), TEXT("Fixed"), TEXT("Scale"), TEXT("Modern") });
+		Wire(Light, TEXT("R"), Level, TEXT("LightTex"));
+		Wire(Bright, TEXT(""), Level, TEXT("FullBright"));
+		Wire(Depth, TEXT(""), Level, TEXT("Depth"));
+		Wire(Extra, TEXT(""), Level, TEXT("Extra"));
+		Wire(Fixed, TEXT(""), Level, TEXT("Fixed"));
+		Wire(Scale, TEXT(""), Level, TEXT("Scale"));
+		Wire(Modern, TEXT(""), Level, TEXT("Modern"));
+		UMaterialExpression* Emissive = PaletteExact(M, MPC, MirrorUV, Level, RGB, ColorDefault, LinearDefaultTex, 0, 600);
+
+		UMaterialEditingLibrary::ConnectMaterialProperty(Emissive, TEXT(""), MP_EmissiveColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(A, TEXT(""), MP_OpacityMask);
+		return M;
+	}
+
+	/**
+	 * Spectres: Doom draws their pixels as the background one row above or below, darkened
+	 * by colormap 6. A translucent material can read the scene behind it, so it does the same,
+	 * shifting by one 320x200 row in a pattern that changes every tic.
+	 */
+	UMaterial* BuildSpriteFuzz(UMaterialParameterCollection* MPC, UTexture* ColorDefault)
+	{
+		UMaterial* M = NewMaterial(TEXT("M_DoomSpriteFuzz"));
+		M->SetShadingModel(MSM_Unlit);
+		M->BlendMode = BLEND_Translucent;
+
+		UMaterialExpressionTextureCoordinate* UV0 = Expr<UMaterialExpressionTextureCoordinate>(M, -1000, -200);
+		UMaterialExpressionScalarParameter* Mirror = Scalar(M, -1000, -100, TEXT("Mirror"), 0.f);
+		UMaterialExpressionCustom* MirrorUV = Custom(M, -800, -200, TEXT("MirrorUV"), TEXT("return float2(Mirror > 0.5 ? 1.0 - UV.x : UV.x, UV.y);"),
+			CMOT_Float2, { TEXT("UV"), TEXT("Mirror") });
+		Wire(UV0, TEXT(""), MirrorUV, TEXT("UV"));
+		Wire(Mirror, TEXT(""), MirrorUV, TEXT("Mirror"));
+		UMaterialExpressionTextureSampleParameter2D* Tex = TexParam(M, -600, -250, TEXT("Tex"), ColorDefault, SAMPLERTYPE_Color);
+		Tex->Coordinates.Connect(0, MirrorUV);
+
+		UMaterialExpressionCollectionParameter* Tic = Global(M, MPC, -1000, 100, TEXT("Tic"));
+		UMaterialExpressionCustom* Offset = Custom(M, -800, 100, TEXT("FuzzOffset"), TEXT(
+			"float2 p = floor(Parameters.SvPosition.xy / max(View.ViewSizeAndInvSize.y / 200.0, 1.0));\n"
+			"float h = frac(sin(dot(p + floor(Tic) * float2(1.7, 9.3), float2(12.9898, 78.233))) * 43758.5453);\n"
+			"return float2(0.0, (h < 0.5 ? -1.0 : 1.0) / 200.0);"),
+			CMOT_Float2, { TEXT("Tic") });
+		Wire(Tic, TEXT(""), Offset, TEXT("Tic"));
+		UMaterialExpressionSceneColor* Scene = Expr<UMaterialExpressionSceneColor>(M, -600, 100);
+		Scene->InputMode = EMaterialSceneAttributeInputMode::OffsetFraction;
+		Scene->Input.Connect(0, Offset);
+		UMaterialExpressionCustom* Dark = Custom(M, -350, 100, TEXT("FuzzDarken"), TEXT("return SceneRGB * 0.63;"), CMOT_Float3, { TEXT("SceneRGB") });
+		WireIndex(Scene, 0, Dark, TEXT("SceneRGB"));
+		UMaterialExpressionCustom* Coverage = Custom(M, -350, -150, TEXT("FuzzCoverage"), TEXT("return TexA > 0.5 ? 1.0 : 0.0;"), CMOT_Float1, { TEXT("TexA") });
+		Wire(Tex, TEXT("A"), Coverage, TEXT("TexA"));
+
+		UMaterialEditingLibrary::ConnectMaterialProperty(Dark, TEXT(""), MP_EmissiveColor);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Coverage, TEXT(""), MP_Opacity);
 		return M;
 	}
 
@@ -426,6 +532,7 @@ else if (doomLevel >= 0.0)
 		Add(TEXT("FixedColormap"), -1.f);
 		Add(TEXT("Modern"), 0.f);
 		Add(TEXT("DoomScale"), 3.f);
+		Add(TEXT("PaletteExact"), 1.f);
 		MPC->PostEditChange();
 		Save(MPC);
 		return MPC;
@@ -438,7 +545,8 @@ bool DoomContent::AssetsExist()
 		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::WorldClassicPath) != nullptr
 		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::WorldModernPath) != nullptr
 		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::SkyPath) != nullptr
-		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::SpritePath) != nullptr;
+		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::SpritePath) != nullptr
+		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::SpriteFuzzPath) != nullptr;
 }
 
 bool DoomContent::Build(bool bForce)
@@ -458,6 +566,7 @@ bool DoomContent::Build(bool bForce)
 		BuildWorld(MPC, ColorDefault, Linear, true),
 		BuildSky(MPC, ColorDefault),
 		BuildSprite(MPC, ColorDefault, Linear),
+		BuildSpriteFuzz(MPC, ColorDefault),
 	};
 	bool bOk = true;
 	for (UMaterial* M : Mats)

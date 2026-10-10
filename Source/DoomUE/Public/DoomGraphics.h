@@ -17,6 +17,8 @@ struct FDoomPicture
 	TArray<int16> Indices;
 	bool bMasked = false;
 	UTexture2D* Texture = nullptr;
+	/** Palette indices (R = index, A = opaque) for palette-exact COLORMAP lighting. */
+	UTexture2D* IndexTexture = nullptr;
 
 	bool IsValid() const { return Width > 0 && Height > 0; }
 };
@@ -89,6 +91,15 @@ private:
 	void BuildAnimations();
 	bool DecodePatch(TConstArrayView<uint8> Data, FDoomPicture& Out) const;
 	void Upload(FDoomPicture& Pic, bool bWrap, bool bMips);
+	void UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips);
+	int32 NearestPaletteIndex(int32 R, int32 G, int32 B);
+	TMap<uint32, uint8> NearestCache;
+
+public:
+	/** The weapon sprite through one COLORMAP row (the psprite's light), cached per picture and row. */
+	UTexture2D* ColormappedPicture(const FDoomPicture& Pic, int32 Row);
+private:
+	TMap<TPair<const FDoomPicture*, int32>, TObjectPtr<UTexture2D>> ColormappedCache;
 
 	const FDoomWad& Wad;
 	TArray<int32> PNames;   // lump index per PNAMES entry

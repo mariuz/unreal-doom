@@ -35,6 +35,7 @@ void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
 	CreateMeshSection_LinearColor(0, V, I, N, UV, C, {}, false);
 
 	MID = UMaterialInstanceDynamic::Create(DoomAssets::SpriteMaterial(), this);
+	MID->SetTextureParameterValue(TEXT("Colormap"), DoomWorld->GetGraphics()->ColormapTexture());
 	if (ADoomLevel* Level = DoomWorld ? DoomWorld->GetLevel() : nullptr)
 	{
 		MID->SetTextureParameterValue(TEXT("SectorLights"), Level->GetSectorLightTexture());
@@ -106,6 +107,17 @@ void UDoomSpriteComponent::SetFullBright(bool b)
 
 void UDoomSpriteComponent::SetFuzz(bool b)
 {
+	if (b != bFuzzOn && MID)
+	{
+		// spectres: Doom's fuzz copies the background shifted a row and darkened, which needs
+		// a translucent material reading scene colour; everything else stays masked
+		UMaterialInterface* Parent = b ? DoomAssets::SpriteFuzzMaterial() : DoomAssets::SpriteMaterial();
+		UMaterialInstanceDynamic* Old = MID;
+		MID = UMaterialInstanceDynamic::Create(Parent, this);
+		MID->CopyParameterOverrides(Old);
+		SetMaterial(0, MID);
+		LastPicture = nullptr;
+	}
 	bFuzzOn = b;
 	if (MID)
 	{
@@ -163,6 +175,7 @@ void UDoomSpriteComponent::UpdateVisual(const FVector& ViewLocation)
 		LastPicture = F.Picture;
 		bLastMirror = F.bMirror;
 		MID->SetTextureParameterValue(TEXT("Tex"), F.Picture->Texture);
+		MID->SetTextureParameterValue(TEXT("TexIndex"), F.Picture->IndexTexture);
 		MID->SetScalarParameterValue(TEXT("Mirror"), F.bMirror ? 1.f : 0.f);
 	}
 

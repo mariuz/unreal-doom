@@ -197,7 +197,26 @@ void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 	const float SXp = 1 + P->BobX;
 	const float SYp = P->WeaponY + P->BobY - 16.f;
 	const FDoomSpriteFrame F = W->GetGraphics()->SpriteFrame(P->WeaponSprite, P->WeaponFrame, 0);
-	if (F.Picture)
+	const bool bExact = !W->IsModern() && GetDefault<UDoomSettings>()->bPaletteExact && Tint.A >= 1.f;
+	if (F.Picture && bExact)
+	{
+		// Doom lights the weapon with spritelights[MAXLIGHTSCALE-1] of the player's sector
+		int32 Row;
+		if (P->Invulnerability > 4 * 32 || (P->Invulnerability & 8)) Row = 32;
+		else if (P->LightAmp > 4 * 32 || (P->LightAmp & 8)) Row = 1;
+		else
+		{
+			const int32 SecLight = Sec >= 0 ? W->GetMap()->Sectors[Sec].Light : 255;
+			const int32 LightNum = FMath::Clamp(SecLight / 16 + P->ExtraLight, 0, 15);
+			Row = FMath::Clamp((15 - LightNum) * 4 - 23, 0, 31);
+		}
+		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row))
+		{
+			DrawTexture(Lit, OX + (SXp - F.Picture->LeftOffset) * SX, OY + (SYp - F.Picture->TopOffset) * SY,
+				F.Picture->Width * SX, F.Picture->Height * SY, 0, 0, 1, 1, FLinearColor::White, BLEND_Translucent);
+		}
+	}
+	else if (F.Picture)
 	{
 		DrawPatch(F.Picture, SXp, SYp, true, Tint);
 	}

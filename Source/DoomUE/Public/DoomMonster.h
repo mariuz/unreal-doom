@@ -53,6 +53,12 @@ public:
 	EMonsterState State = EMonsterState::Idle;
 	TWeakObjectPtr<AActor> Target;
 
+	/** Where the map placed it (Nightmare respawning); bCanRespawn is false for spawned extras. */
+	FVector SpawnFeet = FVector::ZeroVector;
+	float SpawnAngle = 0;
+	bool bCanRespawn = false;
+	int32 DeadTics = 0;
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UDoomSpriteComponent> Sprite;
 	UPROPERTY(VisibleAnywhere)

@@ -40,6 +40,11 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Rendering", meta = (ClampMin = 60, ClampMax = 130))
 	float FieldOfView = 90.f;
 
+	/** Classic renderer: light through the WAD's real COLORMAP rows (Doom's exact colours and
+	 *  banding) instead of a smooth darkening. */
+	UPROPERTY(Config, EditAnywhere, Category = "Rendering")
+	bool bPaletteExact = true;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	float MouseSensitivity = 1.0f;
 

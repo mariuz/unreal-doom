@@ -33,7 +33,9 @@ UProceduralMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool
 {
 	UProceduralMeshComponent* C = NewObject<UProceduralMeshComponent>(this, FName(*Name));
 	C->SetupAttachment(RootComponent);
-	C->bUseAsyncCooking = true;
+	// cooked synchronously while the level loads, so nothing spawns before the floor exists;
+	// moving chunks switch to async cooking afterwards (see Build)
+	C->bUseAsyncCooking = false;
 	C->bUseComplexAsSimpleCollision = true;
 	C->SetCastShadow(bModern);
 	C->bAffectDistanceFieldLighting = true;
@@ -137,6 +139,13 @@ void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>&
 	}
 	Flush();
 	BuildBlockingCollision();
+	for (FChunk& C : Chunks)
+	{
+		if (C.bDynamic)
+		{
+			C.Solid->bUseAsyncCooking = true; // doors and lifts recook every tic they move
+		}
+	}
 	UE_LOG(LogDoom, Log, TEXT("Level geometry: %d chunks, %d materials"), Chunks.Num(), Materials.Num());
 }
 
@@ -181,6 +190,8 @@ UMaterialInterface* ADoomLevel::MaterialForKey(FName Key)
 		if (Pic && Pic->Texture)
 		{
 			MID->SetTextureParameterValue(TEXT("Tex"), Pic->Texture);
+			MID->SetTextureParameterValue(TEXT("TexIndex"), Pic->IndexTexture);
+			MID->SetTextureParameterValue(TEXT("Colormap"), Gfx->ColormapTexture());
 			if (K.StartsWith(TEXT("X:")))
 			{
 				MID->SetScalarParameterValue(TEXT("ScrollU"), 1.f / Pic->Width);
@@ -534,6 +545,7 @@ void ADoomLevel::AnimateTextures(int32 Tic)
 		if (Pic && Pic->Texture)
 		{
 			Pair.Value->SetTextureParameterValue(TEXT("Tex"), Pic->Texture);
+			Pair.Value->SetTextureParameterValue(TEXT("TexIndex"), Pic->IndexTexture);
 		}
 	}
 }
