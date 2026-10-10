@@ -40,6 +40,25 @@ namespace
 	};
 
 	bool IsPow2(int32 V) { return V > 0 && (V & (V - 1)) == 0; }
+
+	/**
+	 * A transient texture holding Pixels as mip 0, with no GPU resource yet. CreateTransient with
+	 * pixel data starts creating the resource on the render thread at once, which races with
+	 * adding mips or changing properties afterwards (an intermittent D3D12 assertion); callers
+	 * add mips, set filtering and addressing, then call UpdateResource exactly once.
+	 */
+	UTexture2D* NewTexture(int32 W, int32 H, const TArray<FColor>& Pixels, FName Name)
+	{
+		UTexture2D* Tex = UTexture2D::CreateTransient(W, H, PF_B8G8R8A8, Name);
+		if (Tex && Pixels.Num() == W * H)
+		{
+			FTexture2DMipMap& Mip0 = Tex->GetPlatformData()->Mips[0];
+			void* Dest = Mip0.BulkData.Lock(LOCK_READ_WRITE);
+			FMemory::Memcpy(Dest, Pixels.GetData(), (SIZE_T)W * H * 4);
+			Mip0.BulkData.Unlock();
+		}
+		return Tex;
+	}
 }
 
 FDoomGraphics::FDoomGraphics(const FDoomWad& InWad)
@@ -372,8 +391,7 @@ void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
 	}
 
 	const FName ObjName = MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(), FName(*FString::Printf(TEXT("Doom_%s"), *Pic.Name.ToString())));
-	UTexture2D* Tex = UTexture2D::CreateTransient(Pic.Width, Pic.Height, PF_B8G8R8A8, ObjName,
-		TConstArrayView64<uint8>(reinterpret_cast<const uint8*>(Pixels.GetData()), (int64)Pixels.Num() * 4));
+	UTexture2D* Tex = NewTexture(Pic.Width, Pic.Height, Pixels, ObjName);
 	if (!Tex)
 	{
 		return;
@@ -481,8 +499,7 @@ void FDoomGraphics::UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips)
 		const int16 Idx = Pic.Indices[i];
 		Pixels[i] = FColor((uint8)FMath::Max<int16>(Idx, 0), 0, 0, Idx < 0 ? 0 : 255);
 	}
-	UTexture2D* Tex = UTexture2D::CreateTransient(Pic.Width, Pic.Height, PF_B8G8R8A8, NAME_None,
-		TConstArrayView64<uint8>(reinterpret_cast<const uint8*>(Pixels.GetData()), (int64)Pixels.Num() * 4));
+	UTexture2D* Tex = NewTexture(Pic.Width, Pic.Height, Pixels, NAME_None);
 	if (!Tex)
 	{
 		return;
@@ -742,8 +759,7 @@ UTexture2D* FDoomGraphics::ColormapTexture()
 	{
 		Pixels[i] = Pal[Cm.IsValidIndex(i) ? Cm[i] : i % 256];
 	}
-	Colormap = UTexture2D::CreateTransient(256, 34, PF_B8G8R8A8, TEXT("Doom_COLORMAP"),
-		TConstArrayView64<uint8>(reinterpret_cast<const uint8*>(Pixels.GetData()), (int64)Pixels.Num() * 4));
+	Colormap = NewTexture(256, 34, Pixels, TEXT("Doom_COLORMAP"));
 	Colormap->Filter = TF_Nearest;
 	Colormap->SRGB = true;
 	Colormap->AddressX = Colormap->AddressY = TA_Clamp;
@@ -768,8 +784,7 @@ UTexture2D* FDoomGraphics::MakeTextureFromIndices(const FDoomPicture& Pic, int32
 		const int32 Mapped = Cm.IsValidIndex(ColormapRow * 256 + Idx) ? Cm[ColormapRow * 256 + Idx] : Idx;
 		Pixels[i] = Pal[Mapped];
 	}
-	UTexture2D* Tex = UTexture2D::CreateTransient(Pic.Width, Pic.Height, PF_B8G8R8A8, NAME_None,
-		TConstArrayView64<uint8>(reinterpret_cast<const uint8*>(Pixels.GetData()), (int64)Pixels.Num() * 4));
+	UTexture2D* Tex = NewTexture(Pic.Width, Pic.Height, Pixels, NAME_None);
 	if (Tex)
 	{
 		Tex->Filter = TF_Nearest;
