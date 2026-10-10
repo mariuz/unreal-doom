@@ -404,7 +404,7 @@ void UDoomWorld::SpawnMapThings()
 			{
 				const int32 Sec = Map->SectorAt(T.P);
 				const float Floor = Sec >= 0 ? Map->Sectors[Sec].Floor : 0;
-				P->SetActorLocation(Doom::ToUE(T.P, Floor) + FVector(0, 0, P->GetSimpleCollisionHalfHeight() + 2), false, nullptr, ETeleportType::TeleportPhysics);
+				P->SetActorLocation(Doom::ToUE(T.P, Floor) + FVector(0, 0, Doom::HalfHeight(P) + 2), false, nullptr, ETeleportType::TeleportPhysics);
 				if (AController* C = P->GetController())
 				{
 					C->SetControlRotation(FRotator(0, Doom::AngleToYaw(T.Angle), 0));
@@ -645,8 +645,8 @@ bool UDoomWorld::CheckSight(const AActor* From, const AActor* To) const
 	}
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomSight), false, From);
 	Q.AddIgnoredActor(To);
-	const FVector A = From->GetActorLocation() + FVector(0, 0, From->GetSimpleCollisionHalfHeight() * 0.5f);
-	const FVector B = To->GetActorLocation() + FVector(0, 0, To->GetSimpleCollisionHalfHeight() * 0.5f);
+	const FVector A = From->GetActorLocation() + FVector(0, 0, Doom::HalfHeight(From) * 0.5f);
+	const FVector B = To->GetActorLocation() + FVector(0, 0, Doom::HalfHeight(To) * 0.5f);
 	FHitResult Hit;
 	// monsters do not block sight; only the level does
 	FCollisionObjectQueryParams Obj;
@@ -990,7 +990,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M)
 		{
 			if (!C) return;
 			if (Map->SectorAt(Doom::ToDoom2D(C->GetActorLocation())) != M.Sector) return;
-			const float Half = C->GetSimpleCollisionHalfHeight();
+			const float Half = Doom::HalfHeight(C);
 			const float FeetZ = Doom::ToDoomZ(C->GetActorLocation().Z - Half);
 			if (M.Dir > 0 && FeetZ < New + 0.5f)
 			{
@@ -1869,7 +1869,7 @@ void UDoomWorld::Teleport(AActor* Actor, int32 LineIndex, int32 Side)
 			continue;
 		}
 		const FVector OldPos = Actor->GetActorLocation();
-		const float Half = Actor->GetSimpleCollisionHalfHeight();
+		const float Half = Doom::HalfHeight(Actor);
 		const FVector NewPos = Doom::ToUE(T.P, Map->Sectors[Sec].Floor) + FVector(0, 0, Half + 1);
 		Actor->SetActorLocation(NewPos, false, nullptr, ETeleportType::TeleportPhysics);
 		if (ACharacter* C = Cast<ACharacter>(Actor))

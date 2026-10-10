@@ -179,7 +179,7 @@ void ADoomGameMode::StartPlay()
 		if (ADoomPlayer* P = W->GetPlayer())
 		{
 			const FVector Fwd = FRotator(0, P->GetControlRotation().Yaw, 0).Vector();
-			const FVector Feet = P->GetActorLocation() - FVector(0, 0, P->GetSimpleCollisionHalfHeight()) + Fwd * 160.f * Doom::Scale;
+			const FVector Feet = P->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(P)) + Fwd * 160.f * Doom::Scale;
 			W->SpawnMonster(SpawnFront, Feet, Doom::YawToAngle(P->GetControlRotation().Yaw) + 180.f);
 		}
 	}
@@ -204,7 +204,7 @@ void ADoomGameMode::StartPlay()
 				if (!P) return;
 				const int32 Sec = W->GetMap()->SectorAt(Start);
 				const float Floor = Sec >= 0 ? W->GetMap()->Sectors[Sec].Floor : 0;
-				P->SetActorLocation(Doom::ToUE(Start, Floor) + FVector(0, 0, P->GetSimpleCollisionHalfHeight() + 1), false, nullptr, ETeleportType::TeleportPhysics);
+				P->SetActorLocation(Doom::ToUE(Start, Floor) + FVector(0, 0, Doom::HalfHeight(P) + 1), false, nullptr, ETeleportType::TeleportPhysics);
 				P->GetController()->SetControlRotation(FRotator(0, Doom::AngleToYaw(Angle), 0));
 				const double End = GetWorld()->GetTimeSeconds() + Seconds;
 				double NextLog = 0;
