@@ -137,6 +137,18 @@ int32 FDoomMapInfoSet::Parse(const FString& Text)
 			else if (Key == TEXT("endcast")) { Info.bEndCast = bTrue; Info.bEndGame |= bTrue; }
 			else if (Key == TEXT("endpic")) { Info.EndPic = First.ToUpper(); Info.bEndGame = true; }
 			else if (Key == TEXT("nointermission")) Info.bNoIntermission = bTrue;
+			else if (Key == TEXT("episode"))
+			{
+				if (bClear)
+				{
+					bClearEpisodes = true;
+					Episodes.Reset();
+				}
+				else
+				{
+					Episodes.Add({ Info.Map, First.ToUpper(), Values.Num() > 1 ? Values[1].Text : Info.Map });
+				}
+			}
 			else if (Key == TEXT("interbackdrop")) Info.InterBackdrop = First.ToUpper();
 			else if (Key == TEXT("intermusic")) Info.InterMusic = First.ToUpper();
 			else if (Key == TEXT("intertext") || Key == TEXT("intertextsecret"))

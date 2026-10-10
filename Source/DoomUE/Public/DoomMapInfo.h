@@ -35,15 +35,27 @@ struct FDoomMapInfo
 	bool bClearBossActions = false; // "bossaction = clear": the vanilla boss specials do not apply
 };
 
+/** A New Game episode: the map it starts on, its menu graphic and name. */
+struct FDoomEpisode
+{
+	FString Map;
+	FString Patch;
+	FString Name;
+};
+
 class DOOMUE_API FDoomMapInfoSet
 {
 public:
+	/** UMAPINFO "episode" entries in order; bClearEpisodes drops the game's own episodes. */
+	TArray<FDoomEpisode> Episodes;
+	bool bClearEpisodes = false;
+
 	/** Parses one UMAPINFO lump; later entries for the same map replace earlier ones. */
 	int32 Parse(const FString& Text);
 	const FDoomMapInfo* Find(const FString& Map) const { return Maps.Find(Map.ToUpper()); }
 	int32 Num() const { return Maps.Num(); }
 	const TMap<FString, FDoomMapInfo>& All() const { return Maps; }
-	void Reset() { Maps.Reset(); }
+	void Reset() { Maps.Reset(); Episodes.Reset(); bClearEpisodes = false; }
 
 private:
 	TMap<FString, FDoomMapInfo> Maps;

@@ -5,36 +5,14 @@
 #include "DoomWad.h"
 #include "DoomMap.h"
 #include "DoomUE.h"
+#include "DoomMenu.h"
+#include "DoomSettings.h"
 #include "Engine/Canvas.h"
 #include "Engine/Texture2D.h"
-
-namespace
-{
-	const TCHAR* SkillNames[5] = { TEXT("VERY EASY"), TEXT("EASY"), TEXT("NORMAL"), TEXT("HARD"), TEXT("NIGHTMARE") };
-}
 
 UDoomWorld* ADoomHUD::DW() const
 {
 	return GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
-}
-
-TArray<FString> ADoomHUD::MenuEntries(UDoomWorld* W)
-{
-	TArray<FString> E;
-	E.Add(W && W->GetMap() ? TEXT("RESUME") : TEXT("NEW GAME"));
-	FString MapName = TEXT("-");
-	if (W && W->GetWad() && W->GetWad()->MapNames().IsValidIndex(W->MenuMapIndex))
-	{
-		MapName = W->GetWad()->MapNames()[W->MenuMapIndex];
-	}
-	E.Add(FString::Printf(TEXT("MAP: < %s >"), *MapName));
-	E.Add(FString::Printf(TEXT("SKILL: < %s >"), W ? SkillNames[FMath::Clamp(W->MenuSkill, 1, 5) - 1] : TEXT("")));
-	E.Add(FString::Printf(TEXT("RENDERER: < %s >"), W && W->MenuModern ? TEXT("MODERN (LUMEN)") : TEXT("CLASSIC")));
-	const FString Slot = W ? FString::Printf(TEXT("%d: %s"), W->MenuSlot, *W->SlotDescription(W->MenuSlot)) : FString();
-	E.Add(FString::Printf(TEXT("SAVE: < %s >"), *Slot));
-	E.Add(FString::Printf(TEXT("LOAD: < %s >"), *Slot));
-	E.Add(TEXT("QUIT"));
-	return E;
 }
 
 void ADoomHUD::Rect(float X, float Y, float W, float H, FLinearColor C)
@@ -190,7 +168,7 @@ void ADoomHUD::DrawHUD()
 	}
 	DrawTint(P);
 	DrawStatusBar(P);
-	if (W->MessageTics > 0)
+	if (W->MessageTics > 0 && GetDefault<UDoomSettings>()->bShowMessages)
 	{
 		DrawText(W->Message, 2, 2);
 	}
@@ -433,28 +411,103 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 	DrawText(W->LevelTitle(W->GetMapName()), 2, 160);
 }
 
+void ADoomHUD::DrawThermo(float X, float Y, int32 Width, int32 Value)
+{
+	DrawPatchByName(TEXT("M_THERML"), X, Y, true);
+	for (int32 i = 0; i < Width; ++i)
+	{
+		DrawPatchByName(TEXT("M_THERMM"), X + 8 + i * 8, Y, true);
+	}
+	DrawPatchByName(TEXT("M_THERMR"), X + 8 + Width * 8, Y, true);
+	DrawPatchByName(TEXT("M_THERMO"), X + 8 + FMath::Clamp(Value, 0, Width - 1) * 8, Y, true);
+}
+
 void ADoomHUD::DrawMenu()
 {
 	UDoomWorld* W = DW();
-	if (W->GetMap())
+	FDoomMenu& M = W->Menu;
+	// over the game, or over the title picture on sub-pages (their titles share its logo's spot)
+	if (W->GetMap() || M.Page != EMenuPage::Main)
 	{
-		DrawRect(FLinearColor(0, 0, 0, 0.5f), 0, 0, Canvas->ClipX, Canvas->ClipY);
+		DrawRect(FLinearColor(0, 0, 0, W->GetMap() ? 0.45f : 0.6f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
-	DrawPatchByName(TEXT("M_DOOM"), 94, 2, false);
-	const TArray<FString> Entries = MenuEntries(W);
-	const float Y0 = 64, Step = 16;
-	for (int32 i = 0; i < Entries.Num(); ++i)
+
+	if (M.Page == EMenuPage::ReadThis)
 	{
-		const FLinearColor C = i == W->MenuItem ? FLinearColor(1.f, 0.9f, 0.5f) : FLinearColor(0.85f, 0.15f, 0.1f);
-		DrawText(Entries[i], 64, Y0 + i * Step, 1.3f, C);
+		const TArray<FString> Pages = M.HelpPages(*W);
+		if (Pages.IsValidIndex(M.HelpPage))
+		{
+			DrawFullscreenPic(Pages[M.HelpPage]);
+		}
+		return;
 	}
-	const bool bBlink = FMath::Fmod(GetWorld()->GetRealTimeSeconds(), 0.5f) < 0.25f;
-	DrawPatchByName(bBlink ? TEXT("M_SKULL1") : TEXT("M_SKULL2"), 36, Y0 - 6 + W->MenuItem * Step, false);
-	if (W->MessageTics > 0)
+	const FString Prompt = M.Prompt();
+	if (!Prompt.IsEmpty())
 	{
-		DrawText(W->Message, 2, 2);
+		TArray<FString> Lines;
+		Prompt.ParseIntoArray(Lines, TEXT("\n"), false);
+		float Y = 100 - Lines.Num() * 11 / 2.f;
+		for (const FString& L : Lines)
+		{
+			DrawText(L, 160 - TextWidth(L) / 2, Y);
+			Y += 11;
+		}
+		return;
 	}
-	DrawText(TEXT("ARROWS: CHOOSE  ENTER: SELECT  ESC: BACK  F6/F9: QUICK SAVE/LOAD"), 8, 188, 0.8f, FLinearColor(0.7f, 0.7f, 0.7f));
+
+	for (const FMenuTitle& T : M.Titles())
+	{
+		DrawPatchByName(T.Patch, T.X, T.Y, true);
+	}
+	const FIntPoint O = M.Origin();
+	const TArray<FMenuRow> Rows = M.Rows(*W);
+	const FLinearColor Dim(0.5f, 0.5f, 0.5f, 1.f);
+	for (int32 i = 0; i < Rows.Num(); ++i)
+	{
+		const FMenuRow& R = Rows[i];
+		const float Y = O.Y + i * 16;
+		if (M.IsSaveLoad())
+		{
+			// Doom's slot box: left cap, 24 middles, right cap, the description inside
+			DrawPatchByName(TEXT("M_LSLEFT"), O.X - 8, Y + 7, true);
+			for (int32 k = 0; k < 24; ++k) DrawPatchByName(TEXT("M_LSCNTR"), O.X + k * 8, Y + 7, true);
+			DrawPatchByName(TEXT("M_LSRGHT"), O.X + 24 * 8, Y + 7, true);
+			DrawText(R.Text, O.X, Y, 1.f, R.bEnabled || M.Page == EMenuPage::Save ? FLinearColor::White : Dim);
+			continue;
+		}
+		if (R.Kind == FMenuRow::EKind::Gap)
+		{
+			continue;
+		}
+		const FDoomPicture* Pic = R.Patch.IsEmpty() ? nullptr : W->GetGraphics()->Patch(R.Patch);
+		const FLinearColor Tint = R.bEnabled ? FLinearColor::White : Dim;
+		if (Pic)
+		{
+			DrawPatch(Pic, O.X, Y, true, Tint);
+		}
+		else
+		{
+			DrawText(R.Text, O.X, Y + 3, 1.f, R.bEnabled ? FLinearColor(0.9f, 0.15f, 0.1f) : Dim);
+		}
+		if (R.Kind == FMenuRow::EKind::Toggle)
+		{
+			if (!R.ValuePatch.IsEmpty() && W->GetGraphics()->Patch(R.ValuePatch))
+			{
+				DrawPatchByName(R.ValuePatch, O.X + 120, Y, true);
+			}
+			else
+			{
+				DrawText(R.Value ? TEXT("ON") : TEXT("OFF"), O.X + 120, Y + 3);
+			}
+		}
+		else if (R.Kind == FMenuRow::EKind::Slider)
+		{
+			DrawThermo(O.X, Y + 16, R.Max, R.Value);
+		}
+	}
+	// the blinking skull, 32 pixels left of the selected row
+	const bool bBlink = (int32)(GetWorld()->GetRealTimeSeconds() * Doom::TicRate / 8) & 1;
+	DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + M.Item * 16, true);
 }
 
 void ADoomHUD::DrawIntermission()

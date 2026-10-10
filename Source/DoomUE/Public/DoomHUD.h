@@ -20,8 +20,6 @@ class DOOMUE_API ADoomHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	/** Menu entries (shared with the controller). */
-	static TArray<FString> MenuEntries(UDoomWorld* W);
 
 private:
 	void DrawPatch(const FDoomPicture* Pic, float X, float Y, bool bUseOffsets = true, FLinearColor Tint = FLinearColor::White);
@@ -36,6 +34,7 @@ private:
 	void DrawTint(ADoomPlayer* P);
 	void DrawAutomap(ADoomPlayer* P);
 	void DrawMenu();
+	void DrawThermo(float X, float Y, int32 Width, int32 Value);
 	void DrawIntermission();
 	void DrawFinale();
 	void Rect(float X, float Y, float W, float H, FLinearColor C);

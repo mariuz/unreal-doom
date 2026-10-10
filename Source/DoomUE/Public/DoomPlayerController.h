@@ -38,6 +38,7 @@ public:
 	UPROPERTY() TObjectPtr<UInputAction> MenuBackAction;
 	UPROPERTY() TObjectPtr<UInputAction> QuickSaveAction;
 	UPROPERTY() TObjectPtr<UInputAction> QuickLoadAction;
+	UPROPERTY() TArray<TObjectPtr<UInputAction>> PageActions;
 
 	UPROPERTY() TObjectPtr<UInputMappingContext> GameplayContext;
 	UPROPERTY() TObjectPtr<UInputMappingContext> MenuContext;
@@ -51,6 +52,7 @@ private:
 	void MenuRight(const FInputActionValue& V);
 	void MenuSelect(const FInputActionValue& V);
 	void MenuBack(const FInputActionValue& V);
+	void OpenMenuPage(int32 Page);
 
 	bool bMenuContextActive = false;
 	bool bContextsInitialized = false;
