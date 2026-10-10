@@ -50,6 +50,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	bool bAutoAim = true;
 
+	/** Pickup and door messages at the top of the screen (Options > Messages). */
+	UPROPERTY(Config, EditAnywhere, Category = "Game")
+	bool bShowMessages = true;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Audio", meta = (ClampMin = 0, ClampMax = 1))
 	float SfxVolume = 0.8f;
 

@@ -14,6 +14,7 @@
 #include "DoomDehacked.h"
 #include "Misc/FileHelper.h"
 #include "Components/AudioComponent.h"
+#include "Camera/CameraComponent.h"
 #include "Engine/World.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/ExponentialHeightFog.h"
@@ -210,8 +211,6 @@ bool UDoomWorld::InitWads()
 	bModern = Settings->bModernRenderer;
 	if (FParse::Param(FCommandLine::Get(), TEXT("modern"))) bModern = true;
 	if (FParse::Param(FCommandLine::Get(), TEXT("classic"))) bModern = false;
-	MenuSkill = Skill;
-	MenuModern = bModern;
 	UE_LOG(LogDoom, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
 	return true;
 }
@@ -678,6 +677,32 @@ void UDoomWorld::PlaySound(const FString& Name, const FVector* Location, float V
 	if (Sound.IsValid())
 	{
 		Sound->Play(GetWorld(), Name, Location, Volume);
+	}
+}
+
+void UDoomWorld::ApplyUserSettings()
+{
+	const UDoomSettings* S = GetDefault<UDoomSettings>();
+	if (Sound.IsValid())
+	{
+		Sound->MasterVolume = S->SfxVolume;
+	}
+	if (MusicWave && MusicWave->GetPlayer().IsValid())
+	{
+		MusicWave->GetPlayer()->Volume = S->MusicVolume;
+	}
+	if (S->MusicVolume <= 0.f)
+	{
+		StopMusic();
+	}
+	else if (!MusicComponent && Map.IsValid())
+	{
+		const FDoomMapInfo* Info = MapInfo(CurrentMap);
+		PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(CurrentMap));
+	}
+	if (ADoomPlayer* P = GetPlayer())
+	{
+		P->Camera->SetFieldOfView(S->FieldOfView);
 	}
 }
 

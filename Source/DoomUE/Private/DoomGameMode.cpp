@@ -158,6 +158,20 @@ void ADoomGameMode::StartPlay()
 		}, 1.f, false);
 	}
 
+	// -menupage=N [-menuitem=N]: open a menu page (EMenuPage order) for screenshots
+	int32 MenuPage = -1;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-menupage="), MenuPage))
+	{
+		int32 MenuItem = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("-menuitem="), MenuItem);
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W, MenuPage, MenuItem]()
+		{
+			W->Menu.Open(*W, (EMenuPage)MenuPage);
+			W->Menu.Item = MenuItem;
+		}, 1.f, false);
+	}
+
 	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
 	int32 KillType = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())

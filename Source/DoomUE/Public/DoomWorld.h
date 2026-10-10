@@ -12,6 +12,7 @@
 #include "DoomGraphics.h"
 #include "DoomSound.h"
 #include "DoomMapInfo.h"
+#include "DoomMenu.h"
 #include "DoomWorld.generated.h"
 
 class ADoomLevel;
@@ -217,11 +218,11 @@ public:
 	bool bFullMap = false;
 
 	// menu state (drawn by ADoomHUD, driven by ADoomPlayerController)
-	int32 MenuItem = 0;
-	int32 MenuMapIndex = 0;
-	int32 MenuSkill = 3;
-	int32 MenuSlot = 1;
-	bool MenuModern = false;
+	/** Doom's menu (DoomMenu.cpp), drawn by ADoomHUD and driven by ADoomPlayerController. */
+	FDoomMenu Menu;
+	const FDoomMapInfoSet& GetMapInfos() const { return MapInfos; }
+	/** Pushes volumes and field of view from UDoomSettings to the running game. */
+	void ApplyUserSettings();
 	void StartNewGame(const FString& MapName, int32 InSkill);
 
 	void SetModern(bool b);

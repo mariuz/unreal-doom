@@ -1,6 +1,7 @@
 #include "DoomPlayerController.h"
 #include "DoomWorld.h"
 #include "DoomHUD.h"
+#include "DoomMenu.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
 #include "EnhancedInputComponent.h"
@@ -46,6 +47,10 @@ void ADoomPlayerController::CreateInput()
 	MenuBackAction = NewAction(this, TEXT("IA_MenuBack"), EInputActionValueType::Boolean);
 	QuickSaveAction = NewAction(this, TEXT("IA_QuickSave"), EInputActionValueType::Boolean);
 	QuickLoadAction = NewAction(this, TEXT("IA_QuickLoad"), EInputActionValueType::Boolean);
+	for (int32 i = 0; i < 4; ++i)
+	{
+		PageActions.Add(NewAction(this, *FString::Printf(TEXT("IA_MenuF%d"), i + 1), EInputActionValueType::Boolean));
+	}
 
 	GameplayContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Doom"));
 	auto Axis = [&](FKey Key, bool bSwizzle, bool bNegate)
@@ -111,6 +116,10 @@ void ADoomPlayerController::CreateInput()
 		GameplayContext->MapKey(SlotActions[i], Digits[i]);
 	}
 	GameplayContext->MapKey(QuickSaveAction, EKeys::F6);
+	GameplayContext->MapKey(PageActions[0], EKeys::F1);
+	GameplayContext->MapKey(PageActions[1], EKeys::F2);
+	GameplayContext->MapKey(PageActions[2], EKeys::F3);
+	GameplayContext->MapKey(PageActions[3], EKeys::F4);
 	GameplayContext->MapKey(QuickLoadAction, EKeys::F9);
 	GameplayContext->MapKey(MenuBackAction, EKeys::Escape);
 	GameplayContext->MapKey(MenuBackAction, EKeys::Gamepad_Special_Right);
@@ -129,6 +138,9 @@ void ADoomPlayerController::CreateInput()
 	MenuContext->MapKey(MenuRightAction, EKeys::D);
 	MenuContext->MapKey(MenuRightAction, EKeys::Gamepad_DPad_Right);
 	MenuContext->MapKey(MenuSelectAction, EKeys::Enter);
+	MenuContext->MapKey(MenuSelectAction, EKeys::Y);
+	MenuContext->MapKey(MenuBackAction, EKeys::N);
+	MenuContext->MapKey(MenuBackAction, EKeys::BackSpace);
 	MenuContext->MapKey(MenuSelectAction, EKeys::SpaceBar);
 	MenuContext->MapKey(MenuSelectAction, EKeys::LeftMouseButton);
 	MenuContext->MapKey(MenuSelectAction, EKeys::Gamepad_FaceButton_Bottom);
@@ -161,6 +173,13 @@ void ADoomPlayerController::SetupInputComponent()
 	EIC->BindAction(MenuRightAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuRight);
 	EIC->BindAction(MenuSelectAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuSelect);
 	EIC->BindAction(MenuBackAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuBack);
+	// F1 Read This!, F2 save, F3 load, F4 sound volume
+	const EMenuPage FPages[4] = { EMenuPage::ReadThis, EMenuPage::Save, EMenuPage::Load, EMenuPage::Sound };
+	for (int32 i = 0; i < PageActions.Num(); ++i)
+	{
+		const int32 Page = (int32)FPages[i];
+		EIC->BindActionValueLambda(PageActions[i], ETriggerEvent::Started, [this, Page](const FInputActionValue&) { OpenMenuPage(Page); });
+	}
 	EIC->BindActionValueLambda(QuickSaveAction, ETriggerEvent::Started, [this](const FInputActionValue&)
 	{
 		if (UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>()) W->SaveGame(0);
@@ -196,80 +215,49 @@ void ADoomPlayerController::Tick(float DeltaSeconds)
 	ApplyContexts();
 }
 
+namespace
+{
+	UDoomWorld* MenuWorld(UWorld* World)
+	{
+		UDoomWorld* W = World ? World->GetSubsystem<UDoomWorld>() : nullptr;
+		return (W && !W->bInputLocked) ? W : nullptr;
+	}
+}
+
 void ADoomPlayerController::MenuUp(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
-	{
-		const int32 N = ADoomHUD::MenuEntries(W).Num();
-		W->MenuItem = (W->MenuItem + N - 1) % N;
-		W->PlaySound(TEXT("PSTOP"), nullptr);
-	}
+	if (UDoomWorld* W = MenuWorld(GetWorld()); W && W->GetState() == EDoomGameState::Menu) W->Menu.Up(*W);
 }
 
 void ADoomPlayerController::MenuDown(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
-	{
-		const int32 N = ADoomHUD::MenuEntries(W).Num();
-		W->MenuItem = (W->MenuItem + 1) % N;
-		W->PlaySound(TEXT("PSTOP"), nullptr);
-	}
+	if (UDoomWorld* W = MenuWorld(GetWorld()); W && W->GetState() == EDoomGameState::Menu) W->Menu.Down(*W);
 }
 
 void ADoomPlayerController::MenuLeft(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->bInputLocked || W->GetState() != EDoomGameState::Menu || !W->GetWad())
-	{
-		return;
-	}
-	const int32 NumMaps = W->GetWad()->MapNames().Num();
-	switch (W->MenuItem)
-	{
-	case 1: W->MenuMapIndex = (W->MenuMapIndex + NumMaps - 1) % FMath::Max(1, NumMaps); break;
-	case 2: W->MenuSkill = FMath::Clamp(W->MenuSkill - 1, 1, 5); break;
-	case 3: W->MenuModern = !W->MenuModern; break;
-	case 4: case 5: W->MenuSlot = W->MenuSlot <= 1 ? 6 : W->MenuSlot - 1; break;
-	default: return;
-	}
-	W->PlaySound(TEXT("STNMOV"), nullptr);
+	if (UDoomWorld* W = MenuWorld(GetWorld()); W && W->GetState() == EDoomGameState::Menu) W->Menu.Left(*W);
 }
 
 void ADoomPlayerController::MenuRight(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->bInputLocked || W->GetState() != EDoomGameState::Menu || !W->GetWad())
-	{
-		return;
-	}
-	const int32 NumMaps = W->GetWad()->MapNames().Num();
-	switch (W->MenuItem)
-	{
-	case 1: W->MenuMapIndex = (W->MenuMapIndex + 1) % FMath::Max(1, NumMaps); break;
-	case 2: W->MenuSkill = FMath::Clamp(W->MenuSkill + 1, 1, 5); break;
-	case 3: W->MenuModern = !W->MenuModern; break;
-	case 4: case 5: W->MenuSlot = W->MenuSlot >= 6 ? 1 : W->MenuSlot + 1; break;
-	default: return;
-	}
-	W->PlaySound(TEXT("STNMOV"), nullptr);
+	if (UDoomWorld* W = MenuWorld(GetWorld()); W && W->GetState() == EDoomGameState::Menu) W->Menu.Right(*W);
 }
 
 void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->bInputLocked)
+	UDoomWorld* W = MenuWorld(GetWorld());
+	if (!W)
 	{
 		return;
 	}
 	switch (W->GetState())
 	{
 	case EDoomGameState::Title:
-		W->SetState(EDoomGameState::Menu);
-		W->MenuItem = 0;
-		W->RefreshSlots();
-		W->PlaySound(TEXT("SWTCHN"), nullptr);
+		W->Menu.Open(*W, EMenuPage::Main);
+		break;
+	case EDoomGameState::Menu:
+		W->Menu.Select(*W);
 		break;
 	case EDoomGameState::Finale:
 		W->FinaleInput();
@@ -281,49 +269,6 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 			W->FinishIntermission();
 		}
 		break;
-	case EDoomGameState::Menu:
-	{
-		W->PlaySound(TEXT("PISTOL"), nullptr);
-		const TArray<FString> Entries = ADoomHUD::MenuEntries(W);
-		const FString& Item = Entries.IsValidIndex(W->MenuItem) ? Entries[W->MenuItem] : FString();
-		if (W->MenuItem == 0)
-		{
-			if (W->GetMap())
-			{
-				W->SetModern(W->MenuModern);
-				W->SetState(EDoomGameState::Playing); // resume
-			}
-			else if (W->GetWad() && W->GetWad()->MapNames().Num())
-			{
-				W->SetModern(W->MenuModern);
-				W->StartNewGame(W->GetWad()->MapNames()[0], W->MenuSkill);
-			}
-		}
-		else if (W->MenuItem == 1 || W->MenuItem == 2 || W->MenuItem == 3)
-		{
-			if (W->GetWad() && W->GetWad()->MapNames().IsValidIndex(W->MenuMapIndex))
-			{
-				W->SetModern(W->MenuModern);
-				W->StartNewGame(W->GetWad()->MapNames()[W->MenuMapIndex], W->MenuSkill);
-			}
-		}
-		else if (W->MenuItem == 4)
-		{
-			if (W->SaveGame(W->MenuSlot))
-			{
-				W->SetState(EDoomGameState::Playing);
-			}
-		}
-		else if (W->MenuItem == 5)
-		{
-			W->LoadGame(W->MenuSlot);
-		}
-		else if (Item.StartsWith(TEXT("QUIT")))
-		{
-			UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
-		}
-		break;
-	}
 	default:
 		break;
 	}
@@ -331,26 +276,26 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 
 void ADoomPlayerController::MenuBack(const FInputActionValue& V)
 {
-	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->bInputLocked)
+	UDoomWorld* W = MenuWorld(GetWorld());
+	if (!W)
 	{
 		return;
 	}
-	if (W->GetState() == EDoomGameState::Finale)
+	switch (W->GetState())
 	{
-		W->FinishFinale();
-		return;
+	case EDoomGameState::Finale: W->FinishFinale(); break;
+	case EDoomGameState::Playing:
+	case EDoomGameState::Title: W->Menu.Open(*W, EMenuPage::Main); break;
+	case EDoomGameState::Menu: W->Menu.Back(*W); break;
+	default: break;
 	}
-	if (W->GetState() == EDoomGameState::Playing)
+}
+
+void ADoomPlayerController::OpenMenuPage(int32 Page)
+{
+	UDoomWorld* W = MenuWorld(GetWorld());
+	if (W && (W->GetState() == EDoomGameState::Playing || W->GetState() == EDoomGameState::Title))
 	{
-		W->SetState(EDoomGameState::Menu);
-		W->MenuItem = 0;
-		W->RefreshSlots();
-		W->PlaySound(TEXT("SWTCHN"), nullptr);
-	}
-	else if (W->GetState() == EDoomGameState::Menu)
-	{
-		W->SetState(W->GetMap() ? EDoomGameState::Playing : EDoomGameState::Title);
-		W->PlaySound(TEXT("SWTCHX"), nullptr);
+		W->Menu.Open(*W, (EMenuPage)Page);
 	}
 }
