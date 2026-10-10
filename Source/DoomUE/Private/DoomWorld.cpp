@@ -166,6 +166,7 @@ bool UDoomWorld::InitWads()
 
 	FString IWad = Settings->IWAD;
 	FParse::Value(FCommandLine::Get(), TEXT("-iwad="), IWad);
+	IWadName = FPaths::GetCleanFilename(IWad).ToLower();
 	TArray<FString> PWads = Settings->PWADs;
 	FString FileArg;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg))
@@ -258,7 +259,7 @@ void UDoomWorld::UnloadMap()
 	Map.Reset();
 }
 
-bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart)
+bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame)
 {
 	if (!Wad.IsValid() && !InitWads())
 	{
@@ -288,8 +289,12 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart)
 	Level->Build(*Map, *Gfx, Movable, bModern);
 
 	SetupEnvironment();
-	StartSectorSpecials();
-	SpawnMapThings();
+	if (!bForSaveGame)
+	{
+		// a save game brings its own lights, movers, monsters and things
+		StartSectorSpecials();
+		SpawnMapThings();
+	}
 
 	if (ADoomPlayer* P = GetPlayer())
 	{

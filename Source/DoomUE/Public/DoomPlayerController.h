@@ -36,6 +36,8 @@ public:
 	UPROPERTY() TObjectPtr<UInputAction> MenuRightAction;
 	UPROPERTY() TObjectPtr<UInputAction> MenuSelectAction;
 	UPROPERTY() TObjectPtr<UInputAction> MenuBackAction;
+	UPROPERTY() TObjectPtr<UInputAction> QuickSaveAction;
+	UPROPERTY() TObjectPtr<UInputAction> QuickLoadAction;
 
 	UPROPERTY() TObjectPtr<UInputMappingContext> GameplayContext;
 	UPROPERTY() TObjectPtr<UInputMappingContext> MenuContext;

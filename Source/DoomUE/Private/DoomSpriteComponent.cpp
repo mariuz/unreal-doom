@@ -97,6 +97,7 @@ void UDoomSpriteComponent::SetSector(int32 InSector)
 
 void UDoomSpriteComponent::SetFullBright(bool b)
 {
+	bBright = b;
 	if (MID)
 	{
 		MID->SetScalarParameterValue(TEXT("FullBright"), b ? 1.f : 0.f);
@@ -105,9 +106,24 @@ void UDoomSpriteComponent::SetFullBright(bool b)
 
 void UDoomSpriteComponent::SetFuzz(bool b)
 {
+	bFuzzOn = b;
 	if (MID)
 	{
 		MID->SetScalarParameterValue(TEXT("Fuzz"), b ? 1.f : 0.f);
+	}
+}
+
+void UDoomSpriteComponent::DoomSerialize(FArchive& Ar)
+{
+	bool Bright = bBright, Fuzz = bFuzzOn;
+	Ar << Sprite << Seq << Index << TicsPerFrame << TicCount << bLoop << bDone << Bright << Fuzz << DoomAngle;
+	if (Ar.IsLoading())
+	{
+		Index = FMath::Clamp(Index, 0, FMath::Max(0, Seq.Len() - 1));
+		SetFullBright(Bright);
+		SetFuzz(Fuzz);
+		LastPicture = nullptr;
+		bDirty = true;
 	}
 }
 

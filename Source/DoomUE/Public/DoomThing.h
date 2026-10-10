@@ -30,6 +30,9 @@ public:
 	/** Keeps the thing on its sector's floor (or ceiling for hanging things). */
 	void SnapToPlanes();
 
+	/** Save games: health, death and animation. */
+	void DoomSerialize(FArchive& Ar);
+
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	const FDoomThingDef* Def = nullptr;

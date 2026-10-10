@@ -38,6 +38,9 @@ public:
 	void SetFullBright(bool b);
 	void SetFuzz(bool b);
 
+	/** Save games: sprite prefix, sequence, frame, timing, brightness and fuzz. */
+	void DoomSerialize(FArchive& Ar);
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
@@ -60,4 +63,6 @@ private:
 	int32 Sector = -1;
 	const void* LastPicture = nullptr;
 	bool bLastMirror = false;
+	bool bBright = false;
+	bool bFuzzOn = false;
 };

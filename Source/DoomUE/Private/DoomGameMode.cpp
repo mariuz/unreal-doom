@@ -47,6 +47,11 @@ void ADoomGameMode::StartPlay()
 		UE_LOG(LogDoom, Error, TEXT("No usable IWAD. Put one in Content/WADs or pass -iwad=<path>"));
 		return;
 	}
+	int32 LoadSlot = -1;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-loadgame="), LoadSlot) && W->LoadGame(LoadSlot))
+	{
+		return;
+	}
 	FString Warp = GetDefault<UDoomSettings>()->StartMap;
 	FParse::Value(FCommandLine::Get(), TEXT("-warp="), Warp);
 	if (!Warp.IsEmpty())
@@ -77,6 +82,13 @@ void ADoomGameMode::StartPlay()
 		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
 		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
 		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
+	}
+
+	// -savetest: save mid-action, scramble, load, compare (needs -warp)
+	if (FParse::Param(FCommandLine::Get(), TEXT("savetest")) && W->GetMap())
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W]() { W->RunSaveTest(); }, 2.f, false);
 	}
 
 	// -autotest[=seconds] [-autoyaw=deg]: screenshot Saved/Screenshots/autotest_<map>.png and quit

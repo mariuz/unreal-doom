@@ -30,6 +30,9 @@ TArray<FString> ADoomHUD::MenuEntries(UDoomWorld* W)
 	E.Add(FString::Printf(TEXT("MAP: < %s >"), *MapName));
 	E.Add(FString::Printf(TEXT("SKILL: < %s >"), W ? SkillNames[FMath::Clamp(W->MenuSkill, 1, 5) - 1] : TEXT("")));
 	E.Add(FString::Printf(TEXT("RENDERER: < %s >"), W && W->MenuModern ? TEXT("MODERN (LUMEN)") : TEXT("CLASSIC")));
+	const FString Slot = W ? FString::Printf(TEXT("%d: %s"), W->MenuSlot, *W->SlotDescription(W->MenuSlot)) : FString();
+	E.Add(FString::Printf(TEXT("SAVE: < %s >"), *Slot));
+	E.Add(FString::Printf(TEXT("LOAD: < %s >"), *Slot));
 	E.Add(TEXT("QUIT"));
 	return E;
 }
@@ -436,15 +439,19 @@ void ADoomHUD::DrawMenu()
 	}
 	DrawPatchByName(TEXT("M_DOOM"), 94, 2, false);
 	const TArray<FString> Entries = MenuEntries(W);
-	const float Y0 = 70;
+	const float Y0 = 64, Step = 16;
 	for (int32 i = 0; i < Entries.Num(); ++i)
 	{
 		const FLinearColor C = i == W->MenuItem ? FLinearColor(1.f, 0.9f, 0.5f) : FLinearColor(0.85f, 0.15f, 0.1f);
-		DrawText(Entries[i], 80, Y0 + i * 18, 1.5f, C);
+		DrawText(Entries[i], 64, Y0 + i * Step, 1.3f, C);
 	}
 	const bool bBlink = FMath::Fmod(GetWorld()->GetRealTimeSeconds(), 0.5f) < 0.25f;
-	DrawPatchByName(bBlink ? TEXT("M_SKULL1") : TEXT("M_SKULL2"), 48, Y0 - 5 + W->MenuItem * 18, false);
-	DrawText(TEXT("ARROWS: CHOOSE  ENTER: SELECT  ESC: BACK"), 40, 188, 0.8f, FLinearColor(0.7f, 0.7f, 0.7f));
+	DrawPatchByName(bBlink ? TEXT("M_SKULL1") : TEXT("M_SKULL2"), 36, Y0 - 6 + W->MenuItem * Step, false);
+	if (W->MessageTics > 0)
+	{
+		DrawText(W->Message, 2, 2);
+	}
+	DrawText(TEXT("ARROWS: CHOOSE  ENTER: SELECT  ESC: BACK  F6/F9: QUICK SAVE/LOAD"), 8, 188, 0.8f, FLinearColor(0.7f, 0.7f, 0.7f));
 }
 
 void ADoomHUD::DrawIntermission()
