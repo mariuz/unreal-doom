@@ -56,6 +56,10 @@ void FDoomGraphics::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	Collector.AddReferencedObjects(Owned);
 	Collector.AddReferencedObject(Colormap);
+	for (auto& Pair : ColormappedCache)
+	{
+		Collector.AddReferencedObject(Pair.Value);
+	}
 }
 
 void FDoomGraphics::ParseTextureDefs()
@@ -425,7 +429,8 @@ void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
 	Tex->SRGB = true;
 	Tex->AddressX = bWrap ? TA_Wrap : TA_Clamp;
 	Tex->AddressY = bWrap ? TA_Wrap : TA_Clamp;
-	Tex->LODGroup = bMips ? TEXTUREGROUP_World : TEXTUREGROUP_Pixels2D;
+	// Pixels2D is never LOD-biased: a World-group bias could leave a one-mip texture with no resident mip
+	Tex->LODGroup = TEXTUREGROUP_Pixels2D;
 	Tex->NeverStream = true;
 	Tex->UpdateResource();
 	for (int32 m = 0; m < MipPixels.Num(); ++m)
@@ -444,6 +449,128 @@ void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
 	}
 	Pic.Texture = Tex;
 	Owned.Add(Tex);
+	UploadIndices(Pic, bWrap, bMips && !bNoMips);
+}
+
+int32 FDoomGraphics::NearestPaletteIndex(int32 R, int32 G, int32 B)
+{
+	const uint32 Key = (R << 16) | (G << 8) | B;
+	if (const uint8* Found = NearestCache.Find(Key))
+	{
+		return *Found;
+	}
+	const TArray<FColor>& Pal = Wad.Palette(0);
+	int32 Best = 0, BestDist = MAX_int32;
+	for (int32 i = 0; i < 256; ++i)
+	{
+		const int32 DR = Pal[i].R - R, DG = Pal[i].G - G, DB = Pal[i].B - B;
+		const int32 D = DR * DR + DG * DG + DB * DB;
+		if (D < BestDist) { BestDist = D; Best = i; }
+	}
+	NearestCache.Add(Key, (uint8)Best);
+	return Best;
+}
+
+void FDoomGraphics::UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips)
+{
+	// R = palette index, A = coverage; linear (not sRGB) so the index survives sampling exactly
+	TArray<FColor> Pixels;
+	Pixels.SetNumUninitialized(Pic.Width * Pic.Height);
+	for (int32 i = 0; i < Pixels.Num(); ++i)
+	{
+		const int16 Idx = Pic.Indices[i];
+		Pixels[i] = FColor((uint8)FMath::Max<int16>(Idx, 0), 0, 0, Idx < 0 ? 0 : 255);
+	}
+	UTexture2D* Tex = UTexture2D::CreateTransient(Pic.Width, Pic.Height, PF_B8G8R8A8, NAME_None,
+		TConstArrayView64<uint8>(reinterpret_cast<const uint8*>(Pixels.GetData()), (int64)Pixels.Num() * 4));
+	if (!Tex)
+	{
+		return;
+	}
+	// mips: the palette colour nearest each 2x2 block's average (indices cannot be averaged)
+	TArray<TArray<FColor>> MipPixels;
+	if (bMips && IsPow2(Pic.Width) && IsPow2(Pic.Height))
+	{
+		const TArray<FColor>& Pal = Wad.Palette(0);
+		FTexturePlatformData* PD = Tex->GetPlatformData();
+		TArray<FColor> PrevRgb;
+		PrevRgb.SetNumUninitialized(Pixels.Num());
+		for (int32 i = 0; i < Pixels.Num(); ++i)
+		{
+			const FColor& P = Pal[Pixels[i].R];
+			PrevRgb[i] = FColor(P.R, P.G, P.B, Pixels[i].A);
+		}
+		int32 W = Pic.Width, H = Pic.Height;
+		while (W > 1 || H > 1)
+		{
+			const int32 NW = FMath::Max(1, W / 2), NH = FMath::Max(1, H / 2);
+			TArray<FColor> NextRgb, Next;
+			NextRgb.SetNumUninitialized(NW * NH);
+			Next.SetNumUninitialized(NW * NH);
+			for (int32 Y = 0; Y < NH; ++Y)
+			{
+				for (int32 X = 0; X < NW; ++X)
+				{
+					int32 R = 0, G = 0, B = 0, A = 0, N = 0;
+					for (int32 dy = 0; dy < 2; ++dy)
+					{
+						for (int32 dx = 0; dx < 2; ++dx)
+						{
+							const FColor& C = PrevRgb[FMath::Min(Y * 2 + dy, H - 1) * W + FMath::Min(X * 2 + dx, W - 1)];
+							R += C.R; G += C.G; B += C.B; A += C.A; ++N;
+						}
+					}
+					const FColor Avg(R / N, G / N, B / N, A * 2 >= 255 * N ? 255 : 0);
+					NextRgb[Y * NW + X] = Avg;
+					Next[Y * NW + X] = FColor((uint8)NearestPaletteIndex(Avg.R, Avg.G, Avg.B), 0, 0, Avg.A);
+				}
+			}
+			FTexture2DMipMap* Mip = new FTexture2DMipMap(NW, NH, 1);
+			PD->Mips.Add(Mip);
+			Mip->BulkData.Lock(LOCK_READ_WRITE);
+			FMemory::Memcpy(Mip->BulkData.Realloc((int64)NW * NH * 4), Next.GetData(), (int64)NW * NH * 4);
+			Mip->BulkData.Unlock();
+			MipPixels.Add(MoveTemp(Next));
+			PrevRgb = MoveTemp(NextRgb);
+			W = NW;
+			H = NH;
+		}
+	}
+	Tex->Filter = TF_Nearest;
+	Tex->SRGB = false;
+	Tex->AddressX = Tex->AddressY = bWrap ? TA_Wrap : TA_Clamp;
+	// Pixels2D is never LOD-biased: a World-group bias could leave a one-mip texture with no resident mip
+	Tex->LODGroup = TEXTUREGROUP_Pixels2D;
+	Tex->NeverStream = true;
+	Tex->UpdateResource();
+	for (int32 m = 0; m < MipPixels.Num(); ++m)
+	{
+		const int32 MW = FMath::Max(1, Pic.Width >> (m + 1));
+		const int32 MH = FMath::Max(1, Pic.Height >> (m + 1));
+		FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, MW, MH);
+		uint8* Copy = (uint8*)FMemory::Malloc((SIZE_T)MW * MH * 4);
+		FMemory::Memcpy(Copy, MipPixels[m].GetData(), (SIZE_T)MW * MH * 4);
+		Tex->UpdateTextureRegions(m + 1, 1, Region, MW * 4, 4, Copy,
+			[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+			{
+				FMemory::Free(Data);
+				delete Regions;
+			});
+	}
+	Pic.IndexTexture = Tex;
+	Owned.Add(Tex);
+}
+
+UTexture2D* FDoomGraphics::ColormappedPicture(const FDoomPicture& Pic, int32 Row)
+{
+	const TPair<const FDoomPicture*, int32> Key(&Pic, Row);
+	if (TObjectPtr<UTexture2D>* Found = ColormappedCache.Find(Key))
+	{
+		return *Found;
+	}
+	UTexture2D* Tex = MakeTextureFromIndices(Pic, FMath::Clamp(Row, 0, 33), 0);
+	ColormappedCache.Add(Key, Tex);
+	return Tex;
 }
 
 const FDoomPicture* FDoomGraphics::Texture(FName Name)

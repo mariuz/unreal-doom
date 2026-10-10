@@ -441,6 +441,9 @@ void UDoomWorld::SpawnMapThings()
 			if (ADoomMonster* M = SpawnMonster(T.Type, Doom::ToUE(T.P, Floor), T.Angle))
 			{
 				M->bAmbush = (T.Flags & 8) != 0;
+				M->SpawnFeet = Doom::ToUE(T.P, Floor);
+				M->SpawnAngle = T.Angle;
+				M->bCanRespawn = (M->Def->Flags & EThingFlag::CountKill) != 0;
 			}
 		}
 		else
@@ -816,6 +819,8 @@ void UDoomWorld::Tick(float DeltaTime)
 		}
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("FixedColormap"), Fixed);
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Modern"), bModern ? 1.f : 0.f);
+		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("PaletteExact"),
+			(GetDefault<UDoomSettings>()->bPaletteExact && !FParse::Param(FCommandLine::Get(), TEXT("smooth"))) ? 1.f : 0.f);
 	}
 }
 
@@ -851,6 +856,7 @@ void UDoomWorld::RunTic()
 	TicLights();
 	TicSectorDamage();
 	TicBrain();
+	TicRespawn();
 	if (State != EDoomGameState::Playing)
 	{
 		return;
@@ -2019,6 +2025,50 @@ void UDoomWorld::LoadPatches(const TArray<FString>& DehFiles)
 		{
 			DoomInfo::SetParTime(Pair.Key, Pair.Value.ParTime);
 		}
+	}
+}
+
+void UDoomWorld::TicRespawn()
+{
+	// Nightmare (or -respawn): a corpse dead 12 s may rise at its spawn spot, checked every 32 tics
+	static const bool bRespawnParam = FParse::Param(FCommandLine::Get(), TEXT("respawn"));
+	if ((Skill < 5 && !bRespawnParam) || (LevelTic & 31) != 0)
+	{
+		return;
+	}
+	const TArray<TWeakObjectPtr<ADoomMonster>> Current = Monsters;
+	for (const TWeakObjectPtr<ADoomMonster>& Weak : Current)
+	{
+		ADoomMonster* M = Weak.Get();
+		if (!M || M->State != EMonsterState::Dead || !M->bCanRespawn || M->DeadTics < 12 * Doom::TicRate || DoomInfo::Random() > 4)
+		{
+			continue;
+		}
+		// the spot must be free of bodies
+		const float S = Doom::Scale;
+		const FVector Center = M->SpawnFeet + FVector(0, 0, M->Def->Height * 0.5f * S + 1.f);
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomRespawn), false, M);
+		FCollisionObjectQueryParams Bodies;
+		Bodies.AddObjectTypesToQuery(ECC_Pawn);
+		Bodies.AddObjectTypesToQuery(ECC_DoomMonster);
+		if (GetWorld()->OverlapAnyTestByObjectType(Center, FQuat::Identity, Bodies,
+			FCollisionShape::MakeCapsule(M->Def->Radius * S, M->Def->Height * 0.5f * S), Q))
+		{
+			continue;
+		}
+		const FVector Old = M->GetActorLocation();
+		SpawnEffect(TEXT("TFOG"), TEXT("ABABCDEFGHIJ"), 6, Old);
+		SpawnEffect(TEXT("TFOG"), TEXT("ABABCDEFGHIJ"), 6, Center);
+		PlaySound(TEXT("TELEPT"), &Center);
+		if (ADoomMonster* Risen = SpawnMonster(M->Def->DoomEdNum, M->SpawnFeet, M->SpawnAngle))
+		{
+			--TotalKills; // like Doom, the kill already counted stays counted
+			Risen->SpawnFeet = M->SpawnFeet;
+			Risen->SpawnAngle = M->SpawnAngle;
+			Risen->bCanRespawn = true;
+			UE_LOG(LogDoom, Log, TEXT("Nightmare: %s respawned"), Risen->Def->Name);
+		}
+		M->Destroy();
 	}
 }
 

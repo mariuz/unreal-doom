@@ -103,6 +103,7 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FIELD OF VIEW: %.0f"), S->FieldOfView) });
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("WARP TO: < %s >"), Maps.IsValidIndex(WarpIndex) ? *Maps[WarpIndex] : TEXT("-")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("COLORS: %s"), S->bPaletteExact ? TEXT("EXACT") : TEXT("SMOOTH")) });
 		break;
 	}
 	case EMenuPage::Sound:
@@ -275,6 +276,7 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 			WarpIndex = (WarpIndex + Dir + N) % N;
 			break;
 		}
+		case 8: S->bPaletteExact = !S->bPaletteExact; break;
 		default: bChanged = false; break;
 		}
 	}
@@ -346,7 +348,7 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6)))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8)))
 	{
 		Adjust(W, 1);
 		return;

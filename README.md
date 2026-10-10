@@ -24,6 +24,7 @@ with `-iwad=` / `-file=`.
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
 | `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP. Vanilla nodes, ZDoom extended nodes (`XNOD`/`ZNOD`, `XGLN`/`ZGLN`, `XGL2`/`ZGL2`, `XGL3`/`ZGL3`; the `Z` variants inflated with the engine's zlib) and glBSP GL nodes (`GL_<map>` lumps, versions 1 to 5) all load into the same structures |
 | Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components |
+| Palette-exact colours | Every texture also has a palette-index twin (mips pick the palette entry nearest each 2x2 average); the classic shader computes Doom's colormap row and looks the colour up in the WAD's `COLORMAP` through `PLAYPAL` (Options > Colors: exact / smooth). The weapon uses the psprite's own row |
 | Sector light, fake contrast, light diminishing | One texel per sector in a light texture updated each tic (`UpdateTextureRegions`), so flickering lights never rebuild meshes. A **Custom HLSL** node runs Doom's `scalelight` / `zlight` colormap selection per pixel from `PixelDepth` |
 | Gun flash light, invulnerability, light amp | `UMaterialParameterCollection` (`MPC_Doom`) globals: `ExtraLight`, `FixedColormap`, `Tic` |
 | Sky | Unlit material that projects the sky texture from the camera vector (1024 columns per turn, rows at slope `(100-R)/160`). Applied to sky ceilings and to the sky gaps Doom leaves undrawn |
@@ -52,7 +53,9 @@ with `-iwad=` / `-file=`.
 
 * **Classic** (default): unlit, with Doom's palette-space lighting: sector light, fake contrast,
   distance diminishing, full-bright frames, gun flash, and the invulnerability / light-amp colormaps.
-  Manual exposure and `ToneCurveAmount = 0` keep the palette colours 1:1.
+  Manual exposure and `ToneCurveAmount = 0` keep the palette colours 1:1. Spectres use a
+  translucent material that copies the scene one 320x200 row above or below and darkens it,
+  like Doom's fuzz.
 * **Modern** (`-modern`, or toggle in the menu): lit materials. Sector light becomes emissive
   ambient that **Lumen** GI and reflections spread. Procedural meshes support hardware ray tracing.
   There are dynamic shadow-casting point lights on projectiles, explosions, the muzzle flash and
@@ -105,6 +108,9 @@ loose files.
 | `-endtest [-endpress=N]` | with `-warp`: exit the map straight into its ending and press Enter N times (texts, pictures, bunny, cast) |
 | `-brainawake` | wake MAP30's monster spawner at once |
 | `-menupage=N [-menuitem=N]` | open a menu page (0 main, 2 skill, 4 options, 5 sound, 6 load, 7 save, 8 help, 9 quit) for screenshots |
+| `-respawn` | Nightmare-style monster respawning on any skill |
+| `-smooth` | the smooth light approximation instead of the exact COLORMAP |
+| `-spawnfront=DoomEdNum` | a monster in front of the player at start |
 | `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
@@ -162,6 +168,12 @@ Endings (`-endtest`): E1M8 shows Freedoom's episode text, then `CREDIT`; E3M8 go
 bunny; Freedoom 2's MAP30 starts the cast call. With `-brainawake`, MAP30's spawner hatched
 hell knights, arachnotrons, a cacodemon and barons at the spawn spots.
 
+Palette-exact lighting, the spectre fuzz material and Nightmare respawning (on skill 5, 4 of 5
+killed zombiemen rose again within 75 s) were checked with `-autotest` captures. Level
+collision is now cooked synchronously at load: before, the player could spawn before the
+floor's collision existed and fall out of the map (seven consecutive runs now start at the
+exact player start).
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -170,7 +182,7 @@ cases, knockback strength, and HUD offsets.
 
 Not done yet (roughly in priority order):
 
-1. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
-2. DeHackEd frame / code pointer edits and classic `Text` replacements, UDMF maps.
-3. Typed save names (slots are described automatically).
+1. DeHackEd frame / code pointer edits and classic `Text` replacements, UDMF maps.
+2. Typed save names (slots are described automatically).
+3. The PLAYPAL damage / pickup palettes applied exactly (today they are screen tints).
 4. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

@@ -292,6 +292,7 @@ private:
 	int32 BrainTargetIndex = 0;
 	int32 BrainExitTics = 0;
 	void TicBrain();
+	void TicRespawn();
 	void LoadPatches(const TArray<FString>& DehFiles);
 	TMap<int32, FString> SlotCache;
 	void SerializeState(FArchive& Ar);

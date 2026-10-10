@@ -172,6 +172,18 @@ void ADoomGameMode::StartPlay()
 		}, 1.f, false);
 	}
 
+	// -spawnfront=DoomEdNum: a monster 160 units in front of the player (spectre fuzz checks)
+	int32 SpawnFront = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-spawnfront="), SpawnFront) && W->GetMap())
+	{
+		if (ADoomPlayer* P = W->GetPlayer())
+		{
+			const FVector Fwd = FRotator(0, P->GetControlRotation().Yaw, 0).Vector();
+			const FVector Feet = P->GetActorLocation() - FVector(0, 0, P->GetSimpleCollisionHalfHeight()) + Fwd * 160.f * Doom::Scale;
+			W->SpawnMonster(SpawnFront, Feet, Doom::YawToAngle(P->GetControlRotation().Yaw) + 180.f);
+		}
+	}
+
 	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
 	int32 KillType = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())
@@ -223,7 +235,7 @@ void ADoomGameMode::StartPlay()
 			{
 				const FString Name = FString::Printf(TEXT("autotest_%s.png"), W->GetMapName().IsEmpty() ? TEXT("title") : *W->GetMapName());
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / Name, true, false);
-				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d"), *Name, W->Kills, W->TotalKills, W->Items, W->TotalItems);
+				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d | %s"), *Name, W->Kills, W->TotalKills, W->Items, W->TotalItems, *W->StateFingerprint());
 			});
 		}, Delay, false);
 		GetWorldTimerManager().SetTimer(Quit, []() { FPlatformMisc::RequestExit(false, TEXT("DoomAutotest")); }, Delay + 2.f, false);
