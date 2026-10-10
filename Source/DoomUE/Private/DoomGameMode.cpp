@@ -134,6 +134,30 @@ void ADoomGameMode::StartPlay()
 		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
 	}
 
+	// -endtest [-endpress=N]: finish the warped map straight into its ending; press Enter N times
+	if (FParse::Param(FCommandLine::Get(), TEXT("endtest")) && W->GetMap())
+	{
+		int32 Presses = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("-endpress="), Presses);
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W, Presses]()
+		{
+			W->ExitLevel(false);
+			W->FinishIntermission();
+			for (int32 i = 0; i < Presses; ++i)
+			{
+				W->FinaleTic = 100000;
+				W->FinaleInput();
+			}
+			if (W->GetState() == EDoomGameState::Finale && W->FinaleStage == UDoomWorld::EFinaleStage::Text)
+			{
+				W->FinaleTic = 100000; // whole text for the screenshot
+			}
+			UE_LOG(LogDoom, Display, TEXT("Endtest: state %d stage %d picture %s text lines %d cast %s"),
+				(int32)W->GetState(), (int32)W->FinaleStage, *W->FinalePicture, W->FinaleText.Num(), *W->CastName());
+		}, 1.f, false);
+	}
+
 	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
 	int32 KillType = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())
@@ -167,12 +191,7 @@ void ADoomGameMode::StartPlay()
 	{
 		const float Delay = AutoTest.IsEmpty() ? 4.f : FCString::Atof(*AutoTest);
 		// deterministic captures: stray clicks or keys on the test window must not play the game
-		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
-		{
-			PC->DisableInput(PC);
-			PC->SetIgnoreMoveInput(true);
-			PC->SetIgnoreLookInput(true);
-		}
+		W->bInputLocked = true;
 		float Yaw = 0, Pitch = 0;
 		const bool bYaw = FParse::Value(FCommandLine::Get(), TEXT("-autoyaw="), Yaw);
 		const bool bPitch = FParse::Value(FCommandLine::Get(), TEXT("-autopitch="), Pitch);

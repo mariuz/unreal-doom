@@ -199,7 +199,7 @@ void ADoomPlayerController::Tick(float DeltaSeconds)
 void ADoomPlayerController::MenuUp(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (W && W->GetState() == EDoomGameState::Menu)
+	if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
 	{
 		const int32 N = ADoomHUD::MenuEntries(W).Num();
 		W->MenuItem = (W->MenuItem + N - 1) % N;
@@ -210,7 +210,7 @@ void ADoomPlayerController::MenuUp(const FInputActionValue& V)
 void ADoomPlayerController::MenuDown(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (W && W->GetState() == EDoomGameState::Menu)
+	if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
 	{
 		const int32 N = ADoomHUD::MenuEntries(W).Num();
 		W->MenuItem = (W->MenuItem + 1) % N;
@@ -221,7 +221,7 @@ void ADoomPlayerController::MenuDown(const FInputActionValue& V)
 void ADoomPlayerController::MenuLeft(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->GetState() != EDoomGameState::Menu || !W->GetWad())
+	if (!W || W->bInputLocked || W->GetState() != EDoomGameState::Menu || !W->GetWad())
 	{
 		return;
 	}
@@ -240,7 +240,7 @@ void ADoomPlayerController::MenuLeft(const FInputActionValue& V)
 void ADoomPlayerController::MenuRight(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W || W->GetState() != EDoomGameState::Menu || !W->GetWad())
+	if (!W || W->bInputLocked || W->GetState() != EDoomGameState::Menu || !W->GetWad())
 	{
 		return;
 	}
@@ -259,7 +259,7 @@ void ADoomPlayerController::MenuRight(const FInputActionValue& V)
 void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W)
+	if (!W || W->bInputLocked)
 	{
 		return;
 	}
@@ -272,10 +272,7 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 		W->PlaySound(TEXT("SWTCHN"), nullptr);
 		break;
 	case EDoomGameState::Finale:
-		if (W->FinaleTic > Doom::TicRate)
-		{
-			W->FinishFinale();
-		}
+		W->FinaleInput();
 		break;
 	case EDoomGameState::Intermission:
 		if (W->IntermissionTic > Doom::TicRate)
@@ -335,8 +332,13 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 void ADoomPlayerController::MenuBack(const FInputActionValue& V)
 {
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-	if (!W)
+	if (!W || W->bInputLocked)
 	{
+		return;
+	}
+	if (W->GetState() == EDoomGameState::Finale)
+	{
+		W->FinishFinale();
 		return;
 	}
 	if (W->GetState() == EDoomGameState::Playing)

@@ -256,6 +256,12 @@ void UDoomWorld::UnloadMap()
 	Movers.Reset();
 	Lights.Reset();
 	Buttons.Reset();
+	for (FBrainCube& C : BrainCubes) if (C.Visual.IsValid()) C.Visual->Destroy();
+	BrainCubes.Reset();
+	BrainShooters.Reset();
+	BrainTargets.Reset();
+	bBrainAwake = false;
+	BrainTimer = BrainTargetIndex = BrainExitTics = 0;
 	if (Level)
 	{
 		Level->Destroy();
@@ -407,6 +413,14 @@ void UDoomWorld::SpawnMapThings()
 			}
 			continue;
 		}
+		if (T.Type == 87 || T.Type == 89)
+		{
+			// the Icon of Sin's spawn targets and spawn shooter (invisible)
+			const int32 Sec = Map->SectorAt(T.P);
+			const FVector Feet = Doom::ToUE(T.P, Sec >= 0 ? Map->Sectors[Sec].Floor : 0);
+			(T.Type == 87 ? BrainTargets : BrainShooters).Add(Feet);
+			continue;
+		}
 		if ((T.Type >= 2 && T.Type <= 4) || T.Type == 11 || T.Type == 14)
 		{
 			continue;
@@ -547,14 +561,14 @@ ADoomThing* UDoomWorld::SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float
 	return T;
 }
 
-ADoomThing* UDoomWorld::SpawnEffect(const FString& SpriteName, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright)
+ADoomThing* UDoomWorld::SpawnEffect(const FString& SpriteName, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright, bool bLoop)
 {
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	ADoomThing* T = GetWorld()->SpawnActor<ADoomThing>(ADoomThing::StaticClass(), FTransform(UEPos), SP);
 	if (T)
 	{
-		T->InitEffect(this, SpriteName, Frames, Tics, bFullBright);
+		T->InitEffect(this, SpriteName, Frames, Tics, bFullBright, bLoop);
 		RegisterThing(T);
 	}
 	return T;
@@ -737,7 +751,14 @@ void UDoomWorld::Tick(float DeltaTime)
 		while (ScreenAccumulator >= Doom::TicSeconds)
 		{
 			ScreenAccumulator -= Doom::TicSeconds;
-			++(State == EDoomGameState::Intermission ? IntermissionTic : FinaleTic);
+			if (State == EDoomGameState::Intermission)
+			{
+				++IntermissionTic;
+			}
+			else
+			{
+				TicFinale();
+			}
 		}
 	}
 	if (State != EDoomGameState::Playing || !Map.IsValid())
@@ -804,6 +825,11 @@ void UDoomWorld::RunTic()
 	TicMovers();
 	TicLights();
 	TicSectorDamage();
+	TicBrain();
+	if (State != EDoomGameState::Playing)
+	{
+		return;
+	}
 
 	// switch buttons popping back
 	for (int32 i = Buttons.Num() - 1; i >= 0; --i)
@@ -1892,19 +1918,6 @@ void UDoomWorld::NoiseAlert(AActor* Target, const FVector& Where)
 	}
 }
 
-void UDoomWorld::FinishFinale()
-{
-	FinaleText.Reset();
-	if (PendingMap.IsEmpty())
-	{
-		UnloadMap();
-		State = EDoomGameState::Title;
-		PlayTitleMusic();
-		return;
-	}
-	LoadMap(PendingMap, false);
-}
-
 FString UDoomWorld::LevelTitle(const FString& MapName) const
 {
 	if (const FDoomMapInfo* Info = MapInfo(MapName))
@@ -2035,7 +2048,9 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 	}
 	if (Type == TEXT("BossBrain"))
 	{
-		ExitLevel(false);
+		// explosions around the brain for three seconds, then the level ends
+		BrainExitTics = 3 * Doom::TicRate;
+		PlaySound(TEXT("BOSDTH"), nullptr);
 		return;
 	}
 	if (CurrentMap == TEXT("MAP07"))
@@ -2137,26 +2152,24 @@ void UDoomWorld::ExitLevel(bool bSecret)
 
 void UDoomWorld::FinishIntermission()
 {
-	// UMAPINFO story text between maps
+	// UMAPINFO story text between maps, else Doom's own episode / chapter texts
 	const FDoomMapInfo* Info = MapInfo(CurrentMap);
-	if (Info && State != EDoomGameState::Finale && !Info->bClearInterText)
+	if (Info && !Info->bClearInterText)
 	{
 		const TArray<FString>& Text = (bSecretExit && Info->InterTextSecret.Num()) ? Info->InterTextSecret : Info->InterText;
 		if (Text.Num())
 		{
-			FinaleText = Text;
-			FinaleBackdrop = Info->InterBackdrop.IsEmpty() ? FString(Wad->IsDoom2() ? TEXT("SLIME16") : TEXT("FLOOR4_8")) : Info->InterBackdrop;
-			FinaleTic = 0;
-			State = EDoomGameState::Finale;
-			PlayMusic(Wad->IsDoom2() ? TEXT("D_READ_M") : TEXT("D_VICTOR"));
+			StartFinaleText(Text, Info->InterBackdrop.IsEmpty() ? FString(Wad->IsDoom2() ? TEXT("SLIME16") : TEXT("FLOOR4_8")) : Info->InterBackdrop);
 			return;
 		}
 	}
+	if (!(Info && Info->bClearInterText) && StartVanillaText())
+	{
+		return;
+	}
 	if (PendingMap.IsEmpty())
 	{
-		UnloadMap();
-		State = EDoomGameState::Title;
-		PlayTitleMusic();
+		StartEnding();
 		return;
 	}
 	LoadMap(PendingMap, false);

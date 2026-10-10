@@ -519,7 +519,55 @@ void ADoomHUD::DrawFinale()
 {
 	UDoomWorld* W = DW();
 	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY);
-	// the backdrop flat tiled over the 320x200 frame, like Doom's text screens
+	using EStage = UDoomWorld::EFinaleStage;
+
+	if (W->FinaleStage == EStage::Picture)
+	{
+		DrawPatchByName(W->FinalePicture, 0, 0, false);
+		return;
+	}
+	if (W->FinaleStage == EStage::Bunny)
+	{
+		// PFUB2 slides left to reveal PFUB1, then THE END is spelled out
+		const float Scrolled = FMath::Clamp((W->FinaleTic - 230) / 2.f, 0.f, 320.f);
+		const FDoomPicture* P2 = W->GetGraphics()->Patch(TEXT("PFUB2"));
+		const FDoomPicture* P1 = W->GetGraphics()->Patch(TEXT("PFUB1"));
+		if (P2 && P2->Texture && Scrolled < 320.f)
+		{
+			const float Width = 320.f - Scrolled;
+			DrawTexture(P2->Texture, OX, OY, Width * SX, 200 * SY, Scrolled / P2->Width, 0, Width / P2->Width, 1, FLinearColor::White, BLEND_Opaque);
+		}
+		if (P1 && P1->Texture && Scrolled > 0.f)
+		{
+			DrawTexture(P1->Texture, OX + (320.f - Scrolled) * SX, OY, Scrolled * SX, 200 * SY, 0, 0, Scrolled / P1->Width, 1, FLinearColor::White, BLEND_Opaque);
+		}
+		if (W->FinaleTic >= 1180)
+		{
+			const int32 Stage = FMath::Min((W->FinaleTic - 1180) / 5, 6);
+			DrawPatchByName(FString::Printf(TEXT("END%d"), Stage), (320 - 13 * 8) / 2, (200 - 8 * 8) / 2, true);
+		}
+		return;
+	}
+	if (W->FinaleStage == EStage::Cast)
+	{
+		DrawPatchByName(TEXT("BOSSBACK"), 0, 0, false);
+		const UDoomWorld::FCastState& C = W->CastCall;
+		const TCHAR Frame = C.Sequence.IsValidIndex(C.Frame) ? C.Sequence[C.Frame] : TEXT('A');
+		const FDoomSpriteFrame F = W->GetGraphics()->SpriteFrame(W->CastSprite(), Frame, 1);
+		if (F.Picture && F.Picture->Texture)
+		{
+			const float X = 160.f - (F.bMirror ? F.Picture->Width - F.Picture->LeftOffset : F.Picture->LeftOffset);
+			const float Y = 170.f - F.Picture->TopOffset;
+			// mirrored frames draw with reversed U
+			DrawTexture(F.Picture->Texture, OX + X * SX, OY + Y * SY, F.Picture->Width * SX, F.Picture->Height * SY,
+				F.bMirror ? 1.f : 0.f, 0, F.bMirror ? -1.f : 1.f, 1, FLinearColor::White, BLEND_Translucent);
+		}
+		const FString Name = W->CastName().ToUpper();
+		DrawText(Name, 160 - TextWidth(Name) / 2, 180, 1.f);
+		return;
+	}
+
+	// story text, typed out a character every 3 tics on the tiled backdrop flat
 	if (const FDoomPicture* Flat = W->GetGraphics()->Flat(FName(*W->FinaleBackdrop)))
 	{
 		for (int32 Y = 0; Y < 200; Y += 64)
@@ -531,24 +579,27 @@ void ADoomHUD::DrawFinale()
 			}
 		}
 	}
-	// typed out a character every 3 tics
 	const int32 Shown = W->FinaleTic / 3;
-	int32 Count = 0;
-	float Y = 10;
+	TArray<FString> Parts;
 	for (const FString& Line : W->FinaleText)
 	{
-		TArray<FString> Parts;
-		Line.ParseIntoArray(Parts, TEXT("\n"), false);
-		for (const FString& Part : Parts)
-		{
-			const int32 Visible = FMath::Clamp(Shown - Count, 0, Part.Len());
-			DrawText(Part.Left(Visible), 10, Y);
-			Count += Part.Len();
-			Y += 11;
-		}
+		TArray<FString> Split;
+		Line.ParseIntoArray(Split, TEXT("\n"), false);
+		Parts.Append(Split);
 	}
-	if (Shown > Count)
+	// texts longer than Doom's usual 15 lines shrink to stay above the prompt
+	const float Scale = FMath::Min(1.f, 172.f / FMath::Max(1, Parts.Num() * 11));
+	int32 Count = 0;
+	float Y = 6;
+	for (const FString& Part : Parts)
 	{
-		DrawText(TEXT("PRESS ENTER"), 160 - TextWidth(TEXT("PRESS ENTER")) / 2, 186, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
+		const int32 Visible = FMath::Clamp(Shown - Count, 0, Part.Len());
+		DrawText(Part.Left(Visible), 10, Y, Scale);
+		Count += Part.Len();
+		Y += 11 * Scale;
+	}
+	if (W->IsFinaleTextComplete())
+	{
+		DrawText(TEXT("PRESS ENTER"), 160 - TextWidth(TEXT("PRESS ENTER")) / 2, 188, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
 	}
 }

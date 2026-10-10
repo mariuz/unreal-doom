@@ -23,6 +23,9 @@ struct FDoomMapInfo
 	FString Next, NextSecret;
 	int32 ParTime = -1;
 	bool bEndGame = false;  // endgame / endpic / endbunny / endcast
+	FString EndPic;
+	bool bEndBunny = false;
+	bool bEndCast = false;
 	bool bNoIntermission = false;
 	TArray<FString> InterText, InterTextSecret;
 	bool bClearInterText = false;
