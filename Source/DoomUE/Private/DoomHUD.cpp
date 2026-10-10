@@ -491,6 +491,12 @@ void ADoomHUD::DrawMenu()
 			DrawPatchByName(TEXT("M_LSLEFT"), O.X - 8, Y + 7, true);
 			for (int32 k = 0; k < 24; ++k) DrawPatchByName(TEXT("M_LSCNTR"), O.X + k * 8, Y + 7, true);
 			DrawPatchByName(TEXT("M_LSRGHT"), O.X + 24 * 8, Y + 7, true);
+			if (M.bEditing && M.Page == EMenuPage::Save && i == M.Item)
+			{
+				const bool bCursor = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
+				DrawText(M.EditText + (bCursor ? TEXT("_") : TEXT("")), O.X, Y);
+				continue;
+			}
 			DrawText(R.Text, O.X, Y, 1.f, R.bEnabled || M.Page == EMenuPage::Save ? FLinearColor::White : Dim);
 			continue;
 		}

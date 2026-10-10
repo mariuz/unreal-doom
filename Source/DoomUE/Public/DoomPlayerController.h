@@ -20,6 +20,8 @@ public:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 	virtual void Tick(float DeltaSeconds) override;
+	/** While a save name is typed, keys go to the menu instead of Enhanced Input. */
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	UPROPERTY() TObjectPtr<UInputAction> MoveAction;
 	UPROPERTY() TObjectPtr<UInputAction> LookAction;

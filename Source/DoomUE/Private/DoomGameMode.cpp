@@ -229,6 +229,34 @@ void ADoomGameMode::StartPlay()
 		}
 	}
 
+	// -savename=TEXT [-savecommit]: type TEXT as slot 1's save name (key by key); commit with Enter
+	FString SaveName;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-savename="), SaveName, false) && W->GetMap())
+	{
+		const bool bCommit = FParse::Param(FCommandLine::Get(), TEXT("savecommit"));
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W, SaveName, bCommit]()
+		{
+			W->Menu.Open(*W, EMenuPage::Save);
+			W->Menu.Item = 0;
+			W->Menu.Select(*W);
+			for (TCHAR C : SaveName)
+			{
+				const FKey Key = C == ' ' ? EKeys::SpaceBar : FChar::IsDigit(C) ? FKey(*FString::Printf(TEXT("%s"),
+					*TArray<FString>{ TEXT("Zero"), TEXT("One"), TEXT("Two"), TEXT("Three"), TEXT("Four"), TEXT("Five"), TEXT("Six"), TEXT("Seven"), TEXT("Eight"), TEXT("Nine") }[C - '0']))
+					: FKey(FName(FString(1, &C).ToUpper()));
+				W->Menu.EditKey(*W, Key);
+			}
+			UE_LOG(LogDoom, Display, TEXT("Savename: editing %d, text \"%s\""), W->Menu.bEditing, *W->Menu.EditText);
+			if (bCommit)
+			{
+				W->Menu.EditKey(*W, EKeys::Enter);
+				W->RefreshSlots();
+				UE_LOG(LogDoom, Display, TEXT("Savename: slot 1 now \"%s\", state %d"), *W->SlotDescription(1), (int32)W->GetState());
+			}
+		}, 1.f, false);
+	}
+
 	// -killtype=3001: after 2 s kill every monster of that DoomEdNum (boss-action checks)
 	int32 KillType = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-killtype="), KillType) && W->GetMap())
