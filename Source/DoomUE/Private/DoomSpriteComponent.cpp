@@ -155,7 +155,7 @@ void UDoomSpriteComponent::UpdateVisual(const FVector& ViewLocation)
 	{
 		return;
 	}
-	const FVector Feet = GetOwner()->GetActorLocation() - FVector(0, 0, GetOwner()->GetSimpleCollisionHalfHeight());
+	const FVector Feet = GetOwner()->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(GetOwner()));
 	const FVector ToThing = Feet - ViewLocation;
 
 	// rotation: Doom's (angle_to_thing - thing_angle + 202.5) / 45

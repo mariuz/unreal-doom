@@ -5,6 +5,8 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDoom, Log, All);
 
+class AActor;
+
 /**
  * Coordinates.
  * Doom maps are right-handed (X east, Y north, Z up); Unreal is left-handed
@@ -25,4 +27,11 @@ namespace Doom
 	/** Doom angle (degrees CCW from east) to Unreal yaw (degrees CW from +X). */
 	inline float AngleToYaw(float DoomDegrees) { return -DoomDegrees; }
 	inline float YawToAngle(float Yaw) { return -Yaw; }
+
+	/**
+	 * Half height of an actor's root capsule (or sphere radius), whether or not its collision
+	 * is enabled. AActor::GetSimpleCollisionHalfHeight falls back to the bounds of every
+	 * component when collision is off, which includes the (deliberately oversized) sprite.
+	 */
+	DOOMUE_API float HalfHeight(const AActor* Actor);
 }

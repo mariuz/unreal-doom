@@ -45,7 +45,7 @@ namespace
 
 	FVector FeetOf(const AActor* A)
 	{
-		return A->GetActorLocation() - FVector(0, 0, A->GetSimpleCollisionHalfHeight());
+		return A->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(A));
 	}
 }
 
@@ -144,7 +144,7 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 		if (Ar.IsLoading())
 		{
 			// put the capsule exactly where it was (SpawnMonster adds a small lift)
-			MonsterList[i]->SetActorLocation(Feet + FVector(0, 0, MonsterList[i]->GetSimpleCollisionHalfHeight()), false, nullptr, ETeleportType::TeleportPhysics);
+			MonsterList[i]->SetActorLocation(Feet + FVector(0, 0, Doom::HalfHeight(MonsterList[i])), false, nullptr, ETeleportType::TeleportPhysics);
 		}
 	}
 	if (Ar.IsLoading())
