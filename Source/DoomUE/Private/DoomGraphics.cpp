@@ -140,17 +140,38 @@ void FDoomGraphics::IndexFlatsAndSprites()
 
 void FDoomGraphics::BuildAnimations()
 {
-	for (const FAnimDef& D : GAnimDefs)
+	// Boom's ANIMATED lump (23-byte records: type, last name, first name, speed) replaces the
+	// built-in table; type bit 0 = wall texture, 0xFF ends the list.
+	struct FDef { bool bFlat; FString First, Last; int32 Speed; };
+	TArray<FDef> Defs;
+	TConstArrayView<uint8> Animated = Wad.LumpData(TEXT("ANIMATED"));
+	if (Animated.Num() > 0)
+	{
+		for (int32 Pos = 0; Pos + 23 <= Animated.Num() && Animated[Pos] != 0xFF; Pos += 23)
+		{
+			const uint8* R = &Animated[Pos];
+			Defs.Add({ (R[0] & 1) == 0, Name8(R + 10), Name8(R + 1), FMath::Max(1, S32(R + 19)) });
+		}
+	}
+	else
+	{
+		for (const FAnimDef& D : GAnimDefs)
+		{
+			Defs.Add({ D.bFlat, D.First, D.Last, 8 });
+		}
+	}
+	for (const FDef& D : Defs)
 	{
 		const TArray<FName>& Order = D.bFlat ? FlatOrder : TexOrder;
-		const int32 A = Order.IndexOfByKey(FName(D.First));
-		const int32 B = Order.IndexOfByKey(FName(D.Last));
+		const int32 A = Order.IndexOfByKey(FName(*D.First));
+		const int32 B = Order.IndexOfByKey(FName(*D.Last));
 		if (A == INDEX_NONE || B == INDEX_NONE || B <= A)
 		{
 			continue;
 		}
 		FAnimGroup G;
 		G.bFlat = D.bFlat;
+		G.Speed = D.Speed;
 		for (int32 i = A; i <= B; ++i)
 		{
 			G.Frames.Add(Order[i]);
@@ -160,6 +181,35 @@ void FDoomGraphics::BuildAnimations()
 		{
 			(D.bFlat ? AnimLookupFlat : AnimLookupWall).Add(G.Frames[i], TPair<int32, int32>(GroupIndex, i));
 		}
+	}
+	UE_LOG(LogDoom, Log, TEXT("%d animations (%s)"), Anims.Num(), Animated.Num() ? TEXT("ANIMATED lump") : TEXT("built-in table"));
+
+	// Boom's SWITCHES lump (20-byte records: off name, on name, episode; 0 ends): pairs up to
+	// the game's episode level (1 shareware, 2 registered Doom, 3 Doom 2) replace the SW1/SW2 rule.
+	TConstArrayView<uint8> Switches = Wad.LumpData(TEXT("SWITCHES"));
+	if (Switches.Num() > 0)
+	{
+		bSwitchLump = true;
+		const int32 GameLevel = Wad.IsDoom2() ? 3 : 2;
+		for (int32 Pos = 0; Pos + 20 <= Switches.Num(); Pos += 20)
+		{
+			const int32 Episode = S16(&Switches[Pos + 18]);
+			if (Episode == 0)
+			{
+				break;
+			}
+			if (Episode > GameLevel)
+			{
+				continue;
+			}
+			const FName Off(*Name8(&Switches[Pos])), On(*Name8(&Switches[Pos + 9]));
+			if (TexDefs.Contains(Off) && TexDefs.Contains(On))
+			{
+				SwitchPairs.Add(Off, On);
+				SwitchPairs.Add(On, Off);
+			}
+		}
+		UE_LOG(LogDoom, Log, TEXT("SWITCHES lump: %d switch textures"), SwitchPairs.Num());
 	}
 }
 
@@ -181,6 +231,11 @@ FName FDoomGraphics::AnimatedFrame(FName Name, bool bFlat, int32 Tic) const
 
 FName FDoomGraphics::SwitchPartner(FName Name)
 {
+	if (bSwitchLump)
+	{
+		const FName* Found = SwitchPairs.Find(Name);
+		return Found ? *Found : NAME_None;
+	}
 	const FString S = Name.ToString();
 	FString Other;
 	if (S.StartsWith(TEXT("SW1")))

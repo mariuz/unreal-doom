@@ -10,5 +10,6 @@ public class DoomUE : ModuleRules
 			"ProceduralMeshComponent", "DeveloperSettings", "AudioMixer", "AudioExtensions", "AIModule"
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Slate", "SlateCore" });
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
 	}
 }

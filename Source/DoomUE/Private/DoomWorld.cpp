@@ -11,6 +11,8 @@
 #include "DoomSettings.h"
 #include "DoomAssets.h"
 #include "DoomMusic.h"
+#include "DoomDehacked.h"
+#include "Misc/FileHelper.h"
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "Engine/PostProcessVolume.h"
@@ -169,7 +171,7 @@ bool UDoomWorld::InitWads()
 	IWadName = FPaths::GetCleanFilename(IWad).ToLower();
 	TArray<FString> PWads = Settings->PWADs;
 	FString FileArg;
-	if (FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg))
+	if (FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg, false))
 	{
 		FileArg.ParseIntoArray(PWads, TEXT(","));
 	}
@@ -191,6 +193,14 @@ bool UDoomWorld::InitWads()
 		Wad.Reset();
 		return false;
 	}
+	FString DehArg;
+	TArray<FString> DehFiles;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-deh="), DehArg, false))
+	{
+		DehArg.ParseIntoArray(DehFiles, TEXT(","));
+		for (FString& F : DehFiles) F = Resolve(F);
+	}
+	LoadPatches(DehFiles);
 	Gfx = MakeUnique<FDoomGraphics>(*Wad);
 	Sound = MakeUnique<FDoomSound>(*Wad);
 	Sound->MasterVolume = Settings->SfxVolume;
@@ -286,7 +296,10 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	Level = GetWorld()->SpawnActor<ADoomLevel>(ADoomLevel::StaticClass(), FTransform::Identity, SP);
-	Level->Build(*Map, *Gfx, Movable, bModern);
+	const FDoomMapInfo* Info = MapInfo(CurrentMap);
+	const FName Sky = (Info && !Info->Sky.IsEmpty()) ? FName(*Info->Sky) : FDoomGraphics::SkyTextureFor(CurrentMap);
+	Level->Build(*Map, *Gfx, Movable, bModern, Sky);
+	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *CurrentMap, *LevelTitle(CurrentMap), *Sky.ToString());
 
 	SetupEnvironment();
 	if (!bForSaveGame)
@@ -301,8 +314,8 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 		P->InitForLevel(this, bPistolStart);
 	}
 	State = EDoomGameState::Playing;
-	ShowMessage(CurrentMap);
-	PlayMusic(DoomMusic::LumpForMap(CurrentMap));
+	ShowMessage(LevelTitle(CurrentMap));
+	PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(CurrentMap));
 	return true;
 }
 
@@ -717,9 +730,15 @@ void UDoomWorld::ShowMessage(const FString& Msg)
 void UDoomWorld::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	if (State == EDoomGameState::Intermission)
+	if (State == EDoomGameState::Intermission || State == EDoomGameState::Finale)
 	{
-		++IntermissionTic;
+		// screens between levels count real 35 Hz tics, whatever the frame rate
+		ScreenAccumulator += FMath::Min(DeltaTime, 0.25f);
+		while (ScreenAccumulator >= Doom::TicSeconds)
+		{
+			ScreenAccumulator -= Doom::TicSeconds;
+			++(State == EDoomGameState::Intermission ? IntermissionTic : FinaleTic);
+		}
 	}
 	if (State != EDoomGameState::Playing || !Map.IsValid())
 	{
@@ -1443,7 +1462,7 @@ void UDoomWorld::FlipSwitch(int32 LineIndex, int32 SideIdx, bool bRepeat)
 	}
 }
 
-bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activator, EActivation How)
+bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activator, EActivation How, bool bForce)
 {
 	FDoomLine& L = Map->Lines[LineIndex];
 	const FSpec* Spec = FindSpec(L.Special);
@@ -1460,19 +1479,22 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 	{
 		return false;
 	}
-	switch (How)
+	if (!bForce)
 	{
-	case EActivation::Use: if (Spec->Trig != 'S' && Spec->Trig != 'D') return false; break;
-	case EActivation::Cross: if (Spec->Trig != 'W') return false; break;
-	case EActivation::Shoot: if (Spec->Trig != 'G') return false; break;
-	}
-	if (bMonster && (L.Flags & DoomLineFlags::Secret))
-	{
-		return false;
-	}
-	if (!CheckLock(Activator, Spec->Lock))
-	{
-		return false;
+		switch (How)
+		{
+		case EActivation::Use: if (Spec->Trig != 'S' && Spec->Trig != 'D') return false; break;
+		case EActivation::Cross: if (Spec->Trig != 'W') return false; break;
+		case EActivation::Shoot: if (Spec->Trig != 'G') return false; break;
+		}
+		if (bMonster && (L.Flags & DoomLineFlags::Secret))
+		{
+			return false;
+		}
+		if (!CheckLock(Activator, Spec->Lock))
+		{
+			return false;
+		}
 	}
 
 	TArray<int32> Targets;
@@ -1870,11 +1892,127 @@ void UDoomWorld::NoiseAlert(AActor* Target, const FVector& Where)
 	}
 }
 
+void UDoomWorld::FinishFinale()
+{
+	FinaleText.Reset();
+	if (PendingMap.IsEmpty())
+	{
+		UnloadMap();
+		State = EDoomGameState::Title;
+		PlayTitleMusic();
+		return;
+	}
+	LoadMap(PendingMap, false);
+}
+
+FString UDoomWorld::LevelTitle(const FString& MapName) const
+{
+	if (const FDoomMapInfo* Info = MapInfo(MapName))
+	{
+		if (!Info->LevelName.IsEmpty())
+		{
+			if (Info->bClearLabel) return Info->LevelName;
+			return FString::Printf(TEXT("%s: %s"), Info->Label.IsEmpty() ? *MapName : *Info->Label, *Info->LevelName);
+		}
+	}
+	// the WAD's own level names (DEHACKED / BEX strings): HUSTR_E1M1 or HUSTR_1 for MAP01
+	const FString Key = MapName.StartsWith(TEXT("MAP")) ? FString::Printf(TEXT("HUSTR_%d"), FCString::Atoi(*MapName.Mid(3))) : TEXT("HUSTR_") + MapName;
+	return DoomInfo::Text(*Key, MapName);
+}
+
+bool UDoomWorld::ExecuteSpecial(int32 Special, int32 Tag)
+{
+	if (!Map.IsValid())
+	{
+		return false;
+	}
+	// a line that exists only for this activation
+	FDoomLine Fake;
+	Fake.Special = (int16)Special;
+	Fake.Tag = (int16)Tag;
+	const int32 Index = Map->Lines.Add(Fake);
+	const bool bDone = ActivateSpecial(Index, 0, GetPlayer(), EActivation::Use, true);
+	if (Map.IsValid() && Map->Lines.IsValidIndex(Index))
+	{
+		Map->Lines.RemoveAt(Index);
+	}
+	return bDone;
+}
+
+void UDoomWorld::LoadPatches(const TArray<FString>& DehFiles)
+{
+	DoomInfo::ResetTables();
+	MapInfos.Reset();
+	// every DEHACKED / UMAPINFO lump in load order: the IWAD's first, PWADs patch on top
+	for (int32 i = 0; i < Wad->NumLumps(); ++i)
+	{
+		const FString& LumpName = Wad->Lump(i).NameStr;
+		if (LumpName != TEXT("DEHACKED") && LumpName != TEXT("UMAPINFO"))
+		{
+			continue;
+		}
+		TConstArrayView<uint8> D = Wad->LumpData(i);
+		const FString Text(D.Num(), reinterpret_cast<const ANSICHAR*>(D.GetData()));
+		if (LumpName == TEXT("DEHACKED"))
+		{
+			UE_LOG(LogDoom, Log, TEXT("DEHACKED lump: %s"), *DoomDehacked::Apply(Text).ToString());
+		}
+		else
+		{
+			UE_LOG(LogDoom, Log, TEXT("UMAPINFO lump: %d maps"), MapInfos.Parse(Text));
+		}
+	}
+	for (const FString& File : DehFiles)
+	{
+		FString Text;
+		if (FFileHelper::LoadFileToString(Text, *File))
+		{
+			UE_LOG(LogDoom, Log, TEXT("%s: %s"), *FPaths::GetCleanFilename(File), *DoomDehacked::Apply(Text).ToString());
+		}
+		else
+		{
+			UE_LOG(LogDoom, Error, TEXT("Cannot read DeHackEd patch %s"), *File);
+		}
+	}
+	// UMAPINFO is the more specific source: its par times win over DeHackEd's [PARS]
+	for (const TPair<FString, FDoomMapInfo>& Pair : MapInfos.All())
+	{
+		if (Pair.Value.ParTime >= 0)
+		{
+			DoomInfo::SetParTime(Pair.Key, Pair.Value.ParTime);
+		}
+	}
+}
+
 void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 {
 	if (!Dead || !Dead->Def)
 	{
 		return;
+	}
+	// UMAPINFO boss actions replace the vanilla boss specials for their map
+	if (const FDoomMapInfo* Info = MapInfo(CurrentMap))
+	{
+		if (Info->bClearBossActions)
+		{
+			for (const FDoomBossAction& A : Info->BossActions)
+			{
+				if (A.DoomEdNum != Dead->Def->DoomEdNum)
+				{
+					continue;
+				}
+				const bool bAllDead = !Monsters.ContainsByPredicate([&](const TWeakObjectPtr<ADoomMonster>& M)
+				{
+					return M.IsValid() && M->Def->DoomEdNum == A.DoomEdNum && !M->IsDead();
+				});
+				if (bAllDead)
+				{
+					UE_LOG(LogDoom, Log, TEXT("Boss action: special %d on tag %d"), A.Special, A.Tag);
+					ExecuteSpecial(A.Special, A.Tag);
+				}
+			}
+			return;
+		}
 	}
 	auto AllDead = [&](const TCHAR* Name)
 	{
@@ -1931,6 +2069,21 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 FString UDoomWorld::NextMapName(bool bSecret) const
 {
 	const FString& M = CurrentMap;
+	if (const FDoomMapInfo* Info = MapInfo(M))
+	{
+		if (Info->bEndGame)
+		{
+			return FString();
+		}
+		if (bSecret && !Info->NextSecret.IsEmpty())
+		{
+			return Info->NextSecret;
+		}
+		if (!Info->Next.IsEmpty())
+		{
+			return Info->Next;
+		}
+	}
 	if (M.StartsWith(TEXT("MAP")))
 	{
 		const int32 N = FCString::Atoi(*M.Mid(3));
@@ -1967,16 +2120,38 @@ void UDoomWorld::ExitLevel(bool bSecret)
 		PendingMap.Reset();
 	}
 	IntermissionTic = 0;
-	State = EDoomGameState::Intermission;
-	PlayMusic(Wad->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
 	if (ADoomPlayer* P = GetPlayer())
 	{
 		P->GetCharacterMovement()->StopMovementImmediately();
 	}
+	const FDoomMapInfo* Info = MapInfo(CurrentMap);
+	if (Info && Info->bNoIntermission)
+	{
+		State = EDoomGameState::Intermission; // FinishIntermission expects to leave it
+		FinishIntermission();
+		return;
+	}
+	State = EDoomGameState::Intermission;
+	PlayMusic((Info && !Info->InterMusic.IsEmpty()) ? Info->InterMusic : Wad->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
 }
 
 void UDoomWorld::FinishIntermission()
 {
+	// UMAPINFO story text between maps
+	const FDoomMapInfo* Info = MapInfo(CurrentMap);
+	if (Info && State != EDoomGameState::Finale && !Info->bClearInterText)
+	{
+		const TArray<FString>& Text = (bSecretExit && Info->InterTextSecret.Num()) ? Info->InterTextSecret : Info->InterText;
+		if (Text.Num())
+		{
+			FinaleText = Text;
+			FinaleBackdrop = Info->InterBackdrop.IsEmpty() ? FString(Wad->IsDoom2() ? TEXT("SLIME16") : TEXT("FLOOR4_8")) : Info->InterBackdrop;
+			FinaleTic = 0;
+			State = EDoomGameState::Finale;
+			PlayMusic(Wad->IsDoom2() ? TEXT("D_READ_M") : TEXT("D_VICTOR"));
+			return;
+		}
+	}
 	if (PendingMap.IsEmpty())
 	{
 		UnloadMap();

@@ -271,6 +271,12 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 		W->RefreshSlots();
 		W->PlaySound(TEXT("SWTCHN"), nullptr);
 		break;
+	case EDoomGameState::Finale:
+		if (W->FinaleTic > Doom::TicRate)
+		{
+			W->FinishFinale();
+		}
+		break;
 	case EDoomGameState::Intermission:
 		if (W->IntermissionTic > Doom::TicRate)
 		{

@@ -251,39 +251,119 @@ namespace
 	FRandomStream GRandom(0x0D00);
 }
 
-const FDoomThingDef* DoomInfo::FindThing(int32 DoomEdNum)
+// The tables are patchable (DeHackEd): ResetTables restores the defaults before patches apply.
+namespace
 {
-	static const TArray<FDoomThingDef> Things = BuildThings();
+	TArray<FDoomThingDef>& ThingTable() { static TArray<FDoomThingDef> T = BuildThings(); return T; }
+	TArray<FDoomProjectileDef>& ProjectileTable() { static TArray<FDoomProjectileDef> T = BuildProjectiles(); return T; }
+	TArray<FDoomWeaponDef>& WeaponTable() { static TArray<FDoomWeaponDef> T = BuildWeapons(); return T; }
+	FDoomRules GRules;
+	TMap<FString, FString> GStrings;
+	TMap<FString, int32> GPars;
+}
+
+FDoomThingDef* DoomInfo::MutableThing(int32 DoomEdNum)
+{
 	static const TMap<int32, int32> Index = []()
 	{
 		TMap<int32, int32> M;
-		for (int32 i = 0; i < Things.Num(); ++i) M.Add(Things[i].DoomEdNum, i);
+		for (int32 i = 0; i < ThingTable().Num(); ++i) M.Add(ThingTable()[i].DoomEdNum, i);
 		return M;
 	}();
 	const int32* I = Index.Find(DoomEdNum);
-	return I ? &Things[*I] : nullptr;
+	return I ? &ThingTable()[*I] : nullptr;
 }
 
-const FDoomProjectileDef* DoomInfo::FindProjectile(const FString& Name)
+const FDoomThingDef* DoomInfo::FindThing(int32 DoomEdNum)
 {
-	static const TArray<FDoomProjectileDef> Defs = BuildProjectiles();
-	for (const FDoomProjectileDef& D : Defs)
+	return MutableThing(DoomEdNum);
+}
+
+const FDoomThingDef* DoomInfo::FindThingByName(const FString& Name)
+{
+	// ZDoom class names used by UMAPINFO, plus the port's own names
+	static const TMap<FString, FString> Aliases = {
+		{ TEXT("zombieman"), TEXT("Zombieman") }, { TEXT("chaingunguy"), TEXT("Chaingunner") }, { TEXT("doomimp"), TEXT("Imp") },
+		{ TEXT("fatso"), TEXT("Mancubus") }, { TEXT("archvile"), TEXT("ArchVile") }, { TEXT("explosivebarrel"), TEXT("Barrel") } };
+	const FString* Alias = Aliases.Find(Name.ToLower());
+	const FString Wanted = Alias ? *Alias : Name;
+	for (const FDoomThingDef& D : ThingTable())
+	{
+		if (Wanted.Equals(D.Name, ESearchCase::IgnoreCase)) return &D;
+	}
+	return nullptr;
+}
+
+FDoomProjectileDef* DoomInfo::MutableProjectile(const FString& Name)
+{
+	for (FDoomProjectileDef& D : ProjectileTable())
 	{
 		if (Name == D.Name) return &D;
 	}
 	return nullptr;
 }
 
+const FDoomProjectileDef* DoomInfo::FindProjectile(const FString& Name)
+{
+	return MutableProjectile(Name);
+}
+
+FDoomWeaponDef& DoomInfo::MutableWeapon(EDoomWeapon W)
+{
+	TArray<FDoomWeaponDef>& Defs = WeaponTable();
+	return Defs[FMath::Clamp((int32)W, 0, Defs.Num() - 1)];
+}
+
 const FDoomWeaponDef& DoomInfo::Weapon(EDoomWeapon W)
 {
-	static const TArray<FDoomWeaponDef> Defs = BuildWeapons();
-	return Defs[FMath::Clamp((int32)W, 0, Defs.Num() - 1)];
+	return MutableWeapon(W);
+}
+
+FDoomRules& DoomInfo::Rules()
+{
+	return GRules;
 }
 
 int32 DoomInfo::MaxAmmo(EDoomAmmo A, bool bBackpack)
 {
-	static const int32 Max[] = { 200, 50, 50, 300 };
-	return A == EDoomAmmo::None ? 0 : Max[(int32)A] * (bBackpack ? 2 : 1);
+	return A == EDoomAmmo::None ? 0 : GRules.MaxAmmo[(int32)A] * (bBackpack ? 2 : 1);
+}
+
+void DoomInfo::ResetTables()
+{
+	ThingTable() = BuildThings();
+	ProjectileTable() = BuildProjectiles();
+	WeaponTable() = BuildWeapons();
+	GRules = FDoomRules();
+	GStrings.Reset();
+	GPars.Reset();
+}
+
+void DoomInfo::SetString(const FString& Mnemonic, const FString& Text)
+{
+	GStrings.Add(Mnemonic.ToUpper(), Text);
+}
+
+FString DoomInfo::Text(const TCHAR* Mnemonic, const FString& Default)
+{
+	const FString* Found = GStrings.Find(FString(Mnemonic).ToUpper());
+	return Found ? *Found : Default;
+}
+
+bool DoomInfo::HasText(const TCHAR* Mnemonic)
+{
+	return GStrings.Contains(FString(Mnemonic).ToUpper());
+}
+
+void DoomInfo::SetParTime(const FString& Map, int32 Seconds)
+{
+	GPars.Add(Map.ToUpper(), Seconds);
+}
+
+int32 DoomInfo::ParTime(const FString& Map)
+{
+	const int32* P = GPars.Find(Map.ToUpper());
+	return P ? *P : -1;
 }
 
 int32 DoomInfo::Random()
@@ -291,7 +371,31 @@ int32 DoomInfo::Random()
 	return GRandom.RandRange(0, 255);
 }
 
+static FString DefaultPickupMessage(EPickup P);
+
 FString DoomInfo::PickupMessage(EPickup P)
+{
+	// mnemonics of the BEX [STRINGS] / DEHACKED string table (text comes from the WAD)
+	static const TMap<EPickup, const TCHAR*> Mnemonics = {
+		{ EPickup::HealthBonus, TEXT("GOTHTHBONUS") }, { EPickup::ArmorBonus, TEXT("GOTARMBONUS") },
+		{ EPickup::Soulsphere, TEXT("GOTSUPER") }, { EPickup::Megasphere, TEXT("GOTMSPHERE") },
+		{ EPickup::GreenArmor, TEXT("GOTARMOR") }, { EPickup::BlueArmor, TEXT("GOTMEGA") },
+		{ EPickup::Invulnerability, TEXT("GOTINVUL") }, { EPickup::Berserk, TEXT("GOTBERSERK") },
+		{ EPickup::Invisibility, TEXT("GOTINVIS") }, { EPickup::RadSuit, TEXT("GOTSUIT") },
+		{ EPickup::Map, TEXT("GOTMAP") }, { EPickup::LightAmp, TEXT("GOTVISOR") },
+		{ EPickup::BlueCard, TEXT("GOTBLUECARD") }, { EPickup::YellowCard, TEXT("GOTYELWCARD") }, { EPickup::RedCard, TEXT("GOTREDCARD") },
+		{ EPickup::BlueSkull, TEXT("GOTBLUESKUL") }, { EPickup::YellowSkull, TEXT("GOTYELWSKUL") }, { EPickup::RedSkull, TEXT("GOTREDSKULL") },
+		{ EPickup::Clip, TEXT("GOTCLIP") }, { EPickup::ClipBox, TEXT("GOTCLIPBOX") }, { EPickup::Shells, TEXT("GOTSHELLS") },
+		{ EPickup::ShellBox, TEXT("GOTSHELLBOX") }, { EPickup::Rocket, TEXT("GOTROCKET") }, { EPickup::RocketBox, TEXT("GOTROCKBOX") },
+		{ EPickup::Cell, TEXT("GOTCELL") }, { EPickup::CellPack, TEXT("GOTCELLBOX") }, { EPickup::Backpack, TEXT("GOTBACKPACK") },
+		{ EPickup::Chainsaw, TEXT("GOTCHAINSAW") }, { EPickup::Shotgun, TEXT("GOTSHOTGUN") }, { EPickup::SuperShotgun, TEXT("GOTSHOTGUN2") },
+		{ EPickup::Chaingun, TEXT("GOTCHAINGUN") }, { EPickup::RocketLauncher, TEXT("GOTLAUNCHER") }, { EPickup::Plasma, TEXT("GOTPLASMA") },
+		{ EPickup::BFG, TEXT("GOTBFG9000") } };
+	const TCHAR* const* M = Mnemonics.Find(P);
+	return M ? Text(*M, DefaultPickupMessage(P)) : DefaultPickupMessage(P);
+}
+
+static FString DefaultPickupMessage(EPickup P)
 {
 	switch (P)
 	{

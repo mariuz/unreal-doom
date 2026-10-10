@@ -1,6 +1,7 @@
 #include "DoomMap.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
+#include "zlib.h"
 
 using namespace WadRead;
 
@@ -157,11 +158,41 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 		T.Flags = U16(P + 8);
 	}
 
-	if (!LoadVanillaNodes(Get(ML_NODES, TEXT("NODES")), Get(ML_SEGS, TEXT("SEGS")), Get(ML_SSECTORS, TEXT("SSECTORS"))))
+	TConstArrayView<uint8> NodesL = Get(ML_NODES, TEXT("NODES"));
+	TConstArrayView<uint8> SegsL = Get(ML_SEGS, TEXT("SEGS"));
+	TConstArrayView<uint8> SsL = Get(ML_SSECTORS, TEXT("SSECTORS"));
+	auto HasMagic = [](TConstArrayView<uint8> L, std::initializer_list<const char*> Magics)
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s: unsupported or missing BSP (extended/GL nodes are on the roadmap)"), *Name);
+		for (const char* M : Magics)
+		{
+			if (L.Num() >= 4 && FMemory::Memcmp(L.GetData(), M, 4) == 0) return true;
+		}
+		return false;
+	};
+	bool bLoaded = false;
+	if (HasMagic(NodesL, { "XNOD", "ZNOD", "XGLN", "ZGLN", "XGL2", "ZGL2", "XGL3", "ZGL3" }))
+	{
+		bLoaded = LoadExtendedNodes(NodesL);
+	}
+	else if (HasMagic(SsL, { "XGLN", "ZGLN", "XGL2", "ZGL2", "XGL3", "ZGL3" }))
+	{
+		bLoaded = LoadExtendedNodes(SsL);
+	}
+	else if (NodesL.Num() == 0 || SsL.Num() == 0 || SegsL.Num() == 0)
+	{
+		const int32 GlMarker = Wad.FindLump(TEXT("GL_") + Name);
+		bLoaded = GlMarker != INDEX_NONE && LoadGlNodes(Wad, GlMarker);
+	}
+	else
+	{
+		bLoaded = LoadVanillaNodes(NodesL, SegsL, SsL);
+	}
+	if (!bLoaded || Subsectors.Num() == 0)
+	{
+		UE_LOG(LogDoom, Error, TEXT("%s: no usable BSP (vanilla, ZDoom extended or glBSP GL nodes)"), *Name);
 		return false;
 	}
+	AssignSubsectorSectors();
 	Derive();
 	BuildSubsectorPolygons();
 
@@ -173,8 +204,8 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 			Area += 0.5 * Cross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things"),
-		*Name, Vertices.Num(), Lines.Num(), Sectors.Num(), Subsectors.Num(), Area, Things.Num());
+	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
+		*Name, Vertices.Num(), Lines.Num(), Sectors.Num(), Subsectors.Num(), Area, Things.Num(), *NodesFormat);
 	return true;
 }
 
@@ -231,6 +262,275 @@ bool FDoomMap::LoadVanillaNodes(TConstArrayView<uint8> NodesLump, TConstArrayVie
 		{
 			const uint16 Child = U16(P + 24 + c * 2);
 			N.Child[c] = (Child & 0x8000) ? ((Child & 0x7FFF) | FDoomNode::SubsectorBit) : Child;
+		}
+	}
+	return Subsectors.Num() > 0;
+}
+
+void FDoomMap::AssignSubsectorSectors()
+{
+	for (FDoomSubsector& Ss : Subsectors)
+	{
+		Ss.Sector = 0;
+		for (int32 s = Ss.FirstSeg; s < Ss.FirstSeg + Ss.NumSegs && s < Segs.Num(); ++s)
+		{
+			const FDoomSeg& Seg = Segs[s];
+			if (Seg.Line != INDEX_NONE && Lines[Seg.Line].Side[Seg.Side] != INDEX_NONE)
+			{
+				Ss.Sector = Sides[Lines[Seg.Line].Side[Seg.Side]].Sector;
+				break;
+			}
+		}
+	}
+}
+
+namespace
+{
+	/** Bounds-checked little-endian cursor; any overrun marks it bad. */
+	struct FCursor
+	{
+		const uint8* P;
+		int32 Num;
+		int32 Pos = 0;
+		bool bBad = false;
+		bool Need(int32 N) { if (Pos + N > Num) { bBad = true; return false; } return true; }
+		uint8 U8() { return Need(1) ? P[Pos++] : 0; }
+		uint16 U16() { if (!Need(2)) return 0; const uint16 V = WadRead::U16(P + Pos); Pos += 2; return V; }
+		int16 S16() { return (int16)U16(); }
+		uint32 U32() { if (!Need(4)) return 0; const uint32 V = (uint32)WadRead::S32(P + Pos); Pos += 4; return V; }
+		int32 S32() { return (int32)U32(); }
+	};
+
+	/** zlib stream of unknown inflated size (ZNOD, ZGLN, ZGL2, ZGL3). */
+	bool Inflate(const uint8* Src, int32 SrcLen, TArray<uint8>& Out)
+	{
+		z_stream Z;
+		FMemory::Memzero(Z);
+		if (inflateInit(&Z) != Z_OK) return false;
+		Z.next_in = const_cast<Bytef*>(Src);
+		Z.avail_in = SrcLen;
+		Out.SetNum(FMath::Max(SrcLen * 4, 4096));
+		int32 Ret = Z_OK;
+		while (Ret == Z_OK)
+		{
+			if ((int32)Z.total_out >= Out.Num()) Out.SetNum(Out.Num() * 2);
+			Z.next_out = Out.GetData() + Z.total_out;
+			Z.avail_out = Out.Num() - Z.total_out;
+			Ret = inflate(&Z, Z_NO_FLUSH);
+		}
+		Out.SetNum(Z.total_out);
+		inflateEnd(&Z);
+		return Ret == Z_STREAM_END;
+	}
+}
+
+bool FDoomMap::LoadExtendedNodes(TConstArrayView<uint8> Lump)
+{
+	const FString Magic = FString::ConstructFromPtrSize(reinterpret_cast<const ANSICHAR*>(Lump.GetData()), 4);
+	NodesFormat = Magic;
+	TArray<uint8> Inflated;
+	const uint8* Data = Lump.GetData() + 4;
+	int32 Len = Lump.Num() - 4;
+	if (Magic[0] == 'Z')
+	{
+		if (!Inflate(Data, Len, Inflated))
+		{
+			UE_LOG(LogDoom, Error, TEXT("%s: %s nodes do not decompress"), *Name, *Magic);
+			return false;
+		}
+		Data = Inflated.GetData();
+		Len = Inflated.Num();
+	}
+	const bool bGl = Magic.EndsWith(TEXT("GLN")) || Magic.EndsWith(TEXT("GL2")) || Magic.EndsWith(TEXT("GL3"));
+	const bool bLongLines = Magic.EndsWith(TEXT("GL2")) || Magic.EndsWith(TEXT("GL3"));
+	const bool bFixedNodes = Magic.EndsWith(TEXT("GL3"));
+	FCursor C{ Data, Len };
+
+	// vertices: the map's own first, then the node builder's extra ones (16.16 fixed point)
+	const uint32 OrgVerts = C.U32();
+	const uint32 NewVerts = C.U32();
+	const int32 Base = Vertices.Num();
+	if (NewVerts > (uint32)(Len / 8)) return false;
+	for (uint32 i = 0; i < NewVerts && !C.bBad; ++i)
+	{
+		const int32 X = C.S32(), Y = C.S32();
+		Vertices.Add(FVector2f(X / 65536.f, Y / 65536.f));
+	}
+	auto MapVertex = [&](uint32 V) -> int32
+	{
+		const int32 I = V < OrgVerts ? (int32)V : Base + (int32)(V - OrgVerts);
+		return FMath::Clamp(I, 0, Vertices.Num() - 1);
+	};
+
+	const uint32 NumSs = C.U32();
+	if (NumSs > (uint32)Len) return false;
+	Subsectors.SetNum(NumSs);
+	int32 First = 0;
+	for (uint32 i = 0; i < NumSs && !C.bBad; ++i)
+	{
+		Subsectors[i].FirstSeg = First;
+		Subsectors[i].NumSegs = C.U32();
+		First += Subsectors[i].NumSegs;
+	}
+
+	const uint32 NumSegs = C.U32();
+	if (NumSegs > (uint32)Len || (int32)NumSegs != First) return false;
+	Segs.SetNum(NumSegs);
+	for (uint32 i = 0; i < NumSegs && !C.bBad; ++i)
+	{
+		FDoomSeg& S = Segs[i];
+		S.V1 = MapVertex(C.U32());
+		uint32 LineIndex;
+		if (bGl)
+		{
+			C.U32(); // partner seg
+			LineIndex = bLongLines ? C.U32() : C.U16();
+			if (!bLongLines && LineIndex == 0xFFFF) LineIndex = 0xFFFFFFFF;
+		}
+		else
+		{
+			S.V2 = MapVertex(C.U32());
+			LineIndex = C.U16();
+		}
+		S.Side = C.U8() ? 1 : 0;
+		S.Line = (LineIndex == 0xFFFFFFFF || !Lines.IsValidIndex((int32)LineIndex)) ? INDEX_NONE : (int32)LineIndex;
+	}
+	if (bGl)
+	{
+		// GL subsectors are closed polygons: a seg ends where the next one starts
+		for (const FDoomSubsector& Ss : Subsectors)
+		{
+			for (int32 k = 0; k < Ss.NumSegs; ++k)
+			{
+				Segs[Ss.FirstSeg + k].V2 = Segs[Ss.FirstSeg + (k + 1) % Ss.NumSegs].V1;
+			}
+		}
+	}
+
+	const uint32 NumNodes = C.U32();
+	if (NumNodes > (uint32)Len) return false;
+	Nodes.SetNum(NumNodes);
+	for (uint32 i = 0; i < NumNodes && !C.bBad; ++i)
+	{
+		FDoomNode& N = Nodes[i];
+		if (bFixedNodes)
+		{
+			const int32 X = C.S32(), Y = C.S32(), DX = C.S32(), DY = C.S32();
+			N.Origin = FVector2f(X / 65536.f, Y / 65536.f);
+			N.Dir = FVector2f(DX / 65536.f, DY / 65536.f);
+		}
+		else
+		{
+			const int16 X = C.S16(), Y = C.S16(), DX = C.S16(), DY = C.S16();
+			N.Origin = FVector2f(X, Y);
+			N.Dir = FVector2f(DX, DY);
+		}
+		for (int32 b = 0; b < 8; ++b) C.S16(); // bounding boxes
+		for (int32 c = 0; c < 2; ++c)
+		{
+			const uint32 Child = C.U32();
+			N.Child[c] = (Child & 0x80000000u) ? (int32)((Child & 0x7FFFFFFF) | FDoomNode::SubsectorBit) : (int32)Child;
+		}
+	}
+	if (C.bBad)
+	{
+		UE_LOG(LogDoom, Error, TEXT("%s: %s nodes are truncated"), *Name, *Magic);
+		return false;
+	}
+	return true;
+}
+
+bool FDoomMap::LoadGlNodes(const FDoomWad& Wad, int32 Marker)
+{
+	const int32 Limit = Marker + 6;
+	TConstArrayView<uint8> VertL = Wad.LumpData(Wad.FindLumpAfter(TEXT("GL_VERT"), Marker + 1, Limit));
+	TConstArrayView<uint8> SegsL = Wad.LumpData(Wad.FindLumpAfter(TEXT("GL_SEGS"), Marker + 1, Limit));
+	TConstArrayView<uint8> SsL = Wad.LumpData(Wad.FindLumpAfter(TEXT("GL_SSECT"), Marker + 1, Limit));
+	TConstArrayView<uint8> NodesL = Wad.LumpData(Wad.FindLumpAfter(TEXT("GL_NODES"), Marker + 1, Limit));
+	if (VertL.Num() == 0 || SegsL.Num() == 0 || SsL.Num() == 0)
+	{
+		return false;
+	}
+	auto Magic = [](TConstArrayView<uint8> L, const char* M) { return L.Num() >= 4 && FMemory::Memcmp(L.GetData(), M, 4) == 0; };
+	// V1: 16-bit vertices; V2+: "gNdN" and 16.16 fixed vertices. V3 marks segs and subsectors with
+	// "gNd3" and 32-bit fields; V4/V5 use 32-bit fields without the marker and 32-bit node children.
+	int32 Version = 1;
+	if (Magic(VertL, "gNd2")) Version = 2;
+	if (Magic(VertL, "gNd3") || Magic(SegsL, "gNd3")) Version = 3;
+	if (Magic(VertL, "gNd4") || Magic(VertL, "gNd5")) Version = 5;
+	NodesFormat = FString::Printf(TEXT("glBSP v%d"), Version);
+
+	const int32 Base = Vertices.Num();
+	FCursor V{ VertL.GetData(), VertL.Num(), Version == 1 ? 0 : 4 };
+	while (V.Pos + (Version == 1 ? 4 : 8) <= V.Num)
+	{
+		if (Version == 1)
+		{
+			const int16 X = V.S16(), Y = V.S16();
+			Vertices.Add(FVector2f(X, Y));
+		}
+		else
+		{
+			const int32 X = V.S32(), Y = V.S32();
+			Vertices.Add(FVector2f(X / 65536.f, Y / 65536.f));
+		}
+	}
+	const uint32 GlFlag = Version <= 2 ? 0x8000u : Version == 3 ? 0x40000000u : 0x80000000u;
+	auto MapVertex = [&](uint32 R) -> int32
+	{
+		const int32 I = (R & GlFlag) ? Base + (int32)(R & ~GlFlag) : (int32)R;
+		return FMath::Clamp(I, 0, Vertices.Num() - 1);
+	};
+
+	FCursor S{ SegsL.GetData(), SegsL.Num(), Version == 3 ? 4 : 0 };
+	const int32 SegSize = Version <= 2 ? 10 : 16;
+	while (S.Pos + SegSize <= S.Num)
+	{
+		FDoomSeg& Seg = Segs.AddDefaulted_GetRef();
+		const uint32 A = Version <= 2 ? S.U16() : S.U32();
+		const uint32 B = Version <= 2 ? S.U16() : S.U32();
+		Seg.V1 = MapVertex(A);
+		Seg.V2 = MapVertex(B);
+		const uint16 LineIndex = S.U16();
+		Seg.Side = S.U16() ? 1 : 0;
+		if (Version <= 2) S.U16(); else S.U32(); // partner
+		Seg.Line = (LineIndex == 0xFFFF || !Lines.IsValidIndex(LineIndex)) ? INDEX_NONE : LineIndex;
+	}
+
+	FCursor Ss{ SsL.GetData(), SsL.Num(), Version == 3 ? 4 : 0 };
+	const int32 SsSize = Version <= 2 ? 4 : 8;
+	while (Ss.Pos + SsSize <= Ss.Num)
+	{
+		FDoomSubsector& Sub = Subsectors.AddDefaulted_GetRef();
+		Sub.NumSegs = Version <= 2 ? Ss.U16() : Ss.S32();
+		Sub.FirstSeg = Version <= 2 ? Ss.U16() : Ss.S32();
+		if (Sub.FirstSeg < 0 || Sub.FirstSeg + Sub.NumSegs > Segs.Num())
+		{
+			return false;
+		}
+	}
+
+	FCursor N{ NodesL.GetData(), NodesL.Num() };
+	const int32 NodeSize = Version >= 5 ? 32 : 28;
+	while (N.Pos + NodeSize <= N.Num)
+	{
+		FDoomNode& Node = Nodes.AddDefaulted_GetRef();
+		const int16 X = N.S16(), Y = N.S16(), DX = N.S16(), DY = N.S16();
+		Node.Origin = FVector2f(X, Y);
+		Node.Dir = FVector2f(DX, DY);
+		for (int32 b = 0; b < 8; ++b) N.S16();
+		for (int32 c = 0; c < 2; ++c)
+		{
+			if (Version >= 5)
+			{
+				const uint32 Child = N.U32();
+				Node.Child[c] = (Child & 0x80000000u) ? (int32)((Child & 0x7FFFFFFF) | FDoomNode::SubsectorBit) : (int32)Child;
+			}
+			else
+			{
+				const uint16 Child = N.U16();
+				Node.Child[c] = (Child & 0x8000) ? ((Child & 0x7FFF) | FDoomNode::SubsectorBit) : Child;
+			}
 		}
 	}
 	return Subsectors.Num() > 0;

@@ -164,6 +164,9 @@ void ADoomHUD::DrawHUD()
 	case EDoomGameState::Intermission:
 		DrawIntermission();
 		return;
+	case EDoomGameState::Finale:
+		DrawFinale();
+		return;
 	default:
 		break;
 	}
@@ -427,7 +430,7 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 		const FVector2D A = ToScreen(Arrow[i]), B = ToScreen(Arrow[i + 1]);
 		DrawLine(A.X, A.Y, B.X, B.Y, FLinearColor::White, 2.f);
 	}
-	DrawText(W->GetMapName(), 2, 160);
+	DrawText(W->LevelTitle(W->GetMapName()), 2, 160);
 }
 
 void ADoomHUD::DrawMenu()
@@ -473,7 +476,9 @@ void ADoomHUD::DrawIntermission()
 		const int32 Pct = Total > 0 ? Got * 100 / Total : 100;
 		return FMath::Clamp((int32)((T - Start) * 2.f), 0, Pct);
 	};
-	DrawText(W->GetMapName() + TEXT(" FINISHED"), 160 - TextWidth(W->GetMapName() + TEXT(" FINISHED")) / 2, 12, 1.f);
+	const FString Title = W->LevelTitle(W->GetMapName());
+	DrawText(Title, 160 - TextWidth(Title) / 2, 4, 1.f);
+	DrawText(TEXT("FINISHED"), 160 - TextWidth(TEXT("FINISHED")) / 2, 16, 1.f);
 
 	auto Line = [&](const FString& Label, const FString& Patch, int32 Value, float Y, bool bPercent)
 	{
@@ -493,13 +498,57 @@ void ADoomHUD::DrawIntermission()
 		if (Pic) DrawPatch(Pic, 16, 168, false);
 		else DrawText(TEXT("TIME"), 16, 168, 1.5f);
 		DrawText(FString::Printf(TEXT("%d:%02d"), Secs / 60, Secs % 60), 100, 170, 1.5f);
+		const int32 Par = DoomInfo::ParTime(W->GetMapName());
+		if (Par >= 0)
+		{
+			DrawText(FString::Printf(TEXT("PAR %d:%02d"), Par / 60, Par % 60), 200, 170, 1.5f);
+		}
 	}
 	if (T > Doom::TicRate * 4 && !W->PendingMap.IsEmpty())
 	{
-		DrawText(TEXT("ENTERING ") + W->PendingMap, 160 - TextWidth(TEXT("ENTERING ") + W->PendingMap) / 2, 130, 1.f);
+		const FString Next = TEXT("ENTERING ") + W->LevelTitle(W->PendingMap);
+		DrawText(Next, 160 - TextWidth(Next) / 2, 130, 1.f);
 	}
 	if (T > Doom::TicRate)
 	{
 		DrawText(W->PendingMap.IsEmpty() ? TEXT("EPISODE COMPLETE - PRESS ENTER") : TEXT("PRESS ENTER"), 90, 150, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
+	}
+}
+
+void ADoomHUD::DrawFinale()
+{
+	UDoomWorld* W = DW();
+	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY);
+	// the backdrop flat tiled over the 320x200 frame, like Doom's text screens
+	if (const FDoomPicture* Flat = W->GetGraphics()->Flat(FName(*W->FinaleBackdrop)))
+	{
+		for (int32 Y = 0; Y < 200; Y += 64)
+		{
+			for (int32 X = 0; X < 320; X += 64)
+			{
+				const float H = FMath::Min(64, 200 - Y);
+				DrawTexture(Flat->Texture, OX + X * SX, OY + Y * SY, 64 * SX, H * SY, 0, 0, 1, H / 64.f, FLinearColor::White, BLEND_Opaque);
+			}
+		}
+	}
+	// typed out a character every 3 tics
+	const int32 Shown = W->FinaleTic / 3;
+	int32 Count = 0;
+	float Y = 10;
+	for (const FString& Line : W->FinaleText)
+	{
+		TArray<FString> Parts;
+		Line.ParseIntoArray(Parts, TEXT("\n"), false);
+		for (const FString& Part : Parts)
+		{
+			const int32 Visible = FMath::Clamp(Shown - Count, 0, Part.Len());
+			DrawText(Part.Left(Visible), 10, Y);
+			Count += Part.Len();
+			Y += 11;
+		}
+	}
+	if (Shown > Count)
+	{
+		DrawText(TEXT("PRESS ENTER"), 160 - TextWidth(TEXT("PRESS ENTER")) / 2, 186, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
 	}
 }

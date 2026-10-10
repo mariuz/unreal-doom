@@ -11,6 +11,7 @@
 #include "DoomWad.h"
 #include "DoomGraphics.h"
 #include "DoomSound.h"
+#include "DoomMapInfo.h"
 #include "DoomWorld.generated.h"
 
 class ADoomLevel;
@@ -108,7 +109,21 @@ public:
 	/** Level flow. */
 	void ExitLevel(bool bSecret);
 	void FinishIntermission();
+	/** Leaves the story text screen (UMAPINFO intertext). */
+	void FinishFinale();
 	FString NextMapName(bool bSecret) const;
+
+	/** UMAPINFO entry for a map (null if none). */
+	const FDoomMapInfo* MapInfo(const FString& MapName) const { return MapInfos.Find(MapName); }
+	/** "E1M1: Hangar": UMAPINFO label and name, else the WAD's DEHACKED level name, else the lump. */
+	FString LevelTitle(const FString& MapName) const;
+	/** Runs a linedef special on a tag as if a line had been triggered (UMAPINFO boss actions). */
+	bool ExecuteSpecial(int32 Special, int32 Tag);
+
+	/** Story text screen (EDoomGameState::Finale). */
+	TArray<FString> FinaleText;
+	FString FinaleBackdrop;
+	int32 FinaleTic = 0;
 
 	// --- queries ----------------------------------------------------------------------------------
 	FDoomMap* GetMap() const { return Map.Get(); }
@@ -196,7 +211,7 @@ private:
 	void TicLights();
 	void TicSectorDamage();
 	bool MovePlane(FSectorMover& M);
-	bool ActivateSpecial(int32 Line, int32 Side, AActor* Activator, EActivation How);
+	bool ActivateSpecial(int32 Line, int32 Side, AActor* Activator, EActivation How, bool bForce = false);
 	bool CheckLock(AActor* Activator, int32 Lock);
 	void FlipSwitch(int32 Line, int32 Side, bool bRepeat);
 	bool SectorHasMover(int32 Sector) const;
@@ -227,6 +242,8 @@ private:
 	TObjectPtr<class UDoomMusicWave> MusicWave;
 	FString CurrentMusic;
 	FString IWadName;
+	FDoomMapInfoSet MapInfos;
+	void LoadPatches(const TArray<FString>& DehFiles);
 	TMap<int32, FString> SlotCache;
 	void SerializeState(FArchive& Ar);
 
@@ -244,5 +261,6 @@ private:
 	bool bModern = false;
 	int32 LevelTic = 0;
 	double Accumulator = 0;
+	double ScreenAccumulator = 0;
 	int32 ValidCount = 0;
 };

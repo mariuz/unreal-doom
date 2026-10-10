@@ -104,13 +104,49 @@ struct FDoomWeaponDef
 	int32 Slot;     // key 1..7
 };
 
+/** Game rules DeHackEd's Misc and Ammo blocks can change. */
+struct FDoomRules
+{
+	int32 InitialHealth = 100;
+	int32 InitialBullets = 50;
+	int32 MaxHealth = 200;        // health bonus cap
+	int32 MaxArmor = 200;         // armor bonus cap
+	int32 GreenArmorClass = 1;
+	int32 BlueArmorClass = 2;
+	int32 MaxSoulsphere = 200;
+	int32 SoulsphereHealth = 100;
+	int32 MegasphereHealth = 200;
+	int32 GodModeHealth = 100;
+	int32 IdfaArmor = 200;
+	int32 IdkfaArmor = 200;
+	bool bMonstersInfight = false;
+	int32 MaxAmmo[4] = { 200, 50, 50, 300 };
+	int32 ClipAmmo[4] = { 10, 4, 1, 20 };  // small pickup; boxes are 5x, weapons 2x
+};
+
 namespace DoomInfo
 {
 	DOOMUE_API const FDoomThingDef* FindThing(int32 DoomEdNum);
+	DOOMUE_API const FDoomThingDef* FindThingByName(const FString& Name);
 	DOOMUE_API const FDoomProjectileDef* FindProjectile(const FString& Name);
 	DOOMUE_API const FDoomWeaponDef& Weapon(EDoomWeapon W);
 	DOOMUE_API int32 MaxAmmo(EDoomAmmo A, bool bBackpack);
 	DOOMUE_API FString PickupMessage(EPickup P);
+
+	// patching (DeHackEd)
+	DOOMUE_API void ResetTables();
+	DOOMUE_API FDoomThingDef* MutableThing(int32 DoomEdNum);
+	DOOMUE_API FDoomProjectileDef* MutableProjectile(const FString& Name);
+	DOOMUE_API FDoomWeaponDef& MutableWeapon(EDoomWeapon W);
+	DOOMUE_API FDoomRules& Rules();
+
+	/** BEX / DEHACKED strings by mnemonic (GOTARMOR, HUSTR_E1M1...), else Default. */
+	DOOMUE_API FString Text(const TCHAR* Mnemonic, const FString& Default);
+	DOOMUE_API bool HasText(const TCHAR* Mnemonic);
+	DOOMUE_API void SetString(const FString& Mnemonic, const FString& Text);
+	/** Par times in seconds ([PARS], UMAPINFO partime); -1 when unknown. */
+	DOOMUE_API void SetParTime(const FString& Map, int32 Seconds);
+	DOOMUE_API int32 ParTime(const FString& Map);
 
 	/** Doom's P_Random: the 256-entry table is replaced by a seeded generator. */
 	DOOMUE_API int32 Random();

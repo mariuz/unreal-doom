@@ -105,6 +105,8 @@ void ADoomPlayer::InitForLevel(UDoomWorld* InWorld, bool bPistolStart)
 	if (bPistolStart || Inv.Health <= 0)
 	{
 		Inv.Reset();
+		Inv.Health = DoomInfo::Rules().InitialHealth;
+		Inv.Ammo[0] = DoomInfo::Rules().InitialBullets;
 	}
 	for (bool& K : Inv.Keys) K = false;
 	Invulnerability = Invisibility = RadSuit = LightAmp = 0;
@@ -831,6 +833,8 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		return bGot;
 	};
 
+	const FDoomRules& R = DoomInfo::Rules();
+	const int32* Clip = R.ClipAmmo;
 	bool bTaken = true;
 	const TCHAR* Sound = TEXT("ITEMUP");
 	switch (Def.Pickup)
@@ -842,12 +846,12 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		Inv.Health = FMath::Min(Inv.Health + Amount, 100);
 		break;
 	}
-	case EPickup::HealthBonus: Inv.Health = FMath::Min(Inv.Health + 1, 200); break;
-	case EPickup::ArmorBonus: Inv.Armor = FMath::Min(Inv.Armor + 1, 200); if (!Inv.ArmorClass) Inv.ArmorClass = 1; break;
-	case EPickup::Soulsphere: Inv.Health = FMath::Min(Inv.Health + 100, 200); Sound = TEXT("GETPOW"); break;
-	case EPickup::Megasphere: Inv.Health = 200; Inv.Armor = 200; Inv.ArmorClass = 2; Sound = TEXT("GETPOW"); break;
-	case EPickup::GreenArmor: if (Inv.Armor >= 100) return false; Inv.Armor = 100; Inv.ArmorClass = 1; break;
-	case EPickup::BlueArmor: if (Inv.Armor >= 200) return false; Inv.Armor = 200; Inv.ArmorClass = 2; break;
+	case EPickup::HealthBonus: Inv.Health = FMath::Min(Inv.Health + 1, R.MaxHealth); break;
+	case EPickup::ArmorBonus: Inv.Armor = FMath::Min(Inv.Armor + 1, R.MaxArmor); if (!Inv.ArmorClass) Inv.ArmorClass = 1; break;
+	case EPickup::Soulsphere: Inv.Health = FMath::Min(Inv.Health + R.SoulsphereHealth, R.MaxSoulsphere); Sound = TEXT("GETPOW"); break;
+	case EPickup::Megasphere: Inv.Health = R.MegasphereHealth; Inv.Armor = 100 * R.BlueArmorClass; Inv.ArmorClass = R.BlueArmorClass; Sound = TEXT("GETPOW"); break;
+	case EPickup::GreenArmor: if (Inv.Armor >= 100 * R.GreenArmorClass) return false; Inv.Armor = 100 * R.GreenArmorClass; Inv.ArmorClass = R.GreenArmorClass; break;
+	case EPickup::BlueArmor: if (Inv.Armor >= 100 * R.BlueArmorClass) return false; Inv.Armor = 100 * R.BlueArmorClass; Inv.ArmorClass = R.BlueArmorClass; break;
 	case EPickup::Invulnerability: Invulnerability = 30 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::Berserk:
 		bBerserk = true;
@@ -865,25 +869,25 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	case EPickup::BlueSkull: Inv.Keys[3] = true; break;
 	case EPickup::YellowSkull: Inv.Keys[4] = true; break;
 	case EPickup::RedSkull: Inv.Keys[5] = true; break;
-	case EPickup::Clip: bTaken = GiveAmmo(EDoomAmmo::Bullets, bDropped ? 5 : 10); break;
-	case EPickup::ClipBox: bTaken = GiveAmmo(EDoomAmmo::Bullets, 50); break;
-	case EPickup::Shells: bTaken = GiveAmmo(EDoomAmmo::Shells, 4); break;
-	case EPickup::ShellBox: bTaken = GiveAmmo(EDoomAmmo::Shells, 20); break;
-	case EPickup::Rocket: bTaken = GiveAmmo(EDoomAmmo::Rockets, 1); break;
-	case EPickup::RocketBox: bTaken = GiveAmmo(EDoomAmmo::Rockets, 5); break;
-	case EPickup::Cell: bTaken = GiveAmmo(EDoomAmmo::Cells, 20); break;
-	case EPickup::CellPack: bTaken = GiveAmmo(EDoomAmmo::Cells, 100); break;
+	case EPickup::Clip: bTaken = GiveAmmo(EDoomAmmo::Bullets, bDropped ? FMath::Max(1, Clip[0] / 2) : Clip[0]); break;
+	case EPickup::ClipBox: bTaken = GiveAmmo(EDoomAmmo::Bullets, Clip[0] * 5); break;
+	case EPickup::Shells: bTaken = GiveAmmo(EDoomAmmo::Shells, Clip[1]); break;
+	case EPickup::ShellBox: bTaken = GiveAmmo(EDoomAmmo::Shells, Clip[1] * 5); break;
+	case EPickup::Rocket: bTaken = GiveAmmo(EDoomAmmo::Rockets, Clip[2]); break;
+	case EPickup::RocketBox: bTaken = GiveAmmo(EDoomAmmo::Rockets, Clip[2] * 5); break;
+	case EPickup::Cell: bTaken = GiveAmmo(EDoomAmmo::Cells, Clip[3]); break;
+	case EPickup::CellPack: bTaken = GiveAmmo(EDoomAmmo::Cells, Clip[3] * 5); break;
 	case EPickup::Backpack:
 		Inv.bBackpack = true;
-		GiveAmmo(EDoomAmmo::Bullets, 10); GiveAmmo(EDoomAmmo::Shells, 4); GiveAmmo(EDoomAmmo::Rockets, 1); GiveAmmo(EDoomAmmo::Cells, 20);
+		GiveAmmo(EDoomAmmo::Bullets, Clip[0]); GiveAmmo(EDoomAmmo::Shells, Clip[1]); GiveAmmo(EDoomAmmo::Rockets, Clip[2]); GiveAmmo(EDoomAmmo::Cells, Clip[3]);
 		break;
 	case EPickup::Chainsaw: bTaken = GiveWeapon(EDoomWeapon::Chainsaw, EDoomAmmo::None, 0); Sound = TEXT("WPNUP"); break;
-	case EPickup::Shotgun: bTaken = GiveWeapon(EDoomWeapon::Shotgun, EDoomAmmo::Shells, 8); Sound = TEXT("WPNUP"); break;
-	case EPickup::SuperShotgun: bTaken = GiveWeapon(EDoomWeapon::SuperShotgun, EDoomAmmo::Shells, 8); Sound = TEXT("WPNUP"); break;
-	case EPickup::Chaingun: bTaken = GiveWeapon(EDoomWeapon::Chaingun, EDoomAmmo::Bullets, 20); Sound = TEXT("WPNUP"); break;
-	case EPickup::RocketLauncher: bTaken = GiveWeapon(EDoomWeapon::Rocket, EDoomAmmo::Rockets, 2); Sound = TEXT("WPNUP"); break;
-	case EPickup::Plasma: bTaken = GiveWeapon(EDoomWeapon::Plasma, EDoomAmmo::Cells, 40); Sound = TEXT("WPNUP"); break;
-	case EPickup::BFG: bTaken = GiveWeapon(EDoomWeapon::BFG, EDoomAmmo::Cells, 40); Sound = TEXT("WPNUP"); break;
+	case EPickup::Shotgun: bTaken = GiveWeapon(EDoomWeapon::Shotgun, EDoomAmmo::Shells, Clip[1] * 2); Sound = TEXT("WPNUP"); break;
+	case EPickup::SuperShotgun: bTaken = GiveWeapon(EDoomWeapon::SuperShotgun, EDoomAmmo::Shells, Clip[1] * 2); Sound = TEXT("WPNUP"); break;
+	case EPickup::Chaingun: bTaken = GiveWeapon(EDoomWeapon::Chaingun, EDoomAmmo::Bullets, Clip[0] * 2); Sound = TEXT("WPNUP"); break;
+	case EPickup::RocketLauncher: bTaken = GiveWeapon(EDoomWeapon::Rocket, EDoomAmmo::Rockets, Clip[2] * 2); Sound = TEXT("WPNUP"); break;
+	case EPickup::Plasma: bTaken = GiveWeapon(EDoomWeapon::Plasma, EDoomAmmo::Cells, Clip[3] * 2); Sound = TEXT("WPNUP"); break;
+	case EPickup::BFG: bTaken = GiveWeapon(EDoomWeapon::BFG, EDoomAmmo::Cells, Clip[3] * 2); Sound = TEXT("WPNUP"); break;
 	default: return false;
 	}
 	if (!bTaken)
@@ -891,7 +895,9 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		return false;
 	}
 	BonusCount = FMath::Min(BonusCount + 6, 24);
-	DoomWorld->ShowMessage(DoomInfo::PickupMessage(Def.Pickup));
+	DoomWorld->ShowMessage(Def.Pickup == EPickup::Health
+		? DoomInfo::Text(Def.DoomEdNum == 2011 ? TEXT("GOTSTIM") : TEXT("GOTMEDIKIT"), DoomInfo::PickupMessage(Def.Pickup))
+		: DoomInfo::PickupMessage(Def.Pickup));
 	DoomWorld->PlaySound(Sound, nullptr);
 	return true;
 }
