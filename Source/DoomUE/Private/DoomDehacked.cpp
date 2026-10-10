@@ -59,7 +59,7 @@ FDehackedResult DoomDehacked::Apply(const FString& Source)
 	TArray<FString> Lines;
 	Source.Replace(TEXT("\r"), TEXT("")).ParseIntoArray(Lines, TEXT("\n"), false);
 
-	enum class EBlock { None, Thing, Misc, Ammo, Pars, Strings, Skip };
+	enum class EBlock { None, Thing, Misc, Ammo, Pars, Strings, Sprites, Sounds, Skip };
 	EBlock Block = EBlock::None;
 	int32 ThingCode = 0;
 	int32 AmmoIndex = -1;
@@ -75,7 +75,8 @@ FDehackedResult DoomDehacked::Apply(const FString& Source)
 		if (Line.StartsWith(TEXT("[")))
 		{
 			const FString Section = Line.ToUpper();
-			Block = Section == TEXT("[PARS]") ? EBlock::Pars : Section == TEXT("[STRINGS]") ? EBlock::Strings : EBlock::Skip;
+			Block = Section == TEXT("[PARS]") ? EBlock::Pars : Section == TEXT("[STRINGS]") ? EBlock::Strings
+				: Section == TEXT("[SPRITES]") ? EBlock::Sprites : Section == TEXT("[SOUNDS]") ? EBlock::Sounds : EBlock::Skip;
 			if (Block == EBlock::Skip) ++R.Skipped;
 			continue;
 		}
@@ -95,17 +96,47 @@ FDehackedResult DoomDehacked::Apply(const FString& Source)
 			if (Head == TEXT("ammo")) { Block = EBlock::Ammo; AmmoIndex = FCString::Atoi(*Words[1]); continue; }
 			if (Head == TEXT("text") && Words.Num() >= 3)
 			{
-				// "Text <old length> <new length>": the next characters are the old text
-				// then the new one, newlines included. Without the original strings to match,
-				// the port skips them.
-				int32 Remaining = FCString::Atoi(*Words[1]) + FCString::Atoi(*Words[2]);
-				while (Remaining > 0 && i + 1 < Lines.Num())
+				// "Text <old length> <new length>": the next characters (newlines included) are the
+				// old text then the new one. Four letters rename a sprite, up to six a sound;
+				// longer texts replace whichever loaded string (DEHACKED / BEX) currently reads Old.
+				const int32 OldLen = FCString::Atoi(*Words[1]);
+				const int32 NewLen = FCString::Atoi(*Words[2]);
+				FString Rest;
+				for (int32 k = i + 1; k < Lines.Num(); ++k)
 				{
-					++i;
-					Remaining -= Lines[i].Len() + 1;
+					Rest += Lines[k];
+					if (k + 1 < Lines.Num()) Rest += TEXT("\n");
 				}
+				const FString Old = Rest.Left(OldLen);
+				const FString New = Rest.Mid(OldLen, NewLen);
+				int32 Consumed = 0;
+				for (TCHAR C : Rest.Left(OldLen + NewLen)) if (C == '\n') ++Consumed;
+				i += Consumed + 1;
 				Block = EBlock::None;
-				++R.Skipped;
+				auto IsName = [](const FString& S) { if (S.IsEmpty()) return false; for (TCHAR C : S) if (!FChar::IsAlnum(C) && C != '_') return false; return true; };
+				if (OldLen == 4 && NewLen == 4 && IsName(Old) && IsName(New))
+				{
+					DoomInfo::SetSpriteRename(Old, New);
+					++R.Renames;
+				}
+				else if (OldLen <= 6 && NewLen <= 6 && IsName(Old) && IsName(New))
+				{
+					DoomInfo::SetSoundRename(Old, New);
+					++R.Renames;
+				}
+				else
+				{
+					const FString Key = DoomInfo::FindStringKey(Old);
+					if (!Key.IsEmpty())
+					{
+						DoomInfo::SetString(Key, New);
+						++R.Strings;
+					}
+					else
+					{
+						++R.Skipped; // a string this WAD never defined
+					}
+				}
 				continue;
 			}
 			if (Head == TEXT("frame") || Head == TEXT("pointer") || Head == TEXT("sound") || Head == TEXT("sprite") || Head == TEXT("weapon") || Head == TEXT("cheat"))
@@ -140,6 +171,13 @@ FDehackedResult DoomDehacked::Apply(const FString& Source)
 		Key = Key.TrimStartAndEnd();
 		Value = Value.TrimStartAndEnd();
 
+		if (Block == EBlock::Sprites || Block == EBlock::Sounds)
+		{
+			if (Block == EBlock::Sprites) DoomInfo::SetSpriteRename(Key, Value);
+			else DoomInfo::SetSoundRename(Key, Value);
+			++R.Renames;
+			continue;
+		}
 		if (Block == EBlock::Strings)
 		{
 			// a trailing backslash continues the value on the next line

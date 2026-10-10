@@ -65,7 +65,7 @@ void FDoomWad::Finalize()
 		const FString& N = Lumps[i].NameStr;
 		const bool bExMy = N.Len() == 4 && N[0] == 'E' && FChar::IsDigit(N[1]) && N[2] == 'M' && FChar::IsDigit(N[3]);
 		const bool bMapXX = N.Len() == 5 && N.StartsWith(TEXT("MAP")) && FChar::IsDigit(N[3]) && FChar::IsDigit(N[4]);
-		if ((bExMy || bMapXX) && i + 1 < Lumps.Num() && Lumps[i + 1].NameStr == TEXT("THINGS"))
+		if ((bExMy || bMapXX) && i + 1 < Lumps.Num() && (Lumps[i + 1].NameStr == TEXT("THINGS") || Lumps[i + 1].NameStr == TEXT("TEXTMAP")))
 		{
 			Maps.AddUnique(N);
 			bDoom2 |= bMapXX;

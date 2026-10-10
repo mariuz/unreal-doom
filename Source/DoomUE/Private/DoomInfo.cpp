@@ -260,6 +260,7 @@ namespace
 	FDoomRules GRules;
 	TMap<FString, FString> GStrings;
 	TMap<FString, int32> GPars;
+	TMap<FString, FString> GSpriteRenames, GSoundRenames;
 }
 
 FDoomThingDef* DoomInfo::MutableThing(int32 DoomEdNum)
@@ -337,11 +338,48 @@ void DoomInfo::ResetTables()
 	GRules = FDoomRules();
 	GStrings.Reset();
 	GPars.Reset();
+	GSpriteRenames.Reset();
+	GSoundRenames.Reset();
 }
 
 void DoomInfo::SetString(const FString& Mnemonic, const FString& Text)
 {
 	GStrings.Add(Mnemonic.ToUpper(), Text);
+}
+
+FString DoomInfo::FindStringKey(const FString& Text)
+{
+	const FString Wanted = Text.TrimStartAndEnd();
+	for (const TPair<FString, FString>& Pair : GStrings)
+	{
+		if (Pair.Value.TrimStartAndEnd().Equals(Wanted, ESearchCase::IgnoreCase))
+		{
+			return Pair.Key;
+		}
+	}
+	return FString();
+}
+
+void DoomInfo::SetSpriteRename(const FString& From, const FString& To)
+{
+	GSpriteRenames.Add(From.ToUpper(), To.ToUpper());
+}
+
+FString DoomInfo::SpriteName(const FString& Prefix)
+{
+	const FString* R = GSpriteRenames.Find(Prefix);
+	return R ? *R : Prefix;
+}
+
+void DoomInfo::SetSoundRename(const FString& From, const FString& To)
+{
+	GSoundRenames.Add(From.ToUpper(), To.ToUpper());
+}
+
+FString DoomInfo::SoundName(const FString& Name)
+{
+	const FString* R = GSoundRenames.Find(Name.ToUpper());
+	return R ? *R : Name;
 }
 
 FString DoomInfo::Text(const TCHAR* Mnemonic, const FString& Default)

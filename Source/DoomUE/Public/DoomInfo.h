@@ -144,6 +144,13 @@ namespace DoomInfo
 	DOOMUE_API FString Text(const TCHAR* Mnemonic, const FString& Default);
 	DOOMUE_API bool HasText(const TCHAR* Mnemonic);
 	DOOMUE_API void SetString(const FString& Mnemonic, const FString& Text);
+	/** The mnemonic whose current text equals Text (DeHackEd Text blocks), or empty. */
+	DOOMUE_API FString FindStringKey(const FString& Text);
+	/** Sprite and sound renames (DeHackEd Text blocks, BEX [SPRITES] / [SOUNDS]). */
+	DOOMUE_API void SetSpriteRename(const FString& From, const FString& To);
+	DOOMUE_API FString SpriteName(const FString& Prefix);
+	DOOMUE_API void SetSoundRename(const FString& From, const FString& To);
+	DOOMUE_API FString SoundName(const FString& Name);
 	/** Par times in seconds ([PARS], UMAPINFO partime); -1 when unknown. */
 	DOOMUE_API void SetParTime(const FString& Map, int32 Seconds);
 	DOOMUE_API int32 ParTime(const FString& Map);

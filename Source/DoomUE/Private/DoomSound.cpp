@@ -1,6 +1,7 @@
 #include "DoomSound.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
+#include "DoomInfo.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundConcurrency.h"
@@ -71,7 +72,7 @@ void FDoomSound::Play(UWorld* World, const FString& Name, const FVector* Locatio
 	{
 		return;
 	}
-	const FPcm* Pcm = Get(Name);
+	const FPcm* Pcm = Get(DoomInfo::SoundName(Name));
 	if (!Pcm || Pcm->Samples16.Num() == 0)
 	{
 		return;
