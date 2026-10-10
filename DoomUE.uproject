@@ -1,0 +1,15 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "DOOM 1 / DOOM 2 WAD port for Unreal Engine 5.8 (C++)",
+	"Modules": [
+		{ "Name": "DoomUE", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "DoomUEEditor", "Type": "Editor", "LoadingPhase": "Default" }
+	],
+	"Plugins": [
+		{ "Name": "ProceduralMeshComponent", "Enabled": true },
+		{ "Name": "EnhancedInput", "Enabled": true },
+		{ "Name": "ModelingToolsEditorMode", "Enabled": false }
+	]
+}
