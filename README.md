@@ -36,6 +36,7 @@ with `-iwad=` / `-file=`.
 | Impassable / monster-blocking lines | Invisible collision meshes. Monster capsules use a custom `DoomMonster` object channel that only the monster-block mesh responds to |
 | Pickups | Overlap events on capsules |
 | Sound effects (`DS*` DMX) | Converted to 16-bit PCM, played as `USoundWaveProcedural` with `USoundAttenuation` (full volume within 200 units, silent at 1200) and `USoundConcurrency` voice limiting |
+| Music (`D_*` MUS or MIDI lumps + `GENMIDI`) | `FDoomSong` parses MUS (140 Hz ticks) and standard MIDI (tempo map) into timed events; `FDoomMusicPlayer` is an OPL-style FM synthesizer written for this port: 18 two-operator voices programmed from the WAD's GENMIDI bank (multipliers, ADSR envelopes in dB, 8 waveforms, feedback, FM / additive connection, key scaling, tremolo and vibrato, double-voice instruments, the percussion bank), with stereo panning. It renders on the audio render thread through a `USoundWaveProcedural` subclass on a 2D music `UAudioComponent`: level tracks, Doom 2's MAPxx table, intermission and title music |
 | Status bar, face, weapon sprites, messages, automap, intermission, menu | `AHUD` drawing the WAD's own patches with `UCanvas` in Doom's 320×200 frame at 4:3 |
 | Simulation | `UTickableWorldSubsystem` (`UDoomWorld`) running a fixed 35 Hz tic |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
@@ -90,6 +91,8 @@ loose files.
 | `-modern` / `-classic` | renderer |
 | `-autotest[=seconds] [-autoyaw=deg] [-autopitch=deg]` | ignore input, screenshot to `Saved/Screenshots/.../autotest_<map>.png`, quit |
 | `-nomips` | debug: no texture mip chain |
+| `-nomusic` | silence the music |
+| `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
 ### Controls
 
@@ -126,7 +129,10 @@ Verified on this machine (UE 5.8.1, Windows 11): both targets compile cleanly, t
 generate and compile, and the automated captures above render E1M1 (Freedoom 1), MAP01
 (Freedoom 2) and the title screen in classic mode, and E1M1 in modern mode once shaders finish.
 E1M1's BSP gives 682 subsector polygons with a total area of 6,712,686 square units, matching
-the Pascal port's reference (6,712,683) to rounding.
+the Pascal port's reference (6,712,683) to rounding. Music: Freedoom's D_E1M1 (12,440 events) and D_RUNNIN render
+without clipping at about 16x real time, and start on the title screen and on map load
+(listen to `Saved/music_*.wav` from `-dumpmusic`; the FM model approximates an OPL3, it is
+not a cycle-accurate emulation).
 
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
@@ -136,10 +142,9 @@ cases, knockback strength, and HUD offsets.
 
 Not done yet (roughly in priority order):
 
-1. Music: MUS/MIDI with the GENMIDI OPL patches (the Pascal port drives an OPL3 emulator).
-2. Save / load.
-3. ZDoom extended nodes and glBSP GL nodes (vanilla BSP only today), UMAPINFO, DeHackEd, Boom `ANIMATED` / `SWITCHES`.
-4. Finale texts, end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
-5. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
-6. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
-7. Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.
+1. Save / load.
+2. ZDoom extended nodes and glBSP GL nodes (vanilla BSP only today), UMAPINFO, DeHackEd, Boom `ANIMATED` / `SWITCHES`.
+3. Finale texts, end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
+4. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
+5. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
+6. Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

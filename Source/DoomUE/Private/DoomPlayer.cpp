@@ -17,7 +17,7 @@
 
 namespace
 {
-	int32 Rand() { return DoomInfo::Random(); }
+	int32 PlayerRand() { return DoomInfo::Random(); }
 	constexpr float WeaponTop = 32.f;
 	constexpr float WeaponBottom = 128.f;
 	constexpr float RaiseSpeed = 6.f;
@@ -494,7 +494,7 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 	}
 	if (F.Flash >= 0)
 	{
-		FlashFrame = 'A' + (Inv.Ready == EDoomWeapon::Plasma ? (Rand() & 1) : F.Flash);
+		FlashFrame = 'A' + (Inv.Ready == EDoomWeapon::Plasma ? (PlayerRand() & 1) : F.Flash);
 		FlashTics = Inv.Ready == EDoomWeapon::Pistol ? 7 : 5;
 		ExtraLight = (Inv.Ready == EDoomWeapon::Rocket || Inv.Ready == EDoomWeapon::BFG || Inv.Ready == EDoomWeapon::SuperShotgun) ? 2 : 1;
 		if (DoomWorld->IsModern())
@@ -599,8 +599,8 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPlayerShot), false, this);
 	for (int32 i = 0; i < Pellets; ++i)
 	{
-		const float Yaw = GetControlRotation().Yaw + (bAccurate ? 0.f : (Rand() - Rand()) / 255.f * SpreadYaw);
-		const float PelletSlope = Slope + (SpreadPitch > 0 ? FMath::Tan(FMath::DegreesToRadians((Rand() - Rand()) / 255.f * SpreadPitch)) : 0.f);
+		const float Yaw = GetControlRotation().Yaw + (bAccurate ? 0.f : (PlayerRand() - PlayerRand()) / 255.f * SpreadYaw);
+		const float PelletSlope = Slope + (SpreadPitch > 0 ? FMath::Tan(FMath::DegreesToRadians((PlayerRand() - PlayerRand()) / 255.f * SpreadPitch)) : 0.f);
 		const FVector Dir = (FRotator(0, Yaw, 0).Vector() + FVector(0, 0, PelletSlope)).GetSafeNormal();
 		FHitResult Hit;
 		const FVector End = Eye + Dir * Range;
@@ -610,7 +610,7 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 		{
 			continue;
 		}
-		const int32 Damage = DamageMul * ((Rand() % DamageDie) + 1);
+		const int32 Damage = DamageMul * ((PlayerRand() % DamageDie) + 1);
 		AActor* A = Hit.GetActor();
 		if (A && (A->IsA<ADoomMonster>() || A->IsA<ADoomThing>()))
 		{
@@ -643,7 +643,7 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 
 void ADoomPlayer::MeleeAttack(bool bSaw)
 {
-	int32 Damage = 2 * ((Rand() % 10) + 1);
+	int32 Damage = 2 * ((PlayerRand() % 10) + 1);
 	if (!bSaw && bBerserk)
 	{
 		Damage *= 10;
@@ -651,7 +651,7 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 	AActor* AimTarget = nullptr;
 	const float Range = bSaw ? 65.f : 64.f;
 	const float Slope = AimSlope(DoomAngle(), Range, AimTarget);
-	const float Yaw = GetControlRotation().Yaw + (bSaw ? (Rand() - Rand()) / 255.f * 5.6f : 0.f);
+	const float Yaw = GetControlRotation().Yaw + (bSaw ? (PlayerRand() - PlayerRand()) / 255.f * 5.6f : 0.f);
 	const FVector Eye = GetActorLocation() + FVector(0, 0, 8.f * Doom::Scale);
 	const FVector Dir = (FRotator(0, Yaw, 0).Vector() + FVector(0, 0, Slope)).GetSafeNormal();
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMelee), false, this);

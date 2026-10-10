@@ -117,6 +117,10 @@ public:
 
 	// --- actions ----------------------------------------------------------------------------------
 	void PlaySound(const FString& Name, const FVector* Location, float Volume = 1.f);
+	/** Starts a music lump (D_E1M1, D_RUNNIN...) looping; empty or missing stops the music. */
+	void PlayMusic(const FString& Lump);
+	void PlayTitleMusic();
+	void StopMusic();
 	void PlaySoundAt(const FString& Name, const FVector& Location) { PlaySound(Name, &Location); }
 
 	/** Player pressed use: P_UseLines (64 units ahead). */
@@ -204,6 +208,11 @@ private:
 	TArray<TObjectPtr<AActor>> EnvironmentActors;
 	UPROPERTY()
 	TObjectPtr<APostProcessVolume> PostProcess;
+	UPROPERTY()
+	TObjectPtr<class UAudioComponent> MusicComponent;
+	UPROPERTY()
+	TObjectPtr<class UDoomMusicWave> MusicWave;
+	FString CurrentMusic;
 
 	TArray<TWeakObjectPtr<ADoomThing>> Things;
 	TArray<TWeakObjectPtr<ADoomMonster>> Monsters;

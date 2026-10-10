@@ -10,6 +10,8 @@
 #include "DoomPlayer.h"
 #include "DoomSettings.h"
 #include "DoomAssets.h"
+#include "DoomMusic.h"
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/ExponentialHeightFog.h"
@@ -141,6 +143,7 @@ bool UDoomWorld::ShouldCreateSubsystem(UObject* Outer) const
 
 void UDoomWorld::Deinitialize()
 {
+	StopMusic();
 	UnloadMap();
 	Sound.Reset();
 	Gfx.Reset();
@@ -294,6 +297,7 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart)
 	}
 	State = EDoomGameState::Playing;
 	ShowMessage(CurrentMap);
+	PlayMusic(DoomMusic::LumpForMap(CurrentMap));
 	return true;
 }
 
@@ -642,6 +646,56 @@ void UDoomWorld::PlaySound(const FString& Name, const FVector* Location, float V
 	if (Sound.IsValid())
 	{
 		Sound->Play(GetWorld(), Name, Location, Volume);
+	}
+}
+
+void UDoomWorld::StopMusic()
+{
+	if (MusicComponent)
+	{
+		MusicComponent->Stop();
+		MusicComponent->DestroyComponent();
+		MusicComponent = nullptr;
+	}
+	MusicWave = nullptr;
+	CurrentMusic.Reset();
+}
+
+void UDoomWorld::PlayTitleMusic()
+{
+	if (Wad.IsValid())
+	{
+		PlayMusic(Wad->IsDoom2() ? TEXT("D_DM2TTL") : TEXT("D_INTRO"));
+	}
+}
+
+void UDoomWorld::PlayMusic(const FString& Lump)
+{
+	if (Lump == CurrentMusic && MusicComponent)
+	{
+		return; // same song keeps playing, like Doom
+	}
+	StopMusic();
+	const float Volume = GetDefault<UDoomSettings>()->MusicVolume;
+	if (Lump.IsEmpty() || !Wad.IsValid() || Volume <= 0.f || FParse::Param(FCommandLine::Get(), TEXT("nomusic")))
+	{
+		return;
+	}
+	TSharedPtr<FDoomMusicPlayer> Player = DoomMusic::CreatePlayer(*Wad, Lump, true);
+	if (!Player)
+	{
+		return;
+	}
+	Player->Volume = Volume;
+	MusicWave = NewObject<UDoomMusicWave>(this);
+	MusicWave->Start(Player);
+	// a 2D, non-spatialized component that survives map changes inside this world
+	MusicComponent = UGameplayStatics::CreateSound2D(GetWorld(), MusicWave, 1.f, 1.f, 0.f, nullptr, true, false);
+	if (MusicComponent)
+	{
+		MusicComponent->bIsMusic = true;
+		MusicComponent->Play();
+		CurrentMusic = Lump;
 	}
 }
 
@@ -1909,6 +1963,7 @@ void UDoomWorld::ExitLevel(bool bSecret)
 	}
 	IntermissionTic = 0;
 	State = EDoomGameState::Intermission;
+	PlayMusic(Wad->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
 	if (ADoomPlayer* P = GetPlayer())
 	{
 		P->GetCharacterMovement()->StopMovementImmediately();
@@ -1921,6 +1976,7 @@ void UDoomWorld::FinishIntermission()
 	{
 		UnloadMap();
 		State = EDoomGameState::Title;
+		PlayTitleMusic();
 		return;
 	}
 	LoadMap(PendingMap, false);

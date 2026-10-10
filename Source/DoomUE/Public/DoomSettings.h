@@ -52,4 +52,8 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Audio", meta = (ClampMin = 0, ClampMax = 1))
 	float SfxVolume = 0.8f;
+
+	/** OPL-style FM music from the WAD's MUS/MIDI lumps and GENMIDI bank. */
+	UPROPERTY(Config, EditAnywhere, Category = "Audio", meta = (ClampMin = 0, ClampMax = 1))
+	float MusicVolume = 0.6f;
 };

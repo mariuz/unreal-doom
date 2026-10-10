@@ -23,7 +23,7 @@ namespace
 		return FVector2f(FMath::Cos(A), FMath::Sin(A));
 	}
 
-	int32 Rand() { return DoomInfo::Random(); }
+	int32 MonsterRand() { return DoomInfo::Random(); }
 
 	bool Is(const FDoomThingDef* D, const TCHAR* Name) { return D && FCString::Strcmp(D->Name, Name) == 0; }
 }
@@ -327,7 +327,7 @@ void ADoomMonster::FaceTarget()
 	{
 		if (P->Invisibility > 0)
 		{
-			DoomAngle += (Rand() - Rand()) * 0.09f; // spectral fuzz throws the aim off
+			DoomAngle += (MonsterRand() - MonsterRand()) * 0.09f; // spectral fuzz throws the aim off
 		}
 	}
 }
@@ -378,7 +378,7 @@ bool ADoomMonster::CheckMissileRange()
 		Dist *= 0.5f;
 	}
 	Dist = FMath::Min(Dist, Is(Def, TEXT("Cyberdemon")) ? 160.f : 200.f);
-	return Rand() >= Dist;
+	return MonsterRand() >= Dist;
 }
 
 bool ADoomMonster::TestMove(int32 Dir) const
@@ -458,7 +458,7 @@ void ADoomMonster::NewChaseDir()
 			return false;
 		}
 		MoveDir = Dir;
-		MoveCount = Rand() & 15;
+		MoveCount = MonsterRand() & 15;
 		StepStart = DoomPos();
 		return true;
 	};
@@ -468,7 +468,7 @@ void ADoomMonster::NewChaseDir()
 		const int32 Diag = D1 == 0 ? (D2 == 2 ? 1 : 7) : (D2 == 2 ? 3 : 5);
 		if (Diag != TurnAround && Try(Diag)) return;
 	}
-	if (Rand() > 200 || FMath::Abs(Delta.Y) > FMath::Abs(Delta.X))
+	if (MonsterRand() > 200 || FMath::Abs(Delta.Y) > FMath::Abs(Delta.X))
 	{
 		Swap(D1, D2);
 	}
@@ -476,7 +476,7 @@ void ADoomMonster::NewChaseDir()
 	if (D2 == TurnAround) D2 = DirNone;
 	if (Try(D1) || Try(D2)) return;
 	if (OldDir != DirNone && Try(OldDir)) return;
-	if (Rand() & 1)
+	if (MonsterRand() & 1)
 	{
 		for (int32 d = 0; d < 8; ++d) if (d != TurnAround && Try(d)) return;
 	}
@@ -603,7 +603,7 @@ void ADoomMonster::Chase()
 		NewChaseDir();
 	}
 
-	if (*Def->ActiveSound && Rand() < 3)
+	if (*Def->ActiveSound && MonsterRand() < 3)
 	{
 		const FVector L = GetActorLocation();
 		DoomWorld->PlaySound(Def->ActiveSound, &L);
@@ -627,14 +627,14 @@ void ADoomMonster::HitscanAttack(int32 Pellets, float SpreadDeg, int32 DamageMul
 	}
 	for (int32 i = 0; i < Pellets; ++i)
 	{
-		const float Yaw = (Rand() - Rand()) / 255.f * SpreadDeg;
+		const float Yaw = (MonsterRand() - MonsterRand()) / 255.f * SpreadDeg;
 		const FVector Dir = Base.RotateAngleAxis(Yaw, FVector::UpVector);
 		FHitResult Hit;
 		if (!GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * Range, ECC_Visibility, Q))
 		{
 			continue;
 		}
-		const int32 Damage = ((Rand() % 5) + 1) * DamageMul;
+		const int32 Damage = ((MonsterRand() % 5) + 1) * DamageMul;
 		if (Hit.GetActor() && (Hit.GetActor()->IsA<ADoomPlayer>() || Hit.GetActor()->IsA<ADoomMonster>() || Hit.GetActor()->IsA<ADoomThing>()))
 		{
 			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, Dir, Hit, nullptr, this, nullptr);
@@ -668,7 +668,7 @@ void ADoomMonster::DoAttack(bool bMelee)
 	{
 		if (CheckMeleeRange())
 		{
-			const int32 Damage = ((Rand() % Die) + 1) * Def->MeleeDamage;
+			const int32 Damage = ((MonsterRand() % Die) + 1) * Def->MeleeDamage;
 			UGameplayStatics::ApplyDamage(Target.Get(), Damage, nullptr, this, nullptr);
 			const FVector L = GetActorLocation();
 			DoomWorld->PlaySound(Is(Def, TEXT("Imp")) ? TEXT("CLAW") : Is(Def, TEXT("Revenant")) ? TEXT("SKEPCH") : TEXT(""), &L);
@@ -785,7 +785,7 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 		Die(Source, Health < -Def->Health);
 		return Damage;
 	}
-	if (Rand() < Def->PainChance && *Def->Pain && State != EMonsterState::Charging)
+	if (MonsterRand() < Def->PainChance && *Def->Pain && State != EMonsterState::Charging)
 	{
 		bJustHit = true;
 		StartState(EMonsterState::Pain);
@@ -874,7 +874,7 @@ void ADoomMonster::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimit
 	// a charging lost soul slams into whatever it hits
 	if (Other && (Other->IsA<ADoomPlayer>() || Other->IsA<ADoomMonster>()))
 	{
-		UGameplayStatics::ApplyDamage(Other, ((Rand() % 8) + 1) * 3, nullptr, this, nullptr);
+		UGameplayStatics::ApplyDamage(Other, ((MonsterRand() % 8) + 1) * 3, nullptr, this, nullptr);
 	}
 	ChargeVelocity = FVector::ZeroVector;
 	ChargeTics = 0;

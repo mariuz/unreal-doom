@@ -6,6 +6,7 @@
 #include "DoomSettings.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
+#include "DoomMusic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -63,6 +64,19 @@ void ADoomGameMode::StartPlay()
 	else
 	{
 		W->SetState(EDoomGameState::Title);
+		W->PlayTitleMusic();
+	}
+
+	// -dumpmusic=D_E1M1[,seconds]: render a song to Saved/music_<lump>.wav and log its statistics
+	FString Dump;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-dumpmusic="), Dump, false))
+	{
+		FString Lump = Dump, Secs = TEXT("30");
+		Dump.Split(TEXT(","), &Lump, &Secs);
+		FString Stats;
+		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
+		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
+		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
 	}
 
 	// -autotest[=seconds] [-autoyaw=deg]: screenshot Saved/Screenshots/autotest_<map>.png and quit
