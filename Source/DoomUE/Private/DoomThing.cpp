@@ -167,6 +167,12 @@ void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, U
 	}
 }
 
+void ADoomThing::DoomSerialize(FArchive& Ar)
+{
+	Ar << Health << bDropped;
+	Sprite->DoomSerialize(Ar);
+}
+
 float ADoomThing::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	if (!Def || !(Def->Flags & EThingFlag::Shootable) || bDead)

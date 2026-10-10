@@ -37,6 +37,7 @@ with `-iwad=` / `-file=`.
 | Pickups | Overlap events on capsules |
 | Sound effects (`DS*` DMX) | Converted to 16-bit PCM, played as `USoundWaveProcedural` with `USoundAttenuation` (full volume within 200 units, silent at 1200) and `USoundConcurrency` voice limiting |
 | Music (`D_*` MUS or MIDI lumps + `GENMIDI`) | `FDoomSong` parses MUS (140 Hz ticks) and standard MIDI (tempo map) into timed events; `FDoomMusicPlayer` is an OPL-style FM synthesizer written for this port: 18 two-operator voices programmed from the WAD's GENMIDI bank (multipliers, ADSR envelopes in dB, 8 waveforms, feedback, FM / additive connection, key scaling, tremolo and vibrato, double-voice instruments, the percussion bank), with stereo panning. It renders on the audio render thread through a `USoundWaveProcedural` subclass on a 2D music `UAudioComponent`: level tracks, Doom 2's MAPxx table, intermission and title music |
+| Save games (`p_saveg.c`) | Unreal's **SaveGame** system: `UDoomSaveGame` header (IWAD, map, skill, description, date) plus a versioned `FArchive` blob with sectors, lines, switch textures, movers, light effects, buttons, the player, monsters (AI state, animation, corpses, targets) and things. Loading rebuilds the map without its things, applies the state and rebuilds only the affected geometry. F6 / F9 quick save and load, six menu slots, `-loadgame=N` |
 | Status bar, face, weapon sprites, messages, automap, intermission, menu | `AHUD` drawing the WAD's own patches with `UCanvas` in Doom's 320×200 frame at 4:3 |
 | Simulation | `UTickableWorldSubsystem` (`UDoomWorld`) running a fixed 35 Hz tic |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
@@ -92,12 +93,14 @@ loose files.
 | `-autotest[=seconds] [-autoyaw=deg] [-autopitch=deg]` | ignore input, screenshot to `Saved/Screenshots/.../autotest_<map>.png`, quit |
 | `-nomips` | debug: no texture mip chain |
 | `-nomusic` | silence the music |
+| `-loadgame=N` | start from save slot N (0 = quicksave) |
+| `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
 ### Controls
 
 WASD / arrows move, mouse looks, LMB / Ctrl fires, E / Space / RMB uses, 1-7 / mouse wheel
-switches weapons, Tab opens the automap, Shift toggles run (always-run is on by default), and
+switches weapons, F6 / F9 quick save / load, Tab opens the automap, Shift toggles run (always-run is on by default), and
 Esc opens the menu. The menu lets you pick a map, skill and renderer. Gamepad works too.
 
 Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
@@ -132,7 +135,9 @@ E1M1's BSP gives 682 subsector polygons with a total area of 6,712,686 square un
 the Pascal port's reference (6,712,683) to rounding. Music: Freedoom's D_E1M1 (12,440 events) and D_RUNNIN render
 without clipping at about 16x real time, and start on the title screen and on map load
 (listen to `Saved/music_*.wav` from `-dumpmusic`; the FM model approximates an OPL3, it is
-not a cycle-accurate emulation).
+not a cycle-accurate emulation). Save games: `-savetest` on E1M1 saves with a door in
+motion, 2 corpses and 3 hunting monsters, scrambles the world and loads it back to an
+identical state fingerprint (PASS). Missiles in flight are not saved yet.
 
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
@@ -142,9 +147,8 @@ cases, knockback strength, and HUD offsets.
 
 Not done yet (roughly in priority order):
 
-1. Save / load.
-2. ZDoom extended nodes and glBSP GL nodes (vanilla BSP only today), UMAPINFO, DeHackEd, Boom `ANIMATED` / `SWITCHES`.
-3. Finale texts, end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
-4. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
-5. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
-6. Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.
+1. ZDoom extended nodes and glBSP GL nodes (vanilla BSP only today), UMAPINFO, DeHackEd, Boom `ANIMATED` / `SWITCHES`.
+2. Finale texts, end pictures, bunny scroller, cast call; the Icon of Sin's cube spawner.
+3. The menu drawn from the WAD's `M_*` graphics. Today it is text plus the logo and skull cursor.
+4. Palette-exact `COLORMAP` lookups (classic mode approximates each colormap row as a darkening in gamma space), spectre fuzz copying the background, and Nightmare respawning.
+5. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

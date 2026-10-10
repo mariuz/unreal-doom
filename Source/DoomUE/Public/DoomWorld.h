@@ -90,7 +90,19 @@ public:
 	bool InitWads();
 
 	/** Loads a map and places the player. Inventory carries over unless bPistolStart. */
-	bool LoadMap(const FString& MapName, bool bPistolStart);
+	bool LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame = false);
+
+	// --- save games (DoomSave.cpp) ------------------------------------------------------------
+	/** Slot 0 = quicksave, 1..6 = menu slots. */
+	bool SaveGame(int32 Slot);
+	bool LoadGame(int32 Slot);
+	FString SlotDescription(int32 Slot);
+	void RefreshSlots();
+	static FString SlotName(int32 Slot);
+	/** Saves, scrambles the world, loads and compares (-savetest). */
+	void RunSaveTest();
+	FString StateFingerprint() const;
+	int32 NumMovers() const { return Movers.Num(); }
 	void UnloadMap();
 
 	/** Level flow. */
@@ -169,6 +181,7 @@ public:
 	int32 MenuItem = 0;
 	int32 MenuMapIndex = 0;
 	int32 MenuSkill = 3;
+	int32 MenuSlot = 1;
 	bool MenuModern = false;
 	void StartNewGame(const FString& MapName, int32 InSkill);
 
@@ -213,6 +226,9 @@ private:
 	UPROPERTY()
 	TObjectPtr<class UDoomMusicWave> MusicWave;
 	FString CurrentMusic;
+	FString IWadName;
+	TMap<int32, FString> SlotCache;
+	void SerializeState(FArchive& Ar);
 
 	TArray<TWeakObjectPtr<ADoomThing>> Things;
 	TArray<TWeakObjectPtr<ADoomMonster>> Monsters;

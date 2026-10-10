@@ -815,15 +815,8 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 	Target.Reset();
 	MoveDir = DirNone;
 	ChargeVelocity = FVector::ZeroVector;
+	MakeCorpse();
 	UCapsuleComponent* Cap = GetCapsuleComponent();
-	// corpses keep resting on the world but stop blocking bodies and bullets
-	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Cap->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	if (Def->Flags & EThingFlag::Float)
-	{
-		GetCharacterMovement()->SetMovementMode(MOVE_Falling); // flyers drop
-	}
 	const bool bXDeath = bGib && *Def->XDeath;
 	Sprite->PlaySequence(bXDeath ? Def->XDeath : Def->Death, 5, false, (Def->Flags & EThingFlag::FullBright) != 0);
 	Sprite->SetFuzz((Def->Flags & EThingFlag::Shadow) != 0);
@@ -857,6 +850,46 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 		}
 	}
 	DoomWorld->OnMonsterDied(this);
+}
+
+void ADoomMonster::MakeCorpse()
+{
+	UCapsuleComponent* Cap = GetCapsuleComponent();
+	// corpses keep resting on the world but stop blocking bodies and bullets
+	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Cap->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	if (Def->Flags & EThingFlag::Float)
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Falling); // flyers drop
+	}
+	if (Light)
+	{
+		Light->SetVisibility(false);
+	}
+}
+
+void ADoomMonster::DoomSerialize(FArchive& Ar)
+{
+	uint8 S = (uint8)State;
+	FVector Velocity = GetCharacterMovement()->Velocity;
+	Ar << Health << DoomAngle << bAmbush << S << MoveDir << MoveCount << ReactionTime << Threshold
+		<< bJustAttacked << bJustHit << ChargeVelocity << ChargeTics << FireFrameSeen << Velocity;
+	Sprite->DoomSerialize(Ar);
+	if (Ar.IsLoading())
+	{
+		State = (EMonsterState)S;
+		if (IsDead())
+		{
+			MakeCorpse();
+		}
+		else
+		{
+			GetCharacterMovement()->Velocity = Velocity;
+		}
+		LastPos = StepStart = DoomPos();
+		Sprite->DoomAngle = DoomAngle;
+	}
 }
 
 void ADoomMonster::Landed(const FHitResult& Hit)

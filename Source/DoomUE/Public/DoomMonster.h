@@ -40,6 +40,9 @@ public:
 	bool CanBeRaised() const;
 	void Resurrect();
 
+	/** Save games: AI state, health, movement and animation (the target is saved by UDoomWorld). */
+	void DoomSerialize(FArchive& Ar);
+
 	FVector2f DoomPos() const;
 	float DoomZ() const; // feet height in Doom units
 
@@ -67,6 +70,7 @@ private:
 	void StartState(EMonsterState S);
 	void DoAttack(bool bMelee);
 	void Die(AActor* Killer, bool bGib);
+	void MakeCorpse();
 	void HitscanAttack(int32 Pellets, float SpreadDeg, int32 DamageMul);
 	bool VileTryRaise();
 	FVector EyeLocation() const;

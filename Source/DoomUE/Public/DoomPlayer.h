@@ -48,6 +48,9 @@ public:
 	/** Returns true when the item was taken. */
 	bool TryPickup(const FDoomThingDef& Def, bool bDropped);
 
+	/** Save games: position, view, velocity, inventory and powerups. */
+	void DoomSerialize(FArchive& Ar);
+
 	FVector2f DoomPos() const;
 	float DoomZ() const;
 	float DoomAngle() const;

@@ -748,6 +748,40 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	return Damage;
 }
 
+void ADoomPlayer::DoomSerialize(FArchive& Ar)
+{
+	FVector Location = GetActorLocation();
+	FRotator View = GetControlRotation();
+	FVector Velocity = GetCharacterMovement()->Velocity;
+	Ar << Location << View << Velocity;
+	Ar << Inv.Health << Inv.Armor << Inv.ArmorClass << Inv.bBackpack;
+	for (int32& A : Inv.Ammo) Ar << A;
+	for (bool& W : Inv.Weapons) Ar << W;
+	for (bool& K : Inv.Keys) Ar << K;
+	uint8 Ready = (uint8)Inv.Ready;
+	Ar << Ready;
+	Ar << Invulnerability << Invisibility << RadSuit << LightAmp << bBerserk;
+	if (Ar.IsLoading())
+	{
+		Inv.Ready = (EDoomWeapon)FMath::Min<uint8>(Ready, (uint8)EDoomWeapon::Count - 1);
+		SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
+		if (AController* C = GetController())
+		{
+			C->SetControlRotation(View);
+		}
+		GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		GetCharacterMovement()->Velocity = Velocity;
+		PendingWeapon = EDoomWeapon::Count;
+		Phase = EWeaponPhase::Ready;
+		WeaponY = WeaponTop;
+		FlashFrame = 0;
+		bFireHeld = false;
+		DamageCount = BonusCount = ExtraLight = 0;
+		SetWeaponSprite();
+		LastDoomPos = DoomPos();
+	}
+}
+
 bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 {
 	const bool bDoubleAmmo = DoomWorld && (DoomWorld->GetSkill() == 1 || DoomWorld->GetSkill() == 5);
