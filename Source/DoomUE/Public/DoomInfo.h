@@ -128,6 +128,8 @@ namespace DoomInfo
 {
 	DOOMUE_API const FDoomThingDef* FindThing(int32 DoomEdNum);
 	DOOMUE_API const FDoomThingDef* FindThingByName(const FString& Name);
+	/** Every thing type the port knows (editor type lists). */
+	DOOMUE_API TConstArrayView<FDoomThingDef> AllThings();
 	DOOMUE_API const FDoomProjectileDef* FindProjectile(const FString& Name);
 	DOOMUE_API const FDoomWeaponDef& Weapon(EDoomWeapon W);
 	DOOMUE_API int32 MaxAmmo(EDoomAmmo A, bool bBackpack);

@@ -33,7 +33,7 @@ class UTexture2D;
 /** Collision channel used by missiles (ECC_GameTraceChannel2 "DoomMissile"): they ignore impassable lines. */
 #define ECC_DoomMissile ECC_GameTraceChannel2
 
-UCLASS()
+UCLASS(HideDropdown)
 class DOOMUE_API ADoomLevel : public AActor
 {
 	GENERATED_BODY()
@@ -42,6 +42,12 @@ public:
 	ADoomLevel();
 
 	void Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bModern, FName SkyTexture);
+
+	/** Destroys all generated geometry (the editor preview rebuilds through this). */
+	void ClearGeometry();
+
+	/** Editor preview: collision cooks in the background and nothing is baked. */
+	bool bEditorPreview = false;
 
 	/** A sector's floor/ceiling or a side's texture changed: rebuild the affected chunks on Flush. */
 	void SectorChanged(int32 Sector);
@@ -60,6 +66,8 @@ public:
 
 	/** Static mesh tiles drawing the static chunk (0 when not baked). */
 	int32 NumBakedTiles() const { return BakedComponents.Num(); }
+	/** Procedural mesh components currently drawing or colliding (tests). */
+	int32 NumMeshComponents() const { return MeshComponents.Num(); }
 
 private:
 	struct FSectionData
@@ -104,21 +112,21 @@ private:
 	TArray<TArray<int32>> SectorChunks; // sector -> chunks depending on it
 	TArray<int32> LineChunk;            // line -> chunk
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UProceduralMeshComponent>> MeshComponents;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> BakedComponents;
 	uint32 BakedSignature = 0;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UMaterialInstanceDynamic>> Materials;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> WorldMaterial;
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> SkyMaterial;
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> SectorLightTex;
 
 	TArray<FColor> SectorLightPixels;
