@@ -69,14 +69,19 @@ Shooter Core: its heroes, weapons, abilities, teams, bots and HUD. E1M1 has been
    * The Elimination experience loads from World Settings, and the warm-up and playing phases run.
    * The hero and three bots stand on the Doom floors and fight. The red team scored a kill
      within the first minute.
+   * After 75 seconds, all four pawns are still on Doom floors: none has walked through a wall or
+     an impassable line, or jumped out through the sky.
 
 ## Notes
 
+* Collision is per-polygon and one-sided, so winding matters. DoomUE's level builder winds walls
+  the other way from floors (its materials are two-sided, so it never shows). The exporter
+  therefore winds every triangle to face its normal. Before that, floors held but bots walked
+  through walls into the void between rooms and fell out of the world.
 * The OBJ importer mirrors Y and keeps the face winding, so the script mirrors positions back and
-  leaves the faces alone. An earlier version also reversed the faces: every wall faced away (an
-  empty grey view) and every floor faced down (pawns fell straight through).
-* The launch pads keep `B_Launcher_Up`'s default launch. Its velocity variable was not found
-  under the names tried, and the default clears E1M1's two lifts.
+  leaves the faces alone. Reversing every face makes the floors face down instead.
+* The launch pads keep `B_Launcher_Up`'s default launch. Its only tuning variable is `UpOverride`
+  (250 by default, found with `ListProperties`). The default already clears E1M1's two lifts.
 
 * Lyra 5.8's editor sometimes crashes inside the Niagara editor while it loads (before any script
   runs). Running the command again works.

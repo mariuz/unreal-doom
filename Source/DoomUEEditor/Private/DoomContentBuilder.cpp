@@ -890,10 +890,13 @@ namespace
 		TMap<FString, TArray<FVector3f>> Tris; // role -> 3 positions per triangle
 		TMap<FString, TArray<FVector3f>> Norms;
 
+		// every triangle is wound so its front faces N: the level builder's walls come wound the other way
+		// from its floors, which a two-sided material hides but one-sided collision does not
 		void Add(const FString& Role, const FVector3f& A, const FVector3f& B, const FVector3f& C, const FVector3f& N)
 		{
+			const bool bFlip = FVector3f::DotProduct(FVector3f::CrossProduct(B - A, C - A), N) > 0;
 			TArray<FVector3f>& T = Tris.FindOrAdd(Role);
-			T.Add(A); T.Add(B); T.Add(C);
+			T.Add(A); T.Add(bFlip ? C : B); T.Add(bFlip ? B : C);
 			Norms.FindOrAdd(Role).Add(N);
 		}
 
@@ -999,23 +1002,6 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 	int32 Triangles = 0;
 	// collision-only surfaces (hidden in Lyra): step ramps, impassable lines, and Doom's sky as a shell
 	FObjWriter Collision;
-	// which winding Unreal treats as the front: taken from a floor triangle (its normal points up)
-	float FrontSign = 1.f;
-	for (const auto& Pair : Solid)
-	{
-		const ADoomLevel::FSectionData& D = Pair.Value;
-		if (D.I.Num() >= 3 && D.N[D.I[0]].Z > 0.9f)
-		{
-			const FVector3f A(D.V[D.I[0]]), B(D.V[D.I[1]]), C(D.V[D.I[2]]);
-			FrontSign = FVector3f::CrossProduct(B - A, C - A).Z > 0 ? 1.f : -1.f;
-			break;
-		}
-	}
-	auto AddFacing = [&](const TCHAR* Role, const FVector3f& A, const FVector3f& B, const FVector3f& C, const FVector3f& Facing)
-	{
-		const bool bFront = FVector3f::DotProduct(FVector3f::CrossProduct(B - A, C - A), Facing) * FrontSign > 0;
-		Collision.Add(Role, A, bFront ? B : C, bFront ? C : B, Facing);
-	};
 	for (const auto& Pair : Solid)
 	{
 		const FString Key = Pair.Key.ToString();
@@ -1071,8 +1057,8 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 			const FVector3f Side(Doom::ToUE(FVector2f(Dir.Y, -Dir.X), 0) / Doom::Scale);
 			for (const FVector3f& Facing : { Side, -Side })
 			{
-				AddFacing(TEXT("Blocker"), A0, B0, B1, Facing);
-				AddFacing(TEXT("Blocker"), A0, B1, A1, Facing);
+				Collision.Add(TEXT("Blocker"), A0, B0, B1, Facing);
+				Collision.Add(TEXT("Blocker"), A0, B1, A1, Facing);
 			}
 			++NumBlockers;
 			continue;
@@ -1093,8 +1079,8 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 		const FVector3f TA(Doom::ToUE(A, High)), TB(Doom::ToUE(B, High)), BA(Doom::ToUE(A2, Low)), BB(Doom::ToUE(B2, Low));
 		const FVector3f N = FVector3f::CrossProduct(TB - TA, BA - TA).GetSafeNormal();
 		const FVector3f Up = N.Z < 0 ? -N : N;
-		AddFacing(TEXT("Ramp"), TA, TB, BB, Up);
-		AddFacing(TEXT("Ramp"), TA, BB, BA, Up);
+		Collision.Add(TEXT("Ramp"), TA, TB, BB, Up);
+		Collision.Add(TEXT("Ramp"), TA, BB, BA, Up);
 		++NumRamps;
 	}
 	const FString RampFile = FString::Printf(TEXT("%s_Collision.obj"), *MapName);

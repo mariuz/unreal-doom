@@ -211,13 +211,8 @@ def main():
     # lifts become launch pads strong enough for the old lift height
     for i, lift in enumerate(info["lifts"]):
         a = spawn("/ShooterCore/Blueprint/B_Launcher_Up.B_Launcher_Up_C", vec(lift), 0, "LaunchPad_%d" % i, "Doom/Lifts")
-        if a and i == 0 and hasattr(unreal.DoomLyraToolsLibrary, "list_properties"):
-            log("B_Launcher_Up properties: " + ", ".join(unreal.DoomLyraToolsLibrary.list_properties(a, True)))
-        if a:
-            up = math.sqrt(2.0 * 980.0 * 1.6 * (lift["rise"] + 150.0))
-            if not set_any(a, ["LaunchVelocity"], unreal.Vector(0, 0, up)):
-                ok = unreal.DoomLyraToolsLibrary.set_property_from_text(a, "Launch Velocity", "(X=0,Y=0,Z=%.0f)" % up)
-                log("LaunchPad_%d Launch Velocity Z %.0f: %s" % (i, up, ok))
+        # the pad's only tuning variable is UpOverride (default 250); the default already clears
+        # E1M1's lifts, so it is left alone (list_properties shows a Blueprint's variables)
 
     # teleporters: a sender on the line, a receiver at the destination
     for i, tp in enumerate(info["teleporters"]):
