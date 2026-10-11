@@ -9,6 +9,9 @@
 //  * Sector light is not baked into vertices: every vertex carries its sector index in
 //    UV1.x and the material samples a 256-wide light texture (one texel per sector)
 //    that the game updates each tic, so flickering lights never touch the meshes.
+//  * Modern renderer: the static chunk is also baked into runtime UStaticMesh tiles
+//    (1024 map units square) so Lumen gets mesh distance fields and surface cards;
+//    the procedural chunk then stays hidden and only provides collision.
 //  * Invisible collision for impassable two-sided lines (players and monsters) and
 //    monster-blocking lines (a custom collision channel only monsters collide with).
 #pragma once
@@ -20,6 +23,7 @@
 class FDoomMap;
 class FDoomGraphics;
 class UProceduralMeshComponent;
+class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UTexture2D;
@@ -54,6 +58,9 @@ public:
 	/** Material instances that need the global light texture and other per-level params. */
 	UTexture2D* GetSectorLightTexture() const { return SectorLightTex; }
 
+	/** Static mesh tiles drawing the static chunk (0 when not baked). */
+	int32 NumBakedTiles() const { return BakedComponents.Num(); }
+
 private:
 	struct FSectionData
 	{
@@ -85,6 +92,9 @@ private:
 	FName SectionKey(FName Texture, bool bFlat, bool bSky) const;
 	UMaterialInterface* MaterialForKey(FName Key);
 	UProceduralMeshComponent* NewMeshComponent(const FString& Name, bool bCollision);
+	/** Bakes the static chunk's sections into static mesh tiles (modern renderer, editor builds). */
+	void BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
+	static uint32 Signature(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
 
 	FDoomMap* Map = nullptr;
 	FDoomGraphics* Gfx = nullptr;
@@ -96,6 +106,10 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UProceduralMeshComponent>> MeshComponents;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UStaticMeshComponent>> BakedComponents;
+	uint32 BakedSignature = 0;
 
 	UPROPERTY()
 	TMap<FName, TObjectPtr<UMaterialInstanceDynamic>> Materials;

@@ -129,6 +129,7 @@ void ADoomThing::DoomTic()
 			ExplodeDelay = 0;
 			AActor* Credit = LastAttacker.IsValid() ? LastAttacker.Get() : this;
 			DoomWorld->RadiusAttack(this, Credit, GetActorLocation(), 128.f);
+			DoomWorld->SpawnParticles(EDoomParticles::Explosion, GetActorLocation());
 		}
 		if (Sprite->IsSequenceDone())
 		{
