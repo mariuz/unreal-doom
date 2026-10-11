@@ -9,9 +9,10 @@
 //  * Sector light is not baked into vertices: every vertex carries its sector index in
 //    UV1.x and the material samples a 256-wide light texture (one texel per sector)
 //    that the game updates each tic, so flickering lights never touch the meshes.
-//  * Modern renderer: the static chunk is also baked into runtime UStaticMesh tiles
-//    (1024 map units square) so Lumen gets mesh distance fields and surface cards;
-//    the procedural chunk then stays hidden and only provides collision.
+//  * Modern renderer: the static chunk is also drawn by UStaticMesh tiles (1024 map units
+//    square) so Lumen gets mesh distance fields and surface cards; the procedural chunk then
+//    stays hidden and only provides collision. Imported levels carry tiles baked in the editor
+//    as assets (they cook into packaged builds); otherwise editor builds bake them at load.
 //  * Invisible collision for impassable two-sided lines (players and monsters) and
 //    monster-blocking lines (a custom collision channel only monsters collide with).
 #pragma once
@@ -24,6 +25,7 @@ class FDoomMap;
 class FDoomGraphics;
 class UProceduralMeshComponent;
 class UStaticMeshComponent;
+class UStaticMesh;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UTexture2D;
@@ -66,10 +68,10 @@ public:
 
 	/** Static mesh tiles drawing the static chunk (0 when not baked). */
 	int32 NumBakedTiles() const { return BakedComponents.Num(); }
-	/** Procedural mesh components currently drawing or colliding (tests). */
-	int32 NumMeshComponents() const { return MeshComponents.Num(); }
+	/** True when the tiles came from saved assets (an imported level's bake), not a runtime bake. */
+	bool UsesSavedTiles() const { return bSavedTiles; }
 
-private:
+	/** Generated geometry of one material section. */
 	struct FSectionData
 	{
 		TArray<FVector> V;
@@ -78,6 +80,28 @@ private:
 		TArray<FVector2D> UV0, UV1;
 		TArray<FLinearColor> C;
 	};
+	/** One static mesh tile: its grid cell and, per material slot, the section key it draws. */
+	struct FTile
+	{
+		FIntPoint Cell;
+		TArray<FName> Slots;
+		TMap<FName, FSectionData> Sections;
+	};
+	/** The static chunk's sections as they are now (the editor bakes them into tile assets). */
+	void GetStaticSections(TMap<FName, FSectionData>& Solid, TMap<FName, FSectionData>& NonSolid);
+	/** A checksum of a chunk's geometry: saved tiles are used only when it matches. */
+	static uint32 Signature(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
+	/** Splits sections into 1024-unit tiles (by triangle centroid), sharing vertices per tile. */
+	static void SplitTiles(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid, TArray<FTile>& Out);
+#if WITH_EDITOR
+	/** Fills a static mesh from a tile: mesh description, slots named by section key, build settings
+	    for distance fields. Material(Key) gives each slot's material. Call Build afterwards. */
+	static void FillTileMesh(UStaticMesh* Mesh, const FTile& Tile, TFunctionRef<UMaterialInterface*(FName)> Material);
+#endif
+	/** Procedural mesh components currently drawing or colliding (tests). */
+	int32 NumMeshComponents() const { return MeshComponents.Num(); }
+
+private:
 	struct FChunk
 	{
 		TObjectPtr<UProceduralMeshComponent> Solid;
@@ -102,7 +126,10 @@ private:
 	UProceduralMeshComponent* NewMeshComponent(const FString& Name, bool bCollision);
 	/** Bakes the static chunk's sections into static mesh tiles (modern renderer, editor builds). */
 	void BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
-	static uint32 Signature(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
+	/** The saved tiles of this map's imported level, when they match the static chunk. */
+	bool FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const;
+	/** Draws the static chunk with these meshes (slots get this level's material instances). */
+	void ShowTiles(const TArray<UStaticMesh*>& Meshes, bool bSaved);
 
 	FDoomMap* Map = nullptr;
 	FDoomGraphics* Gfx = nullptr;
@@ -118,6 +145,7 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> BakedComponents;
 	uint32 BakedSignature = 0;
+	bool bSavedTiles = false;
 
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UMaterialInstanceDynamic>> Materials;

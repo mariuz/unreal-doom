@@ -1,4 +1,5 @@
 #include "DoomLevel.h"
+#include "DoomMapActors.h"
 #include "DoomMap.h"
 #include "DoomGraphics.h"
 #include "DoomAssets.h"
@@ -488,7 +489,20 @@ void ADoomLevel::Flush()
 			const uint32 Sig = Signature(Solid, NonSolid);
 			if (Sig != BakedSignature)
 			{
-				BakeStaticChunk(Solid, NonSolid);
+				int32 Verts = 0;
+				for (const auto& P : Solid) Verts += P.Value.V.Num();
+				for (const auto& P : NonSolid) Verts += P.Value.V.Num();
+				UE_LOG(LogDoom, Log, TEXT("Static chunk: %d + %d sections, %d vertices, signature %08x"), Solid.Num(), NonSolid.Num(), Verts, Sig);
+				// an imported level's saved tiles (the only way in packaged builds), else bake now
+				TArray<UStaticMesh*> Saved;
+				if (FindSavedTiles(Sig, Saved))
+				{
+					ShowTiles(Saved, true);
+				}
+				else
+				{
+					BakeStaticChunk(Solid, NonSolid);
+				}
 				BakedSignature = Sig;
 			}
 		}
@@ -503,32 +517,42 @@ uint32 ADoomLevel::Signature(const TMap<FName, FSectionData>& Solid, const TMap<
 		for (const auto& Pair : *Data)
 		{
 			const FSectionData& D = Pair.Value;
-			uint32 H = FCrc::MemCrc32(D.V.GetData(), D.V.Num() * sizeof(FVector));
-			H = FCrc::MemCrc32(D.UV0.GetData(), D.UV0.Num() * sizeof(FVector2D), H);
-			Sig ^= HashCombine(GetTypeHash(Pair.Key), H) + (Data == &Solid ? 0u : 0x9e3779b9u);
+			// Content only, and stable across builds: an FName's hash depends on the process (name
+			// table order) and its casing on the first use in the process, and an editor and a packaged
+			// game may round the last bits of a float differently: positions (1 Unreal unit) and UVs (1/64) are
+			// quantized and keys upper-cased first.
+			TArray<int32> Q;
+			Q.Reserve(D.V.Num() * 5 + 1);
+			Q.Add(D.I.Num());
+			for (int32 v = 0; v < D.V.Num(); ++v)
+			{
+				Q.Add(FMath::RoundToInt32(D.V[v].X));
+				Q.Add(FMath::RoundToInt32(D.V[v].Y));
+				Q.Add(FMath::RoundToInt32(D.V[v].Z));
+				Q.Add(D.UV0.IsValidIndex(v) ? FMath::RoundToInt32(D.UV0[v].X * 64.0) : 0);
+				Q.Add(D.UV0.IsValidIndex(v) ? FMath::RoundToInt32(D.UV0[v].Y * 64.0) : 0);
+			}
+			const uint32 H = FCrc::MemCrc32(Q.GetData(), Q.Num() * sizeof(int32));
+			Sig ^= HashCombine(FCrc::StrCrc32(*Pair.Key.ToString().ToUpper()), H) + (Data == &Solid ? 0u : 0x9e3779b9u);
 		}
 	}
 	return Sig;
 }
 
-void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid)
+void ADoomLevel::GetStaticSections(TMap<FName, FSectionData>& Solid, TMap<FName, FSectionData>& NonSolid)
 {
-#if WITH_EDITOR
-	for (UStaticMeshComponent* C : BakedComponents)
+	if (Chunks.Num() > 0)
 	{
-		if (C) C->DestroyComponent();
+		Generate(Chunks[0], Solid, NonSolid);
 	}
-	BakedComponents.Reset();
+}
 
-	// Bucket triangles into square tiles by centroid (one distance field per tile keeps its
-	// voxels small), sharing vertices within each tile's section.
+void ADoomLevel::SplitTiles(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid, TArray<FTile>& Out)
+{
+	// one distance field per tile keeps its voxels small
 	constexpr float TileSize = 1024.f * Doom::Scale;
-	struct FTileSection
-	{
-		FSectionData D;
-		TMap<int32, int32> Remap;
-	};
-	TMap<FIntPoint, TMap<FName, FTileSection>> Tiles;
+	TMap<FIntPoint, int32> TileIndex;
+	TMap<FIntPoint, TMap<FName, TMap<int32, int32>>> Remaps;
 	for (const TMap<FName, FSectionData>* Data : { &Solid, &NonSolid })
 	{
 		for (const auto& Pair : *Data)
@@ -537,102 +561,150 @@ void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const T
 			for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
 			{
 				const FVector Mid = (D.V[D.I[t]] + D.V[D.I[t + 1]] + D.V[D.I[t + 2]]) / 3.f;
-				const FIntPoint Key(FMath::FloorToInt32(Mid.X / TileSize), FMath::FloorToInt32(Mid.Y / TileSize));
-				FTileSection& S = Tiles.FindOrAdd(Key).FindOrAdd(Pair.Key);
+				const FIntPoint Cell(FMath::FloorToInt32(Mid.X / TileSize), FMath::FloorToInt32(Mid.Y / TileSize));
+				int32* Index = TileIndex.Find(Cell);
+				if (!Index)
+				{
+					Index = &TileIndex.Add(Cell, Out.Num());
+					Out.AddDefaulted_GetRef().Cell = Cell;
+				}
+				FTile& Tile = Out[*Index];
+				FSectionData& S = Tile.Sections.FindOrAdd(Pair.Key);
+				Tile.Slots.AddUnique(Pair.Key);
+				TMap<int32, int32>& Remap = Remaps.FindOrAdd(Cell).FindOrAdd(Pair.Key);
 				for (int32 k = 0; k < 3; ++k)
 				{
 					const int32 Src = D.I[t + k];
-					int32* Found = S.Remap.Find(Src);
+					int32* Found = Remap.Find(Src);
 					if (!Found)
 					{
-						Found = &S.Remap.Add(Src, S.D.V.Num());
-						S.D.V.Add(D.V[Src]);
-						S.D.N.Add(D.N[Src]);
-						S.D.UV0.Add(D.UV0[Src]);
-						S.D.UV1.Add(D.UV1[Src]);
-						S.D.C.Add(D.C[Src]);
+						Found = &Remap.Add(Src, S.V.Num());
+						S.V.Add(D.V[Src]);
+						S.N.Add(D.N[Src]);
+						S.UV0.Add(D.UV0[Src]);
+						S.UV1.Add(D.UV1[Src]);
+						S.C.Add(D.C[Src]);
 					}
-					S.D.I.Add(*Found);
+					S.I.Add(*Found);
 				}
 			}
 		}
 	}
+	// a stable order (cells sorted) so editor bakes name and save tiles the same way every time
+	Out.Sort([](const FTile& A, const FTile& B) { return A.Cell.Y != B.Cell.Y ? A.Cell.Y < B.Cell.Y : A.Cell.X < B.Cell.X; });
+}
 
-	TArray<UStaticMesh*> Meshes;
-	for (auto& Tile : Tiles)
+#if WITH_EDITOR
+void ADoomLevel::FillTileMesh(UStaticMesh* Mesh, const FTile& Tile, TFunctionRef<UMaterialInterface*(FName)> Material)
+{
+	FMeshDescription MD;
+	FStaticMeshAttributes Attr(MD);
+	Attr.Register();
+	TVertexAttributesRef<FVector3f> Positions = Attr.GetVertexPositions();
+	TVertexInstanceAttributesRef<FVector3f> Normals = Attr.GetVertexInstanceNormals();
+	TVertexInstanceAttributesRef<FVector2f> UVs = Attr.GetVertexInstanceUVs();
+	TVertexInstanceAttributesRef<FVector4f> Colors = Attr.GetVertexInstanceColors();
+	TPolygonGroupAttributesRef<FName> SlotNames = Attr.GetPolygonGroupMaterialSlotNames();
+	UVs.SetNumChannels(2);
+	TArray<FStaticMaterial> StaticMaterials;
+	for (const FName Key : Tile.Slots)
 	{
-		FMeshDescription MD;
-		FStaticMeshAttributes Attr(MD);
-		Attr.Register();
-		TVertexAttributesRef<FVector3f> Positions = Attr.GetVertexPositions();
-		TVertexInstanceAttributesRef<FVector3f> Normals = Attr.GetVertexInstanceNormals();
-		TVertexInstanceAttributesRef<FVector2f> UVs = Attr.GetVertexInstanceUVs();
-		TVertexInstanceAttributesRef<FVector4f> Colors = Attr.GetVertexInstanceColors();
-		TPolygonGroupAttributesRef<FName> SlotNames = Attr.GetPolygonGroupMaterialSlotNames();
-		UVs.SetNumChannels(2);
-		TArray<FStaticMaterial> StaticMaterials;
-		for (auto& Pair : Tile.Value)
+		const FSectionData& D = Tile.Sections[Key];
+		const FPolygonGroupID Group = MD.CreatePolygonGroup();
+		SlotNames[Group] = Key;
+		StaticMaterials.Add(FStaticMaterial(Material(Key), Key, Key));
+		TArray<FVertexInstanceID> Instances;
+		Instances.Reserve(D.V.Num());
+		for (int32 v = 0; v < D.V.Num(); ++v)
 		{
-			const FSectionData& D = Pair.Value.D;
-			const FPolygonGroupID Group = MD.CreatePolygonGroup();
-			SlotNames[Group] = Pair.Key;
-			StaticMaterials.Add(FStaticMaterial(MaterialForKey(Pair.Key), Pair.Key, Pair.Key));
-			TArray<FVertexInstanceID> Instances;
-			Instances.Reserve(D.V.Num());
-			for (int32 v = 0; v < D.V.Num(); ++v)
-			{
-				const FVertexID Vert = MD.CreateVertex();
-				Positions[Vert] = FVector3f(D.V[v]);
-				const FVertexInstanceID Inst = MD.CreateVertexInstance(Vert);
-				Normals[Inst] = FVector3f(D.N[v]);
-				UVs.Set(Inst, 0, FVector2f(D.UV0[v]));
-				UVs.Set(Inst, 1, FVector2f(D.UV1[v]));
-				// The mesh builder sRGB-encodes vertex colours while the procedural mesh stores them
-				// raw, and the materials read the raw bytes (surface kind): pre-decode.
-				Colors[Inst] = FVector4f(FLinearColor::FromSRGBColor(D.C[v].ToFColor(false)));
-				Instances.Add(Inst);
-			}
-			for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
-			{
-				MD.CreateTriangle(Group, { Instances[D.I[t]], Instances[D.I[t + 1]], Instances[D.I[t + 2]] });
-			}
+			const FVertexID Vert = MD.CreateVertex();
+			Positions[Vert] = FVector3f(D.V[v]);
+			const FVertexInstanceID Inst = MD.CreateVertexInstance(Vert);
+			Normals[Inst] = FVector3f(D.N[v]);
+			UVs.Set(Inst, 0, FVector2f(D.UV0[v]));
+			UVs.Set(Inst, 1, FVector2f(D.UV1[v]));
+			// The mesh builder sRGB-encodes vertex colours while the procedural mesh stores them
+			// raw, and the materials read the raw bytes (surface kind): pre-decode.
+			Colors[Inst] = FVector4f(FLinearColor::FromSRGBColor(D.C[v].ToFColor(false)));
+			Instances.Add(Inst);
 		}
-		UStaticMesh* Mesh = NewObject<UStaticMesh>(this, *FString::Printf(TEXT("DoomTile_%d_%d"), Tile.Key.X, Tile.Key.Y), RF_Transient);
-		Mesh->SetStaticMaterials(StaticMaterials);
-		FStaticMeshSourceModel& Source = Mesh->AddSourceModel();
-		Source.BuildSettings.bRecomputeNormals = false;
-		Source.BuildSettings.bRecomputeTangents = true;
-		Source.BuildSettings.bGenerateLightmapUVs = false;
-		Source.BuildSettings.bUseFullPrecisionUVs = true; // UV1 carries the sector index
-		Source.BuildSettings.bRemoveDegenerates = false;
-		Source.BuildSettings.bBuildReversedIndexBuffer = false;
-		Source.BuildSettings.bGenerateDistanceFieldAsIfTwoSided = true;
-		Source.BuildSettings.DistanceFieldResolutionScale = 0.5f; // ~16 map units per voxel: plenty for Doom's walls
-		// the distance field and card builders only take sections listed here (importers fill it)
-		for (int32 Section = 0; Section < StaticMaterials.Num(); ++Section)
+		for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
 		{
-			FMeshSectionInfo Info(Section);
-			Info.bCastShadow = true;
-			Info.bAffectDistanceFieldLighting = true;
-			Mesh->GetSectionInfoMap().Set(0, Section, Info);
+			MD.CreateTriangle(Group, { Instances[D.I[t]], Instances[D.I[t + 1]], Instances[D.I[t + 2]] });
 		}
-		Mesh->CreateMeshDescription(0, MoveTemp(MD));
-		// content-hash GUIDs make the derived data keys repeatable, so a level's meshes and
-		// distance fields come from the DDC after its first load instead of rebuilding
-		UStaticMesh::FCommitMeshDescriptionParams Commit;
-		Commit.bUseHashAsGuid = true;
-		Mesh->CommitMeshDescription(0, Commit);
-		Mesh->bGenerateMeshDistanceField = true;
-		Mesh->Build(true);
-		Meshes.Add(Mesh);
 	}
-	FStaticMeshCompilingManager::Get().FinishCompilation(Meshes);
+	Mesh->SetStaticMaterials(StaticMaterials);
+	FStaticMeshSourceModel& Source = Mesh->GetNumSourceModels() > 0 ? Mesh->GetSourceModel(0) : Mesh->AddSourceModel();
+	Source.BuildSettings.bRecomputeNormals = false;
+	Source.BuildSettings.bRecomputeTangents = true;
+	Source.BuildSettings.bGenerateLightmapUVs = false;
+	Source.BuildSettings.bUseFullPrecisionUVs = true; // UV1 carries the sector index
+	Source.BuildSettings.bRemoveDegenerates = false;
+	Source.BuildSettings.bBuildReversedIndexBuffer = false;
+	Source.BuildSettings.bGenerateDistanceFieldAsIfTwoSided = true;
+	Source.BuildSettings.DistanceFieldResolutionScale = 0.5f; // ~16 map units per voxel: plenty for Doom's walls
+	// the distance field and card builders only take sections listed here (importers fill it)
+	for (int32 Section = 0; Section < StaticMaterials.Num(); ++Section)
+	{
+		FMeshSectionInfo Info(Section);
+		Info.bCastShadow = true;
+		Info.bAffectDistanceFieldLighting = true;
+		Mesh->GetSectionInfoMap().Set(0, Section, Info);
+	}
+	Mesh->CreateMeshDescription(0, MoveTemp(MD));
+	// content-hash GUIDs make the derived data keys repeatable, so meshes and distance fields
+	// come from the DDC after their first build
+	UStaticMesh::FCommitMeshDescriptionParams Commit;
+	Commit.bUseHashAsGuid = true;
+	Mesh->CommitMeshDescription(0, Commit);
+	Mesh->bGenerateMeshDistanceField = true;
+}
+#endif
 
+bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
+{
+	const ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld());
+	if (!MapActor || !Map || !MapActor->MapName.Equals(Map->Name, ESearchCase::IgnoreCase) || MapActor->BakedTiles.Num() == 0)
+	{
+		return false;
+	}
+	if ((uint32)MapActor->BakedTileSignature != Sig)
+	{
+		UE_LOG(LogDoom, Warning, TEXT("%s: the level's baked tiles are out of date (baked %08x, now %08x): press Bake Static Meshes on its DoomMap actor"),
+			*Map->Name, (uint32)MapActor->BakedTileSignature, Sig);
+		return false;
+	}
+	for (const TSoftObjectPtr<UStaticMesh>& Tile : MapActor->BakedTiles)
+	{
+		UStaticMesh* Mesh = Tile.LoadSynchronous();
+		if (!Mesh)
+		{
+			UE_LOG(LogDoom, Warning, TEXT("%s: missing baked tile %s"), *Map->Name, *Tile.ToString());
+			return false;
+		}
+		Out.Add(Mesh);
+	}
+	return true;
+}
+
+void ADoomLevel::ShowTiles(const TArray<UStaticMesh*>& Meshes, bool bSaved)
+{
+	for (UStaticMeshComponent* C : BakedComponents)
+	{
+		if (C) C->DestroyComponent();
+	}
+	BakedComponents.Reset();
 	for (UStaticMesh* Mesh : Meshes)
 	{
 		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient);
 		C->SetupAttachment(RootComponent);
 		C->SetStaticMesh(Mesh);
+		// slots are named by section key: this level's material instances (sector light, animation)
+		const TArray<FStaticMaterial>& Slots = Mesh->GetStaticMaterials();
+		for (int32 i = 0; i < Slots.Num(); ++i)
+		{
+			C->SetMaterial(i, MaterialForKey(Slots[i].MaterialSlotName));
+		}
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		C->SetCastShadow(true);
 		C->bAffectDistanceFieldLighting = true;
@@ -645,7 +717,25 @@ void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const T
 		Chunks[0].Solid->SetVisibility(false);
 		Chunks[0].NonSolid->SetVisibility(false);
 	}
-	UE_LOG(LogDoom, Log, TEXT("Baked the static chunk into %d static mesh tiles"), BakedComponents.Num());
+	bSavedTiles = bSaved;
+	UE_LOG(LogDoom, Log, TEXT("The static chunk is drawn by %d %s static mesh tiles"), BakedComponents.Num(), bSaved ? TEXT("saved") : TEXT("runtime-baked"));
+}
+
+void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid)
+{
+#if WITH_EDITOR
+	TArray<FTile> Tiles;
+	SplitTiles(Solid, NonSolid, Tiles);
+	TArray<UStaticMesh*> Meshes;
+	for (const FTile& Tile : Tiles)
+	{
+		UStaticMesh* Mesh = NewObject<UStaticMesh>(this, *FString::Printf(TEXT("DoomTile_%d_%d"), Tile.Cell.X, Tile.Cell.Y), RF_Transient);
+		FillTileMesh(Mesh, Tile, [this](FName Key) { return MaterialForKey(Key); });
+		Mesh->Build(true);
+		Meshes.Add(Mesh);
+	}
+	FStaticMeshCompilingManager::Get().FinishCompilation(Meshes);
+	ShowTiles(Meshes, false);
 #endif
 }
 

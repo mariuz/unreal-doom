@@ -14,6 +14,8 @@
  * Runs automatically when the editor starts and the assets are missing, or:
  *   UnrealEditor-Cmd DoomUE.uproject -run=DoomContent [-force] [-effects | -materials] [-importmap=E1M1,E1M2|all]
  */
+class ADoomMapActor;
+
 namespace DoomContent
 {
 	bool AssetsExist();
@@ -22,6 +24,8 @@ namespace DoomContent
 	void DumpNiagara(const FString& Path);
 	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */
 	bool ImportMap(const FString& MapName, bool bOverwrite);
+	/** Saves a level's static geometry as static mesh tiles (/Game/Doom/Maps/<MAP>_Tiles). */
+	bool BakeMapTiles(ADoomMapActor* MapActor);
 	FString MapPackage(const FString& MapName);
 	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/<MAP>_Edit (-edittest=MAP). */
 	bool EditTest(const FString& MapName);

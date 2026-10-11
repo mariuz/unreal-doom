@@ -45,6 +45,21 @@ flats, specials and tags.
    example 9 secret, 7 nukage) and **Tag** (links the sector to line specials).
 4. The viewport preview rebuilds after each change.
 
+## Baked static meshes
+
+Importing a map also saves its static geometry (everything that never moves) as static mesh
+tiles, 1024 map units square, in `/Game/Doom/Maps/<MAP>_Tiles/`. The DoomMap actor lists them
+under *Baked*, together with a signature of the geometry they were made from.
+
+* The modern renderer draws the level with these tiles, so Lumen gets mesh distance fields and
+  surface cards. Each slot is named after its texture and gets the level's own material
+  instance at runtime (sector light, animation).
+* Packaged games cannot build meshes at runtime, so these saved tiles are how a packaged game
+  gets distance fields. Without them it draws the procedural geometry.
+* After changing sectors (heights, flats), press **Bake Static Meshes** on the DoomMap actor and
+  save the level. Tiles that no longer match the geometry are ignored, with a warning in the log.
+  Editor runs then bake fresh tiles at load instead.
+
 ## Playing
 
 **Play** (in the editor or standalone with the level's path) starts the level's map. The game:
