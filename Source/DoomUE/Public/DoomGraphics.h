@@ -96,8 +96,10 @@ private:
 	TMap<uint32, uint8> NearestCache;
 
 public:
-	/** The weapon sprite through one COLORMAP row (the psprite's light), cached per picture and row. */
-	UTexture2D* ColormappedPicture(const FDoomPicture& Pic, int32 Row);
+	/** A picture through one COLORMAP row and PLAYPAL palette (weapon light, screen palettes), cached. */
+	UTexture2D* ColormappedPicture(const FDoomPicture& Pic, int32 Row, int32 Palette = 0);
+	/** Rows in ColormapTexture: 34 per PLAYPAL palette. */
+	int32 ColormapRows() const;
 private:
 	TMap<TPair<const FDoomPicture*, int32>, TObjectPtr<UTexture2D>> ColormappedCache;
 

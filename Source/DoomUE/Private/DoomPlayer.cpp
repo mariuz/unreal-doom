@@ -305,6 +305,7 @@ void ADoomPlayer::DoomTic()
 
 void ADoomPlayer::TicPowerups()
 {
+	if (bBerserk) ++BerserkTics;
 	if (Invulnerability > 0) --Invulnerability;
 	if (Invisibility > 0) --Invisibility;
 	if (RadSuit > 0) --RadSuit;
@@ -860,6 +861,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	case EPickup::Invulnerability: Invulnerability = 30 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::Berserk:
 		bBerserk = true;
+		BerserkTics = 1;
 		if (Inv.Health < 100) Inv.Health = 100;
 		if (Inv.Ready != EDoomWeapon::Fist) PendingWeapon = EDoomWeapon::Fist;
 		Sound = TEXT("GETPOW");

@@ -579,14 +579,15 @@ void FDoomGraphics::UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips)
 	Owned.Add(Tex);
 }
 
-UTexture2D* FDoomGraphics::ColormappedPicture(const FDoomPicture& Pic, int32 Row)
+UTexture2D* FDoomGraphics::ColormappedPicture(const FDoomPicture& Pic, int32 Row, int32 Palette)
 {
-	const TPair<const FDoomPicture*, int32> Key(&Pic, Row);
+	Palette = FMath::Clamp(Palette, 0, FMath::Max(0, Wad.NumPalettes() - 1));
+	const TPair<const FDoomPicture*, int32> Key(&Pic, Row * 16 + Palette);
 	if (TObjectPtr<UTexture2D>* Found = ColormappedCache.Find(Key))
 	{
 		return *Found;
 	}
-	UTexture2D* Tex = MakeTextureFromIndices(Pic, FMath::Clamp(Row, 0, 33), 0);
+	UTexture2D* Tex = MakeTextureFromIndices(Pic, FMath::Clamp(Row, 0, 33), Palette);
 	ColormappedCache.Add(Key, Tex);
 	return Tex;
 }
@@ -747,22 +748,32 @@ FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& InPrefix, TCHAR Frame
 	return Result;
 }
 
+int32 FDoomGraphics::ColormapRows() const
+{
+	return 34 * FMath::Max(1, Wad.NumPalettes());
+}
+
 UTexture2D* FDoomGraphics::ColormapTexture()
 {
 	if (Colormap)
 	{
 		return Colormap;
 	}
-	// 256 x 34: row r = COLORMAP row r mapped through PLAYPAL.
-	const TArray<FColor>& Pal = Wad.Palette(0);
+	// 256 x (34 x palettes): row p * 34 + r = COLORMAP row r mapped through PLAYPAL palette p,
+	// so the shaders can follow Doom's damage / pickup / radiation suit palettes exactly.
 	const TArray<uint8>& Cm = Wad.Colormap();
+	const int32 NumPal = FMath::Max(1, Wad.NumPalettes());
 	TArray<FColor> Pixels;
-	Pixels.SetNumUninitialized(256 * 34);
-	for (int32 i = 0; i < 256 * 34; ++i)
+	Pixels.SetNumUninitialized(256 * 34 * NumPal);
+	for (int32 p = 0; p < NumPal; ++p)
 	{
-		Pixels[i] = Pal[Cm.IsValidIndex(i) ? Cm[i] : i % 256];
+		const TArray<FColor>& Pal = Wad.Palette(p);
+		for (int32 i = 0; i < 256 * 34; ++i)
+		{
+			Pixels[p * 256 * 34 + i] = Pal[Cm.IsValidIndex(i) ? Cm[i] : i % 256];
+		}
 	}
-	Colormap = NewTexture(256, 34, Pixels, TEXT("Doom_COLORMAP"));
+	Colormap = NewTexture(256, 34 * NumPal, Pixels, TEXT("Doom_COLORMAP"));
 	Colormap->Filter = TF_Nearest;
 	Colormap->SRGB = true;
 	Colormap->AddressX = Colormap->AddressY = TA_Clamp;

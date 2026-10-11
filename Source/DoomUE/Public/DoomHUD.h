@@ -44,5 +44,8 @@ private:
 	// 320x200 -> screen
 	float OX = 0, OY = 0, SX = 1, SY = 1;
 	int32 FaceTic = 0;
+	/** PLAYPAL palette the 2D graphics are drawn through (exact colours), 0 = normal. */
+	int32 ScreenPal = 0;
+	class UTexture2D* PatchTexture(const FDoomPicture* Pic);
 	int32 FaceIndex = 0;
 };
