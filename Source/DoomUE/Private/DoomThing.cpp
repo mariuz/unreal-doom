@@ -162,7 +162,7 @@ void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, U
 	{
 		if (Def->Flags & EThingFlag::CountItem)
 		{
-			++DoomWorld->Items;
+			DoomWorld->CreditItem(P);
 		}
 		Destroy();
 	}

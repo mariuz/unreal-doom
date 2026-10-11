@@ -46,7 +46,8 @@ with `-iwad=` / `-file=`.
 | Menu (`m_menu.c`) | `FDoomMenu` with the WAD's `M_*` graphics at Doom's positions and the blinking skull: main menu, episodes (and UMAPINFO episodes), skills with a Nightmare prompt, options (end game, messages, mouse sensitivity thermometer, sound volume, plus renderer / field of view / warp rows in the STCFN font), SFX and music thermometers that apply live, six load / save slots in the `M_LS*` boxes (saves are named by typing, with Doom's `_` cursor; an empty name saves with an automatic description), Read This! pages and a quit prompt. F1 to F4 open help, save, load and sound; Y / N answer prompts; changes persist through `UDoomSettings::SaveConfig` |
 | Endings (`f_finale.c`) | Episode and chapter texts (`E1TEXT`.., `C1TEXT`.. from the WAD's strings) typed out on their backdrop flats, end pictures (`CREDIT`, `VICTORY2`, `ENDPIC`), the bunny scroller (`PFUB2` to `PFUB1`, then `END0`..`END6`), and the Doom 2 cast call on `BOSSBACK`: each monster walks, attacks and dies when you fire, named by the WAD's `CC_*` strings. UMAPINFO `endpic` / `endbunny` / `endcast` choose the ending |
 | MAP30's Icon of Sin | The spawn shooters (type 89) wake when they see you and spit cubes at the spawn targets (87) in turn; each cube hatches a monster with Doom's weighted pick; the brain's death sets off explosions before the level ends |
-| Simulation | `UTickableWorldSubsystem` (`UDoomWorld`) running a fixed 35 Hz tic |
+| Game loop (`G_Ticker`, `G_ExitLevel`) | **Gameplay framework** split: `ADoomGameMode` runs the fixed 35 Hz clock and the level flow (exits, intermission, next map); `ADoomGameState` holds the replicated flow record (phase, map, level tic, kill / item / secret totals); `ADoomPlayerState` holds the inventory and each player's own kills, items, secrets and frags, and carries them through travel. See [docs/Architecture.md](docs/Architecture.md) |
+| Simulation (`P_Ticker`) | `UTickableWorldSubsystem` (`UDoomWorld`) running one tic when the game mode's clock asks: movers, lights, specials, monsters, things, missiles |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
 | Authored assets | **None checked in.** The editor module (`DoomUEEditor`) generates the materials, the parameter collection, a default texture and the Niagara effects in code (`UMaterialEditingLibrary`, reflection on Niagara's lightweight emitters) on first editor launch, or `-run=DoomContent` |
 
@@ -119,6 +120,7 @@ loose files.
 | `-spawnfront=DoomEdNum` | a monster in front of the player at start |
 | `-savename=TEXT [-savecommit]` | with `-warp`: type TEXT as save slot 1's name, optionally press Enter |
 | `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
+| `-exittest` | with `-warp`: kill two monsters as the player, exit, wait in the intermission, continue; checks the level totals, the player state's credit and the inventory carried into the next map (PASS/FAIL) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
@@ -129,6 +131,13 @@ switches weapons, F6 / F9 quick save / load, Tab opens the automap, Shift toggle
 Esc opens Doom's menu (F1 help, F2 save, F3 load, F4 sound volume; Y / N answer prompts). Options also switch the renderer, field of view and warp to any map. Gamepad works too.
 
 Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
+
+## Documentation
+
+* [docs/Architecture.md](docs/Architecture.md): how the port uses Unreal's gameplay framework
+  (game mode, game state, player state, world subsystem), the 35 Hz clock, credit, saves, and
+  what co-op and deathmatch still need.
+* [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
 
 ## Editing maps in the Unreal editor
 
@@ -171,11 +180,14 @@ Source/DoomUE/            runtime module
   DoomMonster      monster AI
   DoomProjectile   missiles, BFG spray
   DoomPlayer       movement, inventory, weapons state machine, damage, pickups
-  DoomWorld        UTickableWorldSubsystem: tic loop, movers, specials, lights, flow
+  DoomWorld        UTickableWorldSubsystem: one tic of movers, specials, lights, monsters
+  DoomGameState    level flow record: phase, map, level tic, kill / item / secret totals
+  DoomPlayerState  inventory, the player's own kills / items / secrets / frags
   DoomSound        DMX -> procedural sound waves
   DoomHUD          status bar, weapon, automap, menu, intermission, title
   DoomMapActors    editor-editable levels: DoomMap preview actor, thing markers, sector edits
-  DoomPlayerController / DoomGameMode / DoomSettings / DoomAssets
+  DoomGameMode     boot, the 35 Hz clock, exits, intermission, next map
+  DoomPlayerController / DoomSettings / DoomAssets
 Source/DoomUEEditor/      editor module: material, MPC and Niagara generation, map import,
                           the Doom menu, -run=DoomContent
 ```
@@ -226,6 +238,11 @@ Screen palettes: `-forcepalette=4` (pain) and `-forcepalette=13` (radiation suit
 the world, sky, sprites, weapon and status bar all shifted through the WAD's own palettes. The
 first run after regenerating materials compiles shaders for several minutes; later runs are cached.
 
+Gameplay framework: `-exittest` on E1M1 kills 2 monsters as the player. The game state counts
+2 kills and the player state credits 2. The exit goes to the intermission (52 tics in 1.5 s),
+then E1M2 starts with both counters at zero and the shells set before the exit (17) carried
+over (PASS). `-savetest`, `-endtest` and the imported E1M1 level behave as before.
+
 Editable levels: `-run=DoomContent -importmap=E1M1` saves E1M1 with 292 thing markers;
 playing it spawns the same 180 things and 29 monsters, at the same positions, as the WAD's own
 lump. `-run=DoomContent -edittest=E1M1` opens the level as the editor does and builds the
@@ -252,7 +269,7 @@ Not done yet (roughly in priority order):
 3. Unreal practices worth adopting next:
    * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
    * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.
-   * **Gameplay framework split**: move the player inventory to a `APlayerState` and the level flow (tics, kills, exits) from the world subsystem into `AGameState` / `AGameMode` hooks. That is the groundwork for multiplayer (co-op and deathmatch starts are already imported).
+   * **Multiplayer on top of the gameplay framework split** (done: see [docs/Architecture.md](docs/Architecture.md)): replicate weapons and keys as bit masks, spawn a pawn per player at the imported starts, run the simulation on the server and replicate monsters, things and movers, co-op intermission columns and deathmatch frags.
    * **Asynchronous loading**: build the level geometry and textures on worker threads (`UE::Tasks`) with a loading screen instead of on the game thread at map load.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.

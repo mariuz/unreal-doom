@@ -56,27 +56,27 @@ void UDoomWorld::StartFinaleText(const TArray<FString>& Lines, const FString& Ba
 	FinaleBackdrop = Backdrop;
 	FinaleTic = 0;
 	FinaleStage = EFinaleStage::Text;
-	State = EDoomGameState::Finale;
+	Flow().Phase = EDoomGameState::Finale;
 	PlayMusic(Wad->IsDoom2() ? TEXT("D_READ_M") : TEXT("D_VICTOR"));
 }
 
 bool UDoomWorld::StartVanillaText()
 {
 	FString Key, Backdrop;
-	if (CurrentMap.StartsWith(TEXT("MAP")))
+	if (Flow().CurrentMap.StartsWith(TEXT("MAP")))
 	{
-		const int32 N = FCString::Atoi(*CurrentMap.Mid(3));
-		if (bSecretExit && N == 15) { Key = TEXT("C5TEXT"); Backdrop = TEXT("RROCK13"); }
-		else if (bSecretExit && N == 31) { Key = TEXT("C6TEXT"); Backdrop = TEXT("RROCK19"); }
+		const int32 N = FCString::Atoi(*Flow().CurrentMap.Mid(3));
+		if (Flow().bSecretExit && N == 15) { Key = TEXT("C5TEXT"); Backdrop = TEXT("RROCK13"); }
+		else if (Flow().bSecretExit && N == 31) { Key = TEXT("C6TEXT"); Backdrop = TEXT("RROCK19"); }
 		else if (N == 6) { Key = TEXT("C1TEXT"); Backdrop = TEXT("SLIME16"); }
 		else if (N == 11) { Key = TEXT("C2TEXT"); Backdrop = TEXT("RROCK14"); }
 		else if (N == 20) { Key = TEXT("C3TEXT"); Backdrop = TEXT("RROCK07"); }
 		else if (N == 30) { Key = TEXT("C4TEXT"); Backdrop = TEXT("RROCK17"); }
 	}
-	else if (CurrentMap.Len() == 4 && CurrentMap[3] == '8' && PendingMap.IsEmpty())
+	else if (Flow().CurrentMap.Len() == 4 && Flow().CurrentMap[3] == '8' && Flow().PendingMap.IsEmpty())
 	{
 		static const TCHAR* Backdrops[4] = { TEXT("FLOOR4_8"), TEXT("SFLR6_1"), TEXT("MFLR8_4"), TEXT("MFLR8_3") };
-		const int32 E = FMath::Clamp(CurrentMap[1] - '1', 0, 3);
+		const int32 E = FMath::Clamp(Flow().CurrentMap[1] - '1', 0, 3);
 		Key = FString::Printf(TEXT("E%dTEXT"), E + 1);
 		Backdrop = Backdrops[E];
 	}
@@ -85,7 +85,7 @@ bool UDoomWorld::StartVanillaText()
 		return false;
 	}
 	// Doom 2's chapter texts need the WAD's strings; an episode ending always gets a screen
-	const bool bEpisodeEnd = CurrentMap.Len() == 4 || CurrentMap == TEXT("MAP30");
+	const bool bEpisodeEnd = Flow().CurrentMap.Len() == 4 || Flow().CurrentMap == TEXT("MAP30");
 	if (!DoomInfo::HasText(*Key) && !bEpisodeEnd)
 	{
 		return false;
@@ -105,18 +105,18 @@ bool UDoomWorld::IsFinaleTextComplete() const
 void UDoomWorld::StartEnding()
 {
 	FinaleTic = 0;
-	const FDoomMapInfo* Info = MapInfo(CurrentMap);
+	const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
 	const bool bDoom2 = Wad->IsDoom2();
-	State = EDoomGameState::Finale;
+	Flow().Phase = EDoomGameState::Finale;
 
-	if ((Info && Info->bEndCast) || (!Info && bDoom2 && CurrentMap == TEXT("MAP30")) || (Info && !Info->bEndBunny && Info->EndPic.IsEmpty() && bDoom2 && CurrentMap == TEXT("MAP30")))
+	if ((Info && Info->bEndCast) || (!Info && bDoom2 && Flow().CurrentMap == TEXT("MAP30")) || (Info && !Info->bEndBunny && Info->EndPic.IsEmpty() && bDoom2 && Flow().CurrentMap == TEXT("MAP30")))
 	{
 		FinaleStage = EFinaleStage::Cast;
 		PlayMusic(TEXT("D_EVIL"));
 		StartCastMember(0);
 		return;
 	}
-	if ((Info && Info->bEndBunny) || (!bDoom2 && CurrentMap.StartsWith(TEXT("E3"))))
+	if ((Info && Info->bEndBunny) || (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E3"))))
 	{
 		FinaleStage = EFinaleStage::Bunny;
 		PlayMusic(TEXT("D_BUNNY"));
@@ -127,11 +127,11 @@ void UDoomWorld::StartEnding()
 	{
 		FinalePicture = Info->EndPic;
 	}
-	else if (!bDoom2 && CurrentMap.StartsWith(TEXT("E2")))
+	else if (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E2")))
 	{
 		FinalePicture = TEXT("VICTORY2");
 	}
-	else if (!bDoom2 && CurrentMap.StartsWith(TEXT("E4")))
+	else if (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E4")))
 	{
 		FinalePicture = TEXT("ENDPIC");
 	}
@@ -143,10 +143,10 @@ void UDoomWorld::StartEnding()
 
 void UDoomWorld::FinishFinale()
 {
-	if (FinaleStage == EFinaleStage::Text && !PendingMap.IsEmpty())
+	if (FinaleStage == EFinaleStage::Text && !Flow().PendingMap.IsEmpty())
 	{
 		FinaleText.Reset();
-		LoadMap(PendingMap, false);
+		LoadMap(Flow().PendingMap, false);
 		return;
 	}
 	if (FinaleStage == EFinaleStage::Text)
@@ -158,7 +158,7 @@ void UDoomWorld::FinishFinale()
 	// the end: back to the title screen
 	FinaleText.Reset();
 	UnloadMap();
-	State = EDoomGameState::Title;
+	Flow().Phase = EDoomGameState::Title;
 	PlayTitleMusic();
 }
 
@@ -304,7 +304,7 @@ void UDoomWorld::TicBrain()
 	if (BrainExitTics > 0)
 	{
 		// the brain's death: explosions along the wall, then the end
-		if ((LevelTic & 3) == 0)
+		if ((Flow().LevelTic & 3) == 0)
 		{
 			for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
 			{
@@ -386,7 +386,7 @@ void UDoomWorld::TicBrain()
 		if (C.Visual.IsValid())
 		{
 			C.Visual->SetActorLocation(C.Visual->GetActorLocation() + C.Velocity);
-			if ((LevelTic % 16) == 0)
+			if ((Flow().LevelTic % 16) == 0)
 			{
 				const FVector L = C.Visual->GetActorLocation();
 				PlaySound(TEXT("BOSCUB"), &L, 0.6f);
@@ -406,7 +406,7 @@ void UDoomWorld::TicBrain()
 		if (ADoomMonster* M = SpawnMonster(BrainSpawnType(DoomInfo::Random()), C.Target, DoomInfo::Random() * 360.f / 256.f))
 		{
 			UE_LOG(LogDoom, Log, TEXT("Spawn cube hatched a %s"), M->Def->Name);
-			--TotalKills; // spawned monsters do not count towards the level's total
+			--Flow().TotalKills; // spawned monsters do not count towards the level's total
 			if (P)
 			{
 				M->WakeUp(P, false);

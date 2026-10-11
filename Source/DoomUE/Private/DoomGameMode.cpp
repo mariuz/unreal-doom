@@ -10,6 +10,8 @@
 #include "DoomMonster.h"
 #include "DoomLevel.h"
 #include "DoomMapActors.h"
+#include "DoomGameState.h"
+#include "DoomPlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -23,7 +25,168 @@ ADoomGameMode::ADoomGameMode()
 {
 	DefaultPawnClass = ADoomPlayer::StaticClass();
 	PlayerControllerClass = ADoomPlayerController::StaticClass();
+	PlayerStateClass = ADoomPlayerState::StaticClass();
+	GameStateClass = ADoomGameState::StaticClass();
 	HUDClass = ADoomHUD::StaticClass();
+	// the clock ticks after the frame's movement and physics, as the world subsystem's tick did
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickGroup = TG_PostUpdateWork;
+}
+
+UDoomWorld* ADoomGameMode::DoomWorld() const
+{
+	return GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
+}
+
+void ADoomGameMode::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UDoomWorld* W = DoomWorld();
+	if (!W || !W->GetWad())
+	{
+		return;
+	}
+	FDoomLevelFlow& Flow = W->Flow();
+	const double Delta = FMath::Min(DeltaSeconds, 0.25f); // a long hitch is not worth a burst of tics
+	if (Flow.Phase == EDoomGameState::Intermission || Flow.Phase == EDoomGameState::Finale)
+	{
+		// screens between levels count real 35 Hz tics, whatever the frame rate
+		ScreenAccumulator += Delta;
+		while (ScreenAccumulator >= Doom::TicSeconds)
+		{
+			ScreenAccumulator -= Doom::TicSeconds;
+			if (Flow.Phase == EDoomGameState::Intermission)
+			{
+				++Flow.IntermissionTic;
+			}
+			else
+			{
+				W->TicFinale();
+			}
+		}
+	}
+	if (Flow.Phase != EDoomGameState::Playing || !W->GetMap())
+	{
+		return;
+	}
+	Accumulator += Delta;
+	while (Accumulator >= Doom::TicSeconds)
+	{
+		Accumulator -= Doom::TicSeconds;
+		W->RunTic();
+		if (W->Flow().Phase != EDoomGameState::Playing || !W->GetMap())
+		{
+			return; // the tic left the level (exit, death screen, menu load)
+		}
+	}
+	W->UpdateMaterialGlobals(Accumulator / Doom::TicSeconds);
+}
+
+FString ADoomGameMode::NextMapName(bool bSecret) const
+{
+	const UDoomWorld* W = DoomWorld();
+	if (!W)
+	{
+		return FString();
+	}
+	const FString& M = W->Flow().CurrentMap;
+	if (const FDoomMapInfo* Info = W->MapInfo(M))
+	{
+		if (Info->bEndGame)
+		{
+			return FString();
+		}
+		if (bSecret && !Info->NextSecret.IsEmpty())
+		{
+			return Info->NextSecret;
+		}
+		if (!Info->Next.IsEmpty())
+		{
+			return Info->Next;
+		}
+	}
+	if (M.StartsWith(TEXT("MAP")))
+	{
+		const int32 N = FCString::Atoi(*M.Mid(3));
+		int32 Next = N + 1;
+		if (bSecret && N == 15) Next = 31;
+		else if (bSecret && N == 31) Next = 32;
+		else if (N == 31 || N == 32) Next = 16;
+		else if (N == 30) Next = 0;
+		return Next > 0 ? FString::Printf(TEXT("MAP%02d"), Next) : FString();
+	}
+	if (M.Len() == 4)
+	{
+		const int32 E = M[1] - '0';
+		const int32 N = M[3] - '0';
+		static const int32 SecretFrom[5] = { 0, 3, 5, 6, 2 };
+		if (bSecret) return FString::Printf(TEXT("E%dM9"), E);
+		if (N == 9) return FString::Printf(TEXT("E%dM%d"), E, SecretFrom[FMath::Clamp(E, 1, 4)] + 1);
+		if (N == 8) return FString(); // end of episode
+		return FString::Printf(TEXT("E%dM%d"), E, N + 1);
+	}
+	return FString();
+}
+
+void ADoomGameMode::ExitLevel(bool bSecret)
+{
+	UDoomWorld* W = DoomWorld();
+	if (!W || W->Flow().Phase != EDoomGameState::Playing)
+	{
+		return;
+	}
+	FDoomLevelFlow& Flow = W->Flow();
+	Flow.bSecretExit = bSecret;
+	Flow.PendingMap = NextMapName(bSecret);
+	if (!Flow.PendingMap.IsEmpty() && W->GetWad()->FindLump(Flow.PendingMap) == INDEX_NONE)
+	{
+		Flow.PendingMap.Reset();
+	}
+	Flow.IntermissionTic = 0;
+	ScreenAccumulator = 0;
+	if (ADoomPlayer* P = W->GetPlayer())
+	{
+		P->GetCharacterMovement()->StopMovementImmediately();
+	}
+	const FDoomMapInfo* Info = W->MapInfo(Flow.CurrentMap);
+	Flow.Phase = EDoomGameState::Intermission; // FinishIntermission expects to leave it
+	if (Info && Info->bNoIntermission)
+	{
+		FinishIntermission();
+		return;
+	}
+	W->PlayMusic((Info && !Info->InterMusic.IsEmpty()) ? Info->InterMusic : W->GetWad()->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
+}
+
+void ADoomGameMode::FinishIntermission()
+{
+	UDoomWorld* W = DoomWorld();
+	if (!W)
+	{
+		return;
+	}
+	const FDoomLevelFlow& Flow = W->Flow();
+	// UMAPINFO story text between maps, else Doom's own episode / chapter texts
+	const FDoomMapInfo* Info = W->MapInfo(Flow.CurrentMap);
+	if (Info && !Info->bClearInterText)
+	{
+		const TArray<FString>& Text = (Flow.bSecretExit && Info->InterTextSecret.Num()) ? Info->InterTextSecret : Info->InterText;
+		if (Text.Num())
+		{
+			W->StartFinaleText(Text, Info->InterBackdrop.IsEmpty() ? FString(W->GetWad()->IsDoom2() ? TEXT("SLIME16") : TEXT("FLOOR4_8")) : Info->InterBackdrop);
+			return;
+		}
+	}
+	if (!(Info && Info->bClearInterText) && W->StartVanillaText())
+	{
+		return;
+	}
+	if (Flow.PendingMap.IsEmpty())
+	{
+		W->StartEnding();
+		return;
+	}
+	W->LoadMap(Flow.PendingMap, false);
 }
 
 void ADoomGameMode::RestartPlayer(AController* NewPlayer)
@@ -141,6 +304,49 @@ void ADoomGameMode::StartPlay()
 		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
 		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
 		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
+	}
+
+	// -exittest: kill two monsters as the player, take the normal exit, wait in the intermission, go on;
+	// checks the game state's totals, the player state's credit and the inventory carried to the next map
+	if (FParse::Param(FCommandLine::Get(), TEXT("exittest")) && W->GetMap())
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [this, W]()
+		{
+			ADoomPlayer* P = W->GetPlayer();
+			ADoomPlayerState* PS = P ? P->GetDoomPlayerState() : nullptr;
+			if (!P || !PS)
+			{
+				UE_LOG(LogDoom, Error, TEXT("Exittest FAIL: no player or no ADoomPlayerState"));
+				return;
+			}
+			int32 Killed = 0;
+			for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+			{
+				if (Killed < 2 && M.IsValid() && !M->IsDead())
+				{
+					UGameplayStatics::ApplyDamage(M.Get(), 10000.f, P->GetController(), P, nullptr);
+					++Killed;
+				}
+			}
+			P->Inv().Ammo[1] = 17; // something to carry over
+			const FString From = W->GetMapName();
+			const int32 Kills = W->Flow().Kills, Credit = PS->LevelKills;
+			ExitLevel(false);
+			const bool bIntermission = W->GetState() == EDoomGameState::Intermission;
+			const FString Pending = W->Flow().PendingMap;
+			FTimerHandle T2;
+			GetWorldTimerManager().SetTimer(T2, [this, W, PS, From, Kills, Credit, bIntermission, Pending]()
+			{
+				const int32 InterTics = W->Flow().IntermissionTic;
+				FinishIntermission();
+				const bool bPass = Kills == 2 && Credit == 2 && bIntermission && InterTics > 30 && W->GetMapName() == Pending
+					&& W->GetState() == EDoomGameState::Playing && W->Flow().Kills == 0 && PS->LevelKills == 0 && PS->Inv.Ammo[1] == 17;
+				UE_LOG(LogDoom, Display, TEXT("Exittest %s: %s kills %d (player credit %d), intermission %d (%d tics), next %s -> now %s, kills %d / credit %d, shells %d"),
+					bPass ? TEXT("PASS") : TEXT("FAIL"), *From, Kills, Credit, bIntermission, InterTics, *Pending, *W->GetMapName(),
+					W->Flow().Kills, PS->LevelKills, PS->Inv.Ammo[1]);
+			}, 1.5f, false);
+		}, 1.f, false);
 	}
 
 	// -endtest [-endpress=N]: finish the warped map straight into its ending; press Enter N times
@@ -337,7 +543,7 @@ void ADoomGameMode::StartPlay()
 			{
 				const FString Name = FString::Printf(TEXT("autotest_%s.png"), W->GetMapName().IsEmpty() ? TEXT("title") : *W->GetMapName());
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / Name, true, false);
-				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Kills, W->TotalKills, W->Items, W->TotalItems,
+				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Flow().Kills, W->Flow().TotalKills, W->Flow().Items, W->Flow().TotalItems,
 					W->GetLevel() ? W->GetLevel()->NumBakedTiles() : 0, W->GetParticleBursts(), *W->StateFingerprint());
 			});
 		}, Delay, false);
@@ -371,12 +577,12 @@ void ADoomGameMode::DoomGiveAll()
 	{
 		if (ADoomPlayer* P = W->GetPlayer())
 		{
-			P->Inv.bBackpack = true;
-			for (bool& B : P->Inv.Weapons) B = true;
-			for (int32 i = 0; i < 4; ++i) P->Inv.Ammo[i] = DoomInfo::MaxAmmo((EDoomAmmo)i, true);
-			for (bool& K : P->Inv.Keys) K = true;
-			P->Inv.Armor = 200;
-			P->Inv.ArmorClass = 2;
+			P->Inv().bBackpack = true;
+			for (bool& B : P->Inv().Weapons) B = true;
+			for (int32 i = 0; i < 4; ++i) P->Inv().Ammo[i] = DoomInfo::MaxAmmo((EDoomAmmo)i, true);
+			for (bool& K : P->Inv().Keys) K = true;
+			P->Inv().Armor = 200;
+			P->Inv().ArmorClass = 2;
 			W->ShowMessage(TEXT("All weapons, ammo and keys"));
 		}
 	}

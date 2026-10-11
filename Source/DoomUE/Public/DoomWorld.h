@@ -1,7 +1,9 @@
 // UDoomWorld: the game simulation as a world subsystem. Owns the WAD, graphics,
-// sound and map, builds the level, spawns things, and runs Doom's 35 Hz tic:
-// sector movers (doors, lifts, floors, ceilings, crushers, stairs), light effects,
-// linedef and sector specials, monsters, projectiles and the level flow.
+// sound and map, builds the level, spawns things, and runs one Doom tic when
+// ADoomGameMode's 35 Hz clock asks for it: sector movers (doors, lifts, floors,
+// ceilings, crushers, stairs), light effects, linedef and sector specials, monsters
+// and projectiles. The level's flow and totals live in ADoomGameState, the
+// inventory in ADoomPlayerState (see DoomGameState.h for the division of work).
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,6 +16,7 @@
 #include "DoomMapInfo.h"
 #include "DoomMenu.h"
 #include "DoomAssets.h"
+#include "DoomGameState.h"
 #include "DoomWorld.generated.h"
 
 class ADoomLevel;
@@ -22,8 +25,6 @@ class ADoomMonster;
 class ADoomProjectile;
 class ADoomPlayer;
 class APostProcessVolume;
-
-enum class EDoomGameState : uint8 { Title, Menu, Playing, Intermission, Finale };
 
 enum class EActivation : uint8 { Use, Cross, Shoot };
 
@@ -84,10 +85,30 @@ public:
 	// USubsystem
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Deinitialize() override;
-	// FTickableGameObject
-	virtual void Tick(float DeltaTime) override;
+	// FTickableGameObject: nothing per frame; ADoomGameMode::Tick runs the clock
+	virtual void Tick(float DeltaTime) override {}
 	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UDoomWorld, STATGROUP_Tickables); }
-	virtual bool IsTickable() const override { return Wad.IsValid(); }
+	virtual bool IsTickable() const override { return false; }
+
+	// --- the clock (driven by ADoomGameMode) --------------------------------------------------
+	/** One 35 Hz game tic: the player, monsters, things, missiles, movers, lights, specials. */
+	void RunTic();
+	/** One tic of the story text / ending screens. */
+	void TicFinale();
+	/** Per-frame material globals; SubTic (0..1) interpolates the animated ones between tics. */
+	void UpdateMaterialGlobals(float SubTic);
+	/** Restarts the game mode's tic accumulator (new map, loaded game). */
+	void ResetClock();
+
+	// --- level flow and totals (ADoomGameState) ---------------------------------------------
+	/** The game state's flow record (a local one when the world has no Doom game state). */
+	FDoomLevelFlow& Flow();
+	const FDoomLevelFlow& Flow() const;
+	class ADoomGameState* GetDoomGameState() const;
+	/** Counts a kill / item / secret for the level and for the player who earned it. */
+	void CreditKill(AActor* Killer);
+	void CreditItem(ADoomPlayer* Player);
+	void CreditSecret(ADoomPlayer* Player);
 
 	/** Loads the configured IWAD (+ PWADs). */
 	bool InitWads();
@@ -108,7 +129,7 @@ public:
 	int32 NumMovers() const { return Movers.Num(); }
 	void UnloadMap();
 
-	/** Level flow. */
+	/** Level flow: forwards to ADoomGameMode, which owns exits, intermission and the next map. */
 	void ExitLevel(bool bSecret);
 	void FinishIntermission();
 	/** Leaves the story text screen (UMAPINFO intertext). */
@@ -157,14 +178,14 @@ public:
 	FDoomWad* GetWad() const { return Wad.Get(); }
 	ADoomLevel* GetLevel() const { return Level; }
 	ADoomPlayer* GetPlayer() const;
-	int32 GetTic() const { return LevelTic; }
+	int32 GetTic() const { return Flow().LevelTic; }
 	int32 GetSkill() const { return Skill; }
 	bool IsModern() const { return bModern; }
 	/** Niagara bursts spawned so far (tests). */
 	int32 GetParticleBursts() const { return ParticleBursts; }
-	EDoomGameState GetState() const { return State; }
-	void SetState(EDoomGameState S) { State = S; }
-	const FString& GetMapName() const { return CurrentMap; }
+	EDoomGameState GetState() const { return Flow().Phase; }
+	void SetState(EDoomGameState S) { Flow().Phase = S; }
+	const FString& GetMapName() const { return Flow().CurrentMap; }
 
 	int32 SectorAt(const FVector& UEPos) const;
 	float FloorAt(const FVector& UEPos) const;
@@ -206,13 +227,6 @@ public:
 	const TArray<TWeakObjectPtr<ADoomMonster>>& GetMonsters() const { return Monsters; }
 	const TArray<TWeakObjectPtr<ADoomThing>>& GetThings() const { return Things; }
 
-	// stats
-	int32 TotalKills = 0, TotalItems = 0, TotalSecrets = 0;
-	int32 Kills = 0, Items = 0, Secrets = 0;
-	int32 IntermissionTic = 0;
-	bool bSecretExit = false;
-	FString PendingMap;
-
 	/** Message for the HUD (pickups, locked doors...). */
 	void ShowMessage(const FString& Msg);
 	FString Message;
@@ -237,7 +251,7 @@ public:
 	void SetModern(bool b);
 
 private:
-	void RunTic();
+	friend class ADoomGameMode; // the level flow (exits, intermission, next map) uses the internals below
 	void SpawnMapThings();
 	void ComputeMovableSectors(TSet<int32>& Out) const;
 	void StartSectorSpecials();
@@ -282,7 +296,6 @@ private:
 	bool StartVanillaText();
 	void StartFinaleText(const TArray<FString>& Lines, const FString& Backdrop);
 	void StartEnding();
-	void TicFinale();
 	void StartCastMember(int32 Index);
 	void SetCastSequence(const FString& Frames);
 
@@ -314,14 +327,10 @@ private:
 	TArray<FSwitchButton> Buttons;
 	bool bLightsDirty = false;
 
-	EDoomGameState State = EDoomGameState::Title;
-	FString CurrentMap;
+	FDoomLevelFlow LocalFlow; // only used without an ADoomGameState
 	int32 Skill = 3;
 	bool bModern = false;
 	bool bNoParticles = false; // -noparticles
 	int32 ParticleBursts = 0;
-	int32 LevelTic = 0;
-	double Accumulator = 0;
-	double ScreenAccumulator = 0;
 	int32 ValidCount = 0;
 };
