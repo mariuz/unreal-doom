@@ -547,6 +547,31 @@ void ADoomLevel::GetStaticSections(TMap<FName, FSectionData>& Solid, TMap<FName,
 	}
 }
 
+void ADoomLevel::GetAllSections(TMap<FName, FSectionData>& Solid, TMap<FName, FSectionData>& NonSolid)
+{
+	auto Merge = [](TMap<FName, FSectionData>& Into, const TMap<FName, FSectionData>& From)
+	{
+		for (const auto& Pair : From)
+		{
+			FSectionData& D = Into.FindOrAdd(Pair.Key);
+			const int32 Base = D.V.Num();
+			D.V.Append(Pair.Value.V);
+			D.N.Append(Pair.Value.N);
+			D.UV0.Append(Pair.Value.UV0);
+			D.UV1.Append(Pair.Value.UV1);
+			D.C.Append(Pair.Value.C);
+			for (int32 I : Pair.Value.I) D.I.Add(Base + I);
+		}
+	};
+	for (FChunk& C : Chunks)
+	{
+		TMap<FName, FSectionData> S, N;
+		Generate(C, S, N);
+		Merge(Solid, S);
+		Merge(NonSolid, N);
+	}
+}
+
 void ADoomLevel::SplitTiles(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid, TArray<FTile>& Out)
 {
 	// one distance field per tile keeps its voxels small

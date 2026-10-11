@@ -161,6 +161,8 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/Multiplayer.md](docs/Multiplayer.md): co-op and deathmatch for up to 4 players: how to
   host and join, the rules, what replicates, and the two-process `-nettest`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
+* [docs/Lyra.md](docs/Lyra.md): Doom maps as **Lyra Starter Game** arenas (E1M1 as an Elimination
+  map with Lyra's heroes, weapon pads, launch pads, bots and materials), and how to build more.
 
 ## Editing maps in the Unreal editor
 

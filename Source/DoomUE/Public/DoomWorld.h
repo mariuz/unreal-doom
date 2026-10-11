@@ -118,6 +118,12 @@ public:
 	    geometry chunk; the rest is the static chunk (also used by the editor preview and tile bake). */
 	static void ComputeMovableSectors(const FDoomMap& Map, TSet<int32>& Out);
 
+	/** What a sector does in the level, from the specials that move it (map exporters). */
+	enum class ESectorRole : uint8 { None, Door, Lift };
+	static void ClassifySectors(const FDoomMap& Map, TArray<ESectorRole>& Out);
+	/** Teleporter lines (walk-over, players) and the teleport destination thing each leads to. */
+	static void FindTeleporters(const FDoomMap& Map, TArray<TPair<int32, int32>>& OutLineAndThing);
+
 	/** -nettest: the sector behind the map's first manual door (both sides find the same one). */
 	int32 NetTestDoorSector() const;
 	/** -nettest on the server: open that door. */

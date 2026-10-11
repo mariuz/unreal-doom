@@ -2654,3 +2654,60 @@ void UDoomWorld::SetState(EDoomGameState S)
 	}
 	Flow().Phase = S;
 }
+
+void UDoomWorld::ClassifySectors(const FDoomMap& InMap, TArray<ESectorRole>& Out)
+{
+	Out.Init(ESectorRole::None, InMap.Sectors.Num());
+	for (const FDoomLine& L : InMap.Lines)
+	{
+		const FSpec* S = L.Special ? FindSpec(L.Special) : nullptr;
+		if (!S)
+		{
+			continue;
+		}
+		ESectorRole Role = ESectorRole::None;
+		switch (S->Act)
+		{
+		case EAct::DoorRaise: case EAct::DoorOpen: case EAct::DoorBlazeRaise: case EAct::DoorBlazeOpen: case EAct::DoorClose30:
+			Role = ESectorRole::Door; break;
+		case EAct::Lift: case EAct::LiftBlaze: case EAct::PlatPerpetual:
+			Role = ESectorRole::Lift; break;
+		default: break;
+		}
+		if (Role == ESectorRole::None)
+		{
+			continue;
+		}
+		if (S->Trig == 'D')
+		{
+			if (L.BackSector != INDEX_NONE) Out[L.BackSector] = Role;
+		}
+		else
+		{
+			for (int32 Sec : InMap.SectorsWithTag(L.Tag)) Out[Sec] = Role;
+		}
+	}
+}
+
+void UDoomWorld::FindTeleporters(const FDoomMap& InMap, TArray<TPair<int32, int32>>& Out)
+{
+	for (int32 l = 0; l < InMap.Lines.Num(); ++l)
+	{
+		const FDoomLine& L = InMap.Lines[l];
+		const FSpec* S = L.Special ? FindSpec(L.Special) : nullptr;
+		if (!S || S->Act != EAct::Teleport)
+		{
+			continue;
+		}
+		for (int32 Sec : InMap.SectorsWithTag(L.Tag))
+		{
+			for (int32 t = 0; t < InMap.Things.Num(); ++t)
+			{
+				if (InMap.Things[t].Type == 14 && InMap.SectorAt(InMap.Things[t].P) == Sec)
+				{
+					Out.Add(TPair<int32, int32>(l, t));
+				}
+			}
+		}
+	}
+}
