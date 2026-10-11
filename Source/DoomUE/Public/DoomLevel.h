@@ -43,7 +43,25 @@ class DOOMUE_API ADoomLevel : public AActor
 public:
 	ADoomLevel();
 
+	/** Builds everything at once: the map's pictures and chunks are still made in parallel. */
 	void Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bModern, FName SkyTexture);
+
+	/** Generated geometry of one chunk: solid and masked sections. */
+	struct FChunkSections;
+	/**
+	 * Build in steps, for loading behind a loading screen:
+	 *  * BeginBuild (game thread): the chunks and their components.
+	 *  * GenerateChunks (any thread, once the map's pictures are cached: FDoomGraphics::CachePrefetch):
+	 *    every chunk's geometry, in parallel. It only reads the map and the picture caches.
+	 *  * CommitChunks (game thread): mesh sections, collision and the modern renderer's tiles, chunk
+	 *    by chunk until Deadline (FPlatformTime::Seconds); true when all are done.
+	 *  * FinishBuild (game thread).
+	 */
+	void BeginBuild(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bModern, FName SkyTexture);
+	void GenerateChunks(TArray<FChunkSections>& Out) const;
+	bool CommitChunks(TArray<FChunkSections>& Sections, int32& Next, double Deadline);
+	void FinishBuild();
+	int32 NumChunks() const { return Chunks.Num(); }
 
 	/** Destroys all generated geometry (the editor preview rebuilds through this). */
 	void ClearGeometry();
@@ -79,6 +97,10 @@ public:
 		TArray<FVector> N;
 		TArray<FVector2D> UV0, UV1;
 		TArray<FLinearColor> C;
+	};
+	struct FChunkSections
+	{
+		TMap<FName, FSectionData> Solid, NonSolid;
 	};
 	/** One static mesh tile: its grid cell and, per material slot, the section key it draws. */
 	struct FTile
@@ -116,11 +138,13 @@ private:
 		bool bDirty = true;
 	};
 
-	void Generate(FChunk& Chunk, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid);
-	void EmitPlanes(int32 Sector, TMap<FName, FSectionData>& Out);
-	void EmitLine(int32 Line, bool bDynamic, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid);
+	void Generate(const FChunk& Chunk, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid) const;
+	void EmitPlanes(int32 Sector, TMap<FName, FSectionData>& Out) const;
+	void EmitLine(int32 Line, bool bDynamic, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid) const;
 	void EmitQuad(FSectionData& S, const FVector2f& A, const FVector2f& B, float Bottom, float Top,
-		float U0, float U1, float TexTop, float TexW, float TexH, int32 Sector, float Contrast, float Kind);
+		float U0, float U1, float TexTop, float TexW, float TexH, int32 Sector, float Contrast, float Kind) const;
+	/** Commits one chunk's generated sections (and bakes the static chunk's tiles in the modern renderer). */
+	void CommitChunk(int32 Index, FChunkSections& Sections);
 	void Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FName, int32>& Sections, TArray<int32>& Counts, TMap<FName, FSectionData>& Data, bool bCollision);
 	void BuildBlockingCollision();
 	FName SectionKey(FName Texture, bool bFlat, bool bSky) const;

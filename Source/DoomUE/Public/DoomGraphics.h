@@ -7,6 +7,7 @@
 
 class FDoomWad;
 class UTexture2D;
+class FDoomMap;
 
 struct FDoomPicture
 {
@@ -21,6 +22,26 @@ struct FDoomPicture
 	UTexture2D* IndexTexture = nullptr;
 
 	bool IsValid() const { return Width > 0 && Height > 0; }
+};
+
+/** Pixels of a picture's two textures (colour, palette index) with their mip chains; made off the game thread. */
+struct FDoomPictureMips
+{
+	TArray<TArray<FColor>> Color, Index;
+};
+
+/** The wall textures and flats a map draws, decoded on worker threads before its level is built. */
+struct FDoomPicturePrefetch
+{
+	struct FItem
+	{
+		FName Name;
+		bool bFlat = false;
+		TSharedPtr<FDoomPicture> Pic; // null when the WAD lacks it
+		FDoomPictureMips Mips;
+	};
+	TArray<FItem> Items;
+	int32 NextToCreate = 0;
 };
 
 struct FDoomSpriteFrame
@@ -55,7 +76,23 @@ public:
 	bool IsAnimated(FName Name, bool bFlat) const;
 
 	/** SW1xxx <-> SW2xxx partner, or NAME_None. */
-	FName SwitchPartner(FName Name);
+	FName SwitchPartner(FName Name) const;
+
+	/**
+	 * Loading a map's pictures off the game thread, in three steps:
+	 *  1. CollectPrefetch (game thread): the map's uncached wall textures and flats, with their
+	 *     animation frames and switch partners.
+	 *  2. DecodePrefetch (any thread): composes them from patches and builds the mip chains, in
+	 *     parallel; it reads only the WAD and the texture tables.
+	 *  3. CachePrefetch, then CreatePrefetchTextures (game thread): the pictures enter the caches (so
+	 *     lookups while the level geometry is generated on workers are read-only), and their GPU
+	 *     textures are created, in slices up to a deadline (FPlatformTime::Seconds) so a loading
+	 *     screen keeps drawing. Returns true when all are created.
+	 */
+	TSharedRef<FDoomPicturePrefetch> CollectPrefetch(const FDoomMap& Map) const;
+	void DecodePrefetch(FDoomPicturePrefetch& Prefetch) const;
+	void CachePrefetch(FDoomPicturePrefetch& Prefetch);
+	bool CreatePrefetchTextures(FDoomPicturePrefetch& Prefetch, double Deadline);
 
 	/** Sky texture name for a map. */
 	static FName SkyTextureFor(const FString& MapName);
@@ -92,10 +129,13 @@ private:
 	void IndexFlatsAndSprites();
 	void BuildAnimations();
 	bool DecodePatch(TConstArrayView<uint8> Data, FDoomPicture& Out) const;
+	bool ComposeTexture(FName Name, FDoomPicture& Out) const;
+	bool ComposeFlat(FName Name, FDoomPicture& Out) const;
+	/** CPU side of a picture's textures (thread-safe), then the GPU side (game thread). */
+	void PrepareMips(const FDoomPicture& Pic, bool bMips, FDoomPictureMips& Out) const;
+	void CreateTextures(FDoomPicture& Pic, const FDoomPictureMips& Mips, bool bWrap);
+	UTexture2D* CreateTexture(int32 Width, int32 Height, const TArray<TArray<FColor>>& Mips, bool bSRGB, bool bWrap, FName Name);
 	void Upload(FDoomPicture& Pic, bool bWrap, bool bMips);
-	void UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips);
-	int32 NearestPaletteIndex(int32 R, int32 G, int32 B);
-	TMap<uint32, uint8> NearestCache;
 
 public:
 	/** A picture through one COLORMAP row and PLAYPAL palette (weapon light, screen palettes), cached. */

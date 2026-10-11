@@ -67,6 +67,31 @@ In short:
 * See the [README](../README.md#two-renderers) for the classic (palette-exact) and modern
   (Lumen) renderers.
 
+### Loading a map
+
+`UDoomWorld` loads a map in steps (`BeginLoad`, then `StepLoad` until done):
+
+1. **Game thread:** the map lumps, the level flow and the editor's sector edits; the level actor
+   lays out its chunks (`ADoomLevel::BeginBuild`).
+2. **Worker threads (`UE::Tasks`, `ParallelFor`):** every wall texture and flat the map draws,
+   with animation frames and switch partners, is composed from its patches. Each gets colour and
+   palette-index mip chains (`FDoomGraphics::DecodePrefetch`).
+3. **Workers:** with those pictures cached, every chunk's geometry is generated in parallel
+   (`ADoomLevel::GenerateChunks`). Meanwhile the game thread creates the GPU textures.
+4. **Game thread:** the chunks' mesh sections and collision are committed, and the modern
+   renderer bakes or reuses its tiles (`CommitChunks`). Then the things, the players and the music.
+
+`LoadMapAsync` returns after step 1. `ADoomGameMode::Tick` then calls `StepLoad` with an 8 ms budget
+per frame, and `ADoomHUD` draws the intermission's "Entering" screen with a progress bar. Starting a
+new game, the next map after the intermission and the next map after a story text load this way.
+`LoadMap` (the startup `-warp`, save games, network clients, the editor) runs the same steps without
+returning in between, and still uses the worker threads.
+
+Collision is cooked once per chunk. The procedural mesh component recooks its whole collision
+whenever any section changes, so `ADoomLevel::Commit` adds the sections without collision, then
+flags them and triggers one cook. Adding them one by one had cooked E1M1's static chunk 136 times:
+1.2 s of a 1.4 s level build.
+
 ## Editor
 
 Doom maps can be edited as Unreal levels; see [Editing maps](EditingMaps.md). The pieces:

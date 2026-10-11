@@ -47,6 +47,13 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	if (W->IsLoadingMap())
+	{
+		// the loading screen keeps drawing: a few milliseconds of the load per frame
+		W->StepLoad(FPlatformTime::Seconds() + 0.008);
+		Accumulator = ScreenAccumulator = 0;
+		return;
+	}
 	FDoomLevelFlow& Flow = W->Flow();
 	const double Delta = FMath::Min(DeltaSeconds, 0.25f); // a long hitch is not worth a burst of tics
 	if (Flow.Phase == EDoomGameState::Intermission || Flow.Phase == EDoomGameState::Finale)
@@ -195,7 +202,7 @@ void ADoomGameMode::FinishIntermission()
 		W->StartEnding();
 		return;
 	}
-	W->LoadMap(Flow.PendingMap, false);
+	W->LoadMapAsync(Flow.PendingMap, false);
 }
 
 void ADoomGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -489,11 +496,31 @@ void ADoomGameMode::StartPlay()
 			{
 				const int32 InterTics = W->Flow().IntermissionTic;
 				FinishIntermission();
-				const bool bPass = Kills == 2 && Credit == 2 && bIntermission && InterTics > 30 && W->GetMapName() == Pending
-					&& W->GetState() == EDoomGameState::Playing && W->Flow().Kills == 0 && PS->LevelKills == 0 && PS->Inv.Ammo[1] == 17;
-				UE_LOG(LogDoom, Display, TEXT("Exittest %s: %s kills %d (player credit %d), intermission %d (%d tics), next %s -> now %s, kills %d / credit %d, shells %d"),
-					bPass ? TEXT("PASS") : TEXT("FAIL"), *From, Kills, Credit, bIntermission, InterTics, *Pending, *W->GetMapName(),
-					W->Flow().Kills, PS->LevelKills, PS->Inv.Ammo[1]);
+				// the next map loads in the background, behind the loading screen: check once it plays
+				const bool bBackground = W->IsLoadingMap();
+				const double LoadStart = FPlatformTime::Seconds();
+				TSharedRef<FTimerHandle> T3 = MakeShared<FTimerHandle>();
+				GetWorldTimerManager().SetTimer(*T3, [this, W, PS, From, Kills, Credit, bIntermission, Pending, InterTics, bBackground, LoadStart, T3]()
+				{
+					if (W->IsLoadingMap())
+					{
+						// the loading screen, once (Saved/Screenshots/.../exittest_loading.png)
+						static bool bShot = false;
+						if (!bShot)
+						{
+							bShot = true;
+							FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("exittest_loading.png"), true, false);
+						}
+						return;
+					}
+					const bool bPass = Kills == 2 && Credit == 2 && bIntermission && InterTics > 30 && bBackground && W->GetMapName() == Pending
+						&& W->GetState() == EDoomGameState::Playing && W->Flow().Kills == 0 && PS->LevelKills == 0 && PS->Inv.Ammo[1] == 17;
+					UE_LOG(LogDoom, Display, TEXT("Exittest %s: %s kills %d (player credit %d), intermission %d (%d tics), next %s -> now %s (loaded in the background: %d, %.0f ms), kills %d / credit %d, shells %d"),
+						bPass ? TEXT("PASS") : TEXT("FAIL"), *From, Kills, Credit, bIntermission, InterTics, *Pending, *W->GetMapName(),
+						bBackground, (FPlatformTime::Seconds() - LoadStart) * 1000, W->Flow().Kills, PS->LevelKills, PS->Inv.Ammo[1]);
+					FPlatformMisc::RequestExit(false, TEXT("exittest"));
+					GetWorldTimerManager().ClearTimer(*T3); // last: this frees the lambda's captures
+				}, 0.02f, true);
 			}, 1.5f, false);
 		}, 1.f, false);
 	}
