@@ -17,3 +17,24 @@ bool UDoomLyraToolsLibrary::SetPropertyFromText(UObject* Object, FName PropertyN
 	Object->PostEditChangeProperty(Event);
 	return bOk;
 }
+
+TArray<FString> UDoomLyraToolsLibrary::ListProperties(UObject* Object, bool bBlueprintOnly)
+{
+	TArray<FString> Out;
+	if (!Object)
+	{
+		return Out;
+	}
+	for (TFieldIterator<FProperty> It(Object->GetClass()); It; ++It)
+	{
+		const UClass* Owner = It->GetOwnerClass();
+		if (bBlueprintOnly && (!Owner || Owner->HasAnyClassFlags(CLASS_Native)))
+		{
+			continue;
+		}
+		FString Value;
+		It->ExportTextItem_InContainer(Value, Object, nullptr, Object, PPF_None);
+		Out.Add(FString::Printf(TEXT("%s: %s = %s"), *It->GetName(), *It->GetCPPType(), *Value.Left(200)));
+	}
+	return Out;
+}

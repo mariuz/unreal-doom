@@ -27,13 +27,14 @@ EXPORT = os.environ.get("DOOM_EXPORT", r"E:/Work/LyraStarterGame/Saved/DoomExpor
 MATERIALS = {
     "Wall": "/LyraExampleContent/Materials/MI_MS_Surface_Wall_1",
     "Floor": "/LyraExampleContent/Materials/MI_Tile_1",
-    "Ceiling": "/LyraExampleContent/Materials/MI_MS_Surface_2",
+    "Ceiling": "/LyraExampleContent/Materials/MI_MS_Surface_Wall_2",  # matte (MI_MS_Surface_2 is glossy)
     "Metal": "/LyraExampleContent/Materials/MI_MS_Basic_Metal",
     "Door": "/LyraExampleContent/Materials/MI_MS_Orange_1",
     "Accent": "/LyraExampleContent/Materials/MI_MS_Red_1",
     "Light": "/LyraExampleContent/Materials/MI_Glass_Tile",
     "Liquid": "/LyraExampleContent/Materials/MI_MS_Blue_2",
     "Ramp": "/Engine/EngineMaterials/WorldGridMaterial",
+    "Blocker": "/Engine/EngineMaterials/WorldGridMaterial",
 }
 PICKUPS = {
     "shotgun": "/ShooterCore/Weapons/Shotgun/WeaponPickupData_Shotgun",
@@ -168,10 +169,10 @@ def main():
     mesh_dir = "/Game/DoomArena/%s/Meshes" % map_name
 
     meshes = import_meshes(info["tiles"], mesh_dir)
-    ramps = import_meshes([info["ramps"]], mesh_dir)
+    ramps = import_meshes([info.get("collision", info.get("ramps"))], mesh_dir)
     for m in meshes + ramps:
         dress_mesh(m)
-    log("imported %d tiles and %d ramp meshes" % (len(meshes), len(ramps)))
+    log("imported %d tiles and %d collision meshes" % (len(meshes), len(ramps)))
 
     les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     if unreal.EditorAssetLibrary.does_asset_exist(level_path):
@@ -189,9 +190,10 @@ def main():
         a.set_folder_path("Doom/Geometry")
     for m in ramps:
         a = eas.spawn_actor_from_object(m, unreal.Vector(0, 0, 0))
-        a.set_actor_label("StepRamps")
+        a.set_actor_label("DoomCollision")
         a.set_folder_path("Doom/Geometry")
-        a.set_actor_hidden_in_game(True)  # collision only: Doom's 24-unit steps are taller than a Lyra step
+        a.set_actor_hidden_in_game(True)  # collision only: step ramps, impassable lines, the sky shell
+        a.static_mesh_component.set_cast_shadow(False)
 
     # player starts (the capsule centre sits half a mannequin above the floor)
     n = 0
@@ -209,6 +211,8 @@ def main():
     # lifts become launch pads strong enough for the old lift height
     for i, lift in enumerate(info["lifts"]):
         a = spawn("/ShooterCore/Blueprint/B_Launcher_Up.B_Launcher_Up_C", vec(lift), 0, "LaunchPad_%d" % i, "Doom/Lifts")
+        if a and i == 0 and hasattr(unreal.DoomLyraToolsLibrary, "list_properties"):
+            log("B_Launcher_Up properties: " + ", ".join(unreal.DoomLyraToolsLibrary.list_properties(a, True)))
         if a:
             up = math.sqrt(2.0 * 980.0 * 1.6 * (lift["rise"] + 150.0))
             if not set_any(a, ["LaunchVelocity"], unreal.Vector(0, 0, up)):

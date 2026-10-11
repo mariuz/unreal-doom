@@ -997,14 +997,38 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 	FBox Bounds(ForceInit);
 	const float TileSize = 1024.f * S;
 	int32 Triangles = 0;
+	// collision-only surfaces (hidden in Lyra): step ramps, impassable lines, and Doom's sky as a shell
+	FObjWriter Collision;
+	// which winding Unreal treats as the front: taken from a floor triangle (its normal points up)
+	float FrontSign = 1.f;
+	for (const auto& Pair : Solid)
+	{
+		const ADoomLevel::FSectionData& D = Pair.Value;
+		if (D.I.Num() >= 3 && D.N[D.I[0]].Z > 0.9f)
+		{
+			const FVector3f A(D.V[D.I[0]]), B(D.V[D.I[1]]), C(D.V[D.I[2]]);
+			FrontSign = FVector3f::CrossProduct(B - A, C - A).Z > 0 ? 1.f : -1.f;
+			break;
+		}
+	}
+	auto AddFacing = [&](const TCHAR* Role, const FVector3f& A, const FVector3f& B, const FVector3f& C, const FVector3f& Facing)
+	{
+		const bool bFront = FVector3f::DotProduct(FVector3f::CrossProduct(B - A, C - A), Facing) * FrontSign > 0;
+		Collision.Add(Role, A, bFront ? B : C, bFront ? C : B, Facing);
+	};
 	for (const auto& Pair : Solid)
 	{
 		const FString Key = Pair.Key.ToString();
+		const ADoomLevel::FSectionData& D = Pair.Value;
 		if (Key.StartsWith(TEXT("S:")))
 		{
-			continue; // sky: open to Lyra's sky
+			// sky: open to Lyra's sky, but as solid as Doom's (nobody jumps out of the map)
+			for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
+			{
+				Collision.Add(TEXT("Blocker"), FVector3f(D.V[D.I[t]]), FVector3f(D.V[D.I[t + 1]]), FVector3f(D.V[D.I[t + 2]]), FVector3f(D.N[D.I[t]]));
+			}
+			continue;
 		}
-		const ADoomLevel::FSectionData& D = Pair.Value;
 		for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
 		{
 			const FVector3f A(D.V[D.I[t]]), B(D.V[D.I[t + 1]]), C(D.V[D.I[t + 2]]);
@@ -1027,17 +1051,32 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 		TileFiles.Add(MakeShared<FJsonValueString>(Name));
 	}
 
-	// collision ramps over steps up to 24 map units (a Lyra character steps 45 cm; Doom's 72)
-	FObjWriter Ramps;
-	int32 NumRamps = 0;
+	// collision ramps over steps up to 24 map units (a Lyra character steps 45 cm; Doom's 72), and
+	// walls on impassable two-sided lines (window ledges, railings), both sides, floor to ceiling
+	int32 NumRamps = 0, NumBlockers = 0;
 	for (const FDoomLine& L : Map.Lines)
 	{
-		if (L.FrontSector == INDEX_NONE || L.BackSector == INDEX_NONE || (L.Flags & DoomLineFlags::Blocking))
+		if (L.FrontSector == INDEX_NONE || L.BackSector == INDEX_NONE)
 		{
 			continue;
 		}
 		const FDoomSector& F = Map.Sectors[L.FrontSector];
 		const FDoomSector& K = Map.Sectors[L.BackSector];
+		if (L.Flags & DoomLineFlags::Blocking)
+		{
+			const FVector2f A = Map.V(L.V1), B = Map.V(L.V2);
+			const float Low = FMath::Min(F.Floor, K.Floor), High = FMath::Max(F.Ceiling, K.Ceiling);
+			const FVector3f A0(Doom::ToUE(A, Low)), B0(Doom::ToUE(B, Low)), A1(Doom::ToUE(A, High)), B1(Doom::ToUE(B, High));
+			const FVector2f Dir = (B - A).GetSafeNormal();
+			const FVector3f Side(Doom::ToUE(FVector2f(Dir.Y, -Dir.X), 0) / Doom::Scale);
+			for (const FVector3f& Facing : { Side, -Side })
+			{
+				AddFacing(TEXT("Blocker"), A0, B0, B1, Facing);
+				AddFacing(TEXT("Blocker"), A0, B1, A1, Facing);
+			}
+			++NumBlockers;
+			continue;
+		}
 		const float Rise = FMath::Abs(F.Floor - K.Floor);
 		if (Rise < 14.f || Rise > 24.f)
 		{
@@ -1054,19 +1093,20 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 		const FVector3f TA(Doom::ToUE(A, High)), TB(Doom::ToUE(B, High)), BA(Doom::ToUE(A2, Low)), BB(Doom::ToUE(B2, Low));
 		const FVector3f N = FVector3f::CrossProduct(TB - TA, BA - TA).GetSafeNormal();
 		const FVector3f Up = N.Z < 0 ? -N : N;
-		Ramps.Add(TEXT("Ramp"), TA, TB, BB, Up);
-		Ramps.Add(TEXT("Ramp"), TA, BB, BA, Up);
+		AddFacing(TEXT("Ramp"), TA, TB, BB, Up);
+		AddFacing(TEXT("Ramp"), TA, BB, BA, Up);
 		++NumRamps;
 	}
-	const FString RampFile = FString::Printf(TEXT("%s_Ramps.obj"), *MapName);
-	Ramps.Save(OutDir / RampFile);
+	const FString RampFile = FString::Printf(TEXT("%s_Collision.obj"), *MapName);
+	Collision.Save(OutDir / RampFile);
 
 	// gameplay spots
 	TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("map"), MapName);
 	Root->SetStringField(TEXT("title"), FString::Printf(TEXT("%s"), *MapName));
 	Root->SetArrayField(TEXT("tiles"), TileFiles);
-	Root->SetStringField(TEXT("ramps"), RampFile);
+	Root->SetStringField(TEXT("collision"), RampFile);
+	Root->SetStringField(TEXT("ramps"), RampFile); // older builder scripts
 	Root->SetObjectField(TEXT("boundsMin"), JVec(Bounds.Min));
 	Root->SetObjectField(TEXT("boundsMax"), JVec(Bounds.Max));
 	TArray<TSharedPtr<FJsonValue>> Starts, Items, LiftsJ, Teleports, Lights;
@@ -1152,8 +1192,8 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Json);
 	FJsonSerializer::Serialize(Root, Writer);
 	const bool bOk = FFileHelper::SaveStringToFile(Json, *(OutDir / FString::Printf(TEXT("%s.json"), *MapName)));
-	UE_LOG(LogDoomContent, Display, TEXT("ExportLyra: %s -> %s: %d tiles, %d triangles, %d ramps, %d doors opened, %d lifts, %d starts, %d items, %d teleporters, %d lights"),
-		*MapName, *OutDir, Tiles.Num(), Triangles, NumRamps, Doors, Lifts, Starts.Num(), Items.Num(), Teleports.Num(), Lights.Num());
+	UE_LOG(LogDoomContent, Display, TEXT("ExportLyra: %s -> %s: %d tiles, %d triangles, %d ramps, %d impassable lines walled, %d doors opened, %d lifts, %d starts, %d items, %d teleporters, %d lights"),
+		*MapName, *OutDir, Tiles.Num(), Triangles, NumRamps, NumBlockers, Doors, Lifts, Starts.Num(), Items.Num(), Teleports.Num(), Lights.Num());
 	return bOk;
 }
 
