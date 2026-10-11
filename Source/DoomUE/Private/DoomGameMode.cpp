@@ -12,6 +12,7 @@
 #include "DoomMapActors.h"
 #include "DoomGameState.h"
 #include "DoomPlayerState.h"
+#include "GameFramework/GameSession.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -77,6 +78,14 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 		if (W->Flow().Phase != EDoomGameState::Playing || !W->GetMap())
 		{
 			return; // the tic left the level (exit, death screen, menu load)
+		}
+	}
+	if (W->IsNetServer())
+	{
+		// clients see moved planes, light changes and switched textures
+		if (ADoomGameState* GS = GetGameState<ADoomGameState>())
+		{
+			GS->PublishWorld(*W->GetMap(), W->BaselineSectors, W->BaselineSides);
 		}
 	}
 	W->UpdateMaterialGlobals(Accumulator / Doom::TicSeconds);
@@ -189,8 +198,75 @@ void ADoomGameMode::FinishIntermission()
 	W->LoadMap(Flow.PendingMap, false);
 }
 
+void ADoomGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+	if (GameSession)
+	{
+		GameSession->MaxPlayers = 4; // Doom's MAXPLAYERS
+	}
+}
+
+void ADoomGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	if (ADoomPlayerState* PS = NewPlayer ? NewPlayer->GetPlayerState<ADoomPlayerState>() : nullptr)
+	{
+		TSet<int32> Taken;
+		if (const ADoomGameState* GS = GetGameState<ADoomGameState>())
+		{
+			for (const ADoomPlayerState* Other : GS->DoomPlayers())
+			{
+				if (Other != PS) Taken.Add(Other->PlayerNumber);
+			}
+		}
+		int32 Number = 0;
+		while (Taken.Contains(Number)) ++Number;
+		PS->PlayerNumber = FMath::Min(Number, 3);
+	}
+	Super::PostLogin(NewPlayer);
+}
+
+void ADoomGameMode::RespawnPlayer(AController* Controller)
+{
+	UDoomWorld* W = DoomWorld();
+	if (!Controller || !W)
+	{
+		return;
+	}
+	if (APawn* Old = Controller->GetPawn())
+	{
+		Controller->UnPossess();
+		Old->Destroy();
+	}
+	if (ADoomPlayerState* PS = Controller->GetPlayerState<ADoomPlayerState>())
+	{
+		PS->Inv.Reset();
+		PS->Inv.Health = DoomInfo::Rules().InitialHealth;
+		PS->Inv.Ammo[0] = DoomInfo::Rules().InitialBullets;
+	}
+	RestartPlayer(Controller);
+	if (const APawn* P = Controller->GetPawn())
+	{
+		W->SpawnEffect(TEXT("TFOG"), TEXT("ABCDEFGHIJ"), 6, P->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(P)), true);
+		const FVector At = P->GetActorLocation();
+		W->PlaySound(TEXT("TELEPT"), &At);
+	}
+}
+
 void ADoomGameMode::RestartPlayer(AController* NewPlayer)
 {
+	UDoomWorld* W = DoomWorld();
+	if (NewPlayer && !NewPlayer->IsPendingKillPending() && W && W->GetMap() && W->Flow().Phase != EDoomGameState::Title)
+	{
+		// joining (or reborn) during a level: straight to this player's start
+		RestartPlayerAtTransform(NewPlayer, FTransform(FRotator::ZeroRotator, FVector(0, 0, 100000.f)));
+		if (ADoomPlayer* P = Cast<ADoomPlayer>(NewPlayer->GetPawn()))
+		{
+			P->InitForLevel(W, P->Inv().Health <= 0);
+			W->PlacePlayer(P);
+		}
+		return;
+	}
 	if (NewPlayer && !NewPlayer->IsPendingKillPending())
 	{
 		RestartPlayerAtTransform(NewPlayer, FTransform(FRotator::ZeroRotator, FVector(0, 0, 100000.f)));
@@ -304,6 +380,79 @@ void ADoomGameMode::StartPlay()
 		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
 		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
 		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
+	}
+
+	// -nettest (listen server): wait for a client, open a door, kill two monsters as the host (in
+	// deathmatch also the client: a frag), exit to the intermission, quit; logs NetFingerprint
+	if (FParse::Param(FCommandLine::Get(), TEXT("nettest")) && W->IsNetServer())
+	{
+		W->bInputLocked = true; // stray keys on the test window must not play the host
+		TSharedRef<float> Clock = MakeShared<float>(0.f);
+		TSharedRef<float> Waited = MakeShared<float>(0.f);
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [this, W, Clock, Waited]()
+		{
+			const TArray<ADoomPlayer*> Players = W->GetPlayers();
+			if (Players.Num() < 2)
+			{
+				*Waited += 0.5f;
+				if (*Waited > 1800.f)
+				{
+					UE_LOG(LogDoom, Error, TEXT("Nettest server: no client joined"));
+					FPlatformMisc::RequestExit(false, TEXT("DoomNettest"));
+				}
+				return;
+			}
+			*Clock += 0.5f;
+			const float Now = *Clock;
+			ADoomPlayer* Host = W->GetPlayer();
+			ADoomPlayer* Guest = nullptr;
+			for (ADoomPlayer* P : Players) if (P != Host) Guest = P;
+			if (FMath::IsNearlyEqual(Now, 1.f))
+			{
+				UE_LOG(LogDoom, Display, TEXT("Nettest server: host at (%.0f,%.0f) guest at (%.0f,%.0f), deathmatch %d"),
+					Host->DoomPos().X, Host->DoomPos().Y, Guest->DoomPos().X, Guest->DoomPos().Y, (int32)W->IsDeathmatch());
+			}
+			if (FMath::IsNearlyEqual(Now, 2.f))
+			{
+				W->NetTestOpenDoor();
+				int32 Killed = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (Killed < 2 && M.IsValid() && !M->IsDead())
+					{
+						UGameplayStatics::ApplyDamage(M.Get(), 10000.f, Host->GetController(), Host, nullptr);
+						++Killed;
+					}
+				}
+				if (W->IsDeathmatch() && Guest)
+				{
+					UGameplayStatics::ApplyDamage(Guest, 10000.f, Host->GetController(), Host, nullptr);
+				}
+			}
+			if (FMath::IsNearlyEqual(Now, 5.5f) && Guest)
+			{
+				// look at the guest for the screenshot
+				const FRotator Look = (Guest->GetActorLocation() - Host->GetActorLocation()).Rotation();
+				Host->GetController()->SetControlRotation(FRotator(0, Look.Yaw, 0));
+			}
+			if (FMath::IsNearlyEqual(Now, 6.f))
+			{
+				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("net_server_play.png"), true, false);
+			}
+			if (FMath::Fmod(Now, 1.f) < 0.01f)
+			{
+				UE_LOG(LogDoom, Display, TEXT("Nettest server t=%.0f: %s"), Now, *W->NetFingerprint());
+			}
+			if (FMath::IsNearlyEqual(Now, 14.f))
+			{
+				ExitLevel(false);
+			}
+			if (FMath::IsNearlyEqual(Now, 45.f))
+			{
+				FPlatformMisc::RequestExit(false, TEXT("DoomNettest"));
+			}
+		}, 0.5f, true);
 	}
 
 	// -exittest: kill two monsters as the player, take the normal exit, wait in the intermission, go on;

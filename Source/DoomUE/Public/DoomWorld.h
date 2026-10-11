@@ -25,6 +25,7 @@ class ADoomMonster;
 class ADoomProjectile;
 class ADoomPlayer;
 class APostProcessVolume;
+class ADoomPlayerState;
 
 enum class EActivation : uint8 { Use, Cross, Shoot };
 
@@ -85,10 +86,40 @@ public:
 	// USubsystem
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Deinitialize() override;
-	// FTickableGameObject: nothing per frame; ADoomGameMode::Tick runs the clock
-	virtual void Tick(float DeltaTime) override {}
+	// FTickableGameObject: on servers and standalone ADoomGameMode::Tick runs the clock; network
+	// clients run no game tics, only ClientTick (texture animation, replicated geometry, globals)
+	virtual void Tick(float DeltaTime) override { ClientTick(DeltaTime); }
 	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UDoomWorld, STATGROUP_Tickables); }
-	virtual bool IsTickable() const override { return false; }
+	virtual bool IsTickable() const override { return Wad.IsValid() && IsNetClient(); }
+
+	// --- networking ---------------------------------------------------------------------------
+	bool IsNetClient() const;
+	bool IsNetServer() const;
+	/** Any networked game (co-op or deathmatch, server or client). */
+	bool IsNetGame() const;
+	bool IsDeathmatch() const { return Flow().bDeathmatch; }
+	/** Loads the WADs if they are not loaded yet (clients load them on demand). */
+	bool EnsureWads() { return Wad.IsValid() || InitWads(); }
+	/** Client: the game state's flow record arrived (a new map to build, a phase change). */
+	void OnFlowReplicated();
+	/** Client: a sector or sidedef changed on the server. */
+	void ApplySectorNet(const struct FDoomSectorNet& Net);
+	void ApplySideNet(const struct FDoomSideNet& Net);
+
+	// --- players ------------------------------------------------------------------------------
+	/** Every player pawn in the world (the local one first on a listen server). */
+	TArray<ADoomPlayer*> GetPlayers() const;
+	/** The living player closest to From (optionally only those in sight), or null. */
+	ADoomPlayer* NearestPlayer(const AActor* From, bool bInSight) const;
+	/** Moves a player to their start: co-op start by player number, or a random deathmatch start. */
+	void PlacePlayer(ADoomPlayer* P);
+
+	/** -nettest: the sector behind the map's first manual door (both sides find the same one). */
+	int32 NetTestDoorSector() const;
+	/** -nettest on the server: open that door. */
+	void NetTestOpenDoor();
+	/** A line of what this machine sees, for comparing server and client logs. */
+	FString NetFingerprint() const;
 
 	// --- the clock (driven by ADoomGameMode) --------------------------------------------------
 	/** One 35 Hz game tic: the player, monsters, things, missiles, movers, lights, specials. */
@@ -107,8 +138,13 @@ public:
 	class ADoomGameState* GetDoomGameState() const;
 	/** Counts a kill / item / secret for the level and for the player who earned it. */
 	void CreditKill(AActor* Killer);
+	/** The player state behind an actor: a player, their controller, or a missile they fired. */
+	static ADoomPlayerState* CreditedPlayer(AActor* Actor);
 	void CreditItem(ADoomPlayer* Player);
 	void CreditSecret(ADoomPlayer* Player);
+
+	/** Doom's -deathmatch, read when the game boots. */
+	bool bDeathmatchParam = false;
 
 	/** Loads the configured IWAD (+ PWADs). */
 	bool InitWads();
@@ -183,8 +219,10 @@ public:
 	bool IsModern() const { return bModern; }
 	/** Niagara bursts spawned so far (tests). */
 	int32 GetParticleBursts() const { return ParticleBursts; }
-	EDoomGameState GetState() const { return Flow().Phase; }
-	void SetState(EDoomGameState S) { Flow().Phase = S; }
+	/** The phase this machine shows: the game state's, or Menu while this player's menu is open in a
+	    network game (where the menu never pauses the shared game). */
+	EDoomGameState GetState() const { return bNetMenu ? EDoomGameState::Menu : Flow().Phase; }
+	void SetState(EDoomGameState S);
 	const FString& GetMapName() const { return Flow().CurrentMap; }
 
 	int32 SectorAt(const FVector& UEPos) const;
@@ -193,6 +231,8 @@ public:
 
 	// --- actions ----------------------------------------------------------------------------------
 	void PlaySound(const FString& Name, const FVector* Location, float Volume = 1.f);
+	/** This machine only (PlaySound also sends it to the clients). */
+	void PlaySoundLocal(const FString& Name, const FVector* Location, float Volume = 1.f);
 	/** Starts a music lump (D_E1M1, D_RUNNIN...) looping; empty or missing stops the music. */
 	void PlayMusic(const FString& Lump);
 	void PlayTitleMusic();
@@ -211,8 +251,10 @@ public:
 
 	ADoomThing* SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle, bool bDropped = false);
 	ADoomThing* SpawnEffect(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
+	ADoomThing* SpawnEffectLocal(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
 	/** Modern renderer only: a Niagara burst on top of Doom's sprite effect, sprayed around Up. */
 	void SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up = FVector::UpVector);
+	void SpawnParticlesLocal(EDoomParticles Kind, const FVector& UEPos, const FVector& Up);
 	ADoomProjectile* SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer = nullptr, bool bSilent = false);
 	ADoomMonster* SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 	void RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage);
@@ -258,6 +300,7 @@ private:
 	void TicMovers();
 	void TicLights();
 	void TicSectorDamage();
+	void TicSectorDamage(ADoomPlayer* P, int32 Sector);
 	bool MovePlane(FSectorMover& M);
 	bool ActivateSpecial(int32 Line, int32 Side, AActor* Activator, EActivation How, bool bForce = false);
 	bool CheckLock(AActor* Activator, int32 Lock);
@@ -332,5 +375,17 @@ private:
 	bool bModern = false;
 	bool bNoParticles = false; // -noparticles
 	int32 ParticleBursts = 0;
+	// networking
+	void ClientTick(float DeltaTime);
+	TArray<FDoomSector> BaselineSectors; // server: the level as loaded, to publish only changes
+	TArray<FDoomSide> BaselineSides;
+	TArray<FDoomMapThing> PlayerStarts;  // co-op starts 1-4 (Type 0 when the map has none)
+	TArray<FDoomMapThing> DeathmatchStarts;
+	int32 LoadedSerial = -1;             // client: the level serial its geometry was built for
+	bool bClientGeometryDirty = false;
+	double ClientAccumulator = 0;
+	int32 ClientTic = 0;
+	EDoomGameState LastClientPhase = EDoomGameState::Title;
+	bool bNetMenu = false;
 	int32 ValidCount = 0;
 };

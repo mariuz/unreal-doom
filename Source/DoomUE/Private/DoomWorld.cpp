@@ -12,6 +12,7 @@
 #include "DoomAssets.h"
 #include "DoomMapActors.h"
 #include "DoomGameMode.h"
+#include "EngineUtils.h"
 #include "DoomGameState.h"
 #include "DoomPlayerState.h"
 #include "DoomMusic.h"
@@ -218,6 +219,7 @@ bool UDoomWorld::InitWads()
 	if (FParse::Param(FCommandLine::Get(), TEXT("modern"))) bModern = true;
 	if (FParse::Param(FCommandLine::Get(), TEXT("classic"))) bModern = false;
 	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
+	bDeathmatchParam = FParse::Param(FCommandLine::Get(), TEXT("deathmatch"));
 	UE_LOG(LogDoom, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
 	return true;
 }
@@ -229,6 +231,11 @@ ADoomPlayer* UDoomWorld::GetPlayer() const
 
 void UDoomWorld::StartNewGame(const FString& MapName, int32 InSkill)
 {
+	if (IsNetClient())
+	{
+		ShowMessage(TEXT("Only the server can start a new game."));
+		return;
+	}
 	Skill = FMath::Clamp(InSkill, 1, 5);
 	LoadMap(MapName, true);
 }
@@ -294,15 +301,23 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 		Map.Reset();
 		return false;
 	}
-	// new level: the game state's counters and every player's share start from zero
-	Flow().StartLevel(Map->Name);
-	if (const ADoomGameState* GS = GetDoomGameState())
+	// new level: the game state's counters and every player's share start from zero (a network
+	// client only mirrors the server's record)
+	if (!IsNetClient())
 	{
-		for (APlayerState* PS : GS->PlayerArray)
+		Flow().StartLevel(Map->Name);
+		++Flow().LevelSerial;
+		Flow().bDeathmatch = bDeathmatchParam && IsNetGame();
+		if (ADoomGameState* GS = GetDoomGameState())
 		{
-			if (ADoomPlayerState* DPS = Cast<ADoomPlayerState>(PS)) DPS->StartLevel();
+			GS->ResetWorldNet();
+			for (APlayerState* PS : GS->PlayerArray)
+			{
+				if (ADoomPlayerState* DPS = Cast<ADoomPlayerState>(PS)) DPS->StartLevel();
+			}
 		}
 	}
+	LoadedSerial = Flow().LevelSerial;
 	// an imported Unreal level for this map brings its sector edits and thing markers
 	if (const ADoomMapActor* Edits = ADoomMapActor::Find(GetWorld()))
 	{
@@ -327,18 +342,32 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *Flow().CurrentMap, *LevelTitle(Flow().CurrentMap), *Sky.ToString());
 
 	SetupEnvironment();
-	if (!bForSaveGame)
+	BaselineSectors = Map->Sectors;
+	BaselineSides = Map->Sides;
+	if (!bForSaveGame && !IsNetClient())
 	{
-		// a save game brings its own lights, movers, monsters and things
+		// a save game brings its own lights, movers, monsters and things; network clients get
+		// them from the server
 		StartSectorSpecials();
 		SpawnMapThings();
 	}
 
-	if (ADoomPlayer* P = GetPlayer())
+	if (IsNetClient())
 	{
-		P->InitForLevel(this, bPistolStart);
+		if (ADoomPlayer* P = GetPlayer())
+		{
+			P->InitForLevel(this, false);
+		}
+		bClientGeometryDirty = true;
 	}
-	Flow().Phase = EDoomGameState::Playing;
+	else
+	{
+		for (ADoomPlayer* P : GetPlayers())
+		{
+			P->InitForLevel(this, bPistolStart);
+		}
+		Flow().Phase = EDoomGameState::Playing;
+	}
 	ShowMessage(LevelTitle(Flow().CurrentMap));
 	PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(Flow().CurrentMap));
 	return true;
@@ -414,22 +443,21 @@ void UDoomWorld::ComputeMovableSectors(TSet<int32>& Out) const
 void UDoomWorld::SpawnMapThings()
 {
 	const int32 SkillBit = Skill <= 2 ? 1 : Skill == 3 ? 2 : 4;
-	bool bPlayerPlaced = false;
+	const bool bNet = IsNetGame();
+	const bool bDM = IsDeathmatch();
+	PlayerStarts.Reset();
+	PlayerStarts.SetNum(4);
+	DeathmatchStarts.Reset();
 	for (const FDoomMapThing& T : Map->Things)
 	{
-		if (T.Type == 1 && !bPlayerPlaced)
+		if (T.Type >= 1 && T.Type <= 4)
 		{
-			bPlayerPlaced = true;
-			if (ADoomPlayer* P = GetPlayer())
-			{
-				const int32 Sec = Map->SectorAt(T.P);
-				const float Floor = Sec >= 0 ? Map->Sectors[Sec].Floor : 0;
-				P->SetActorLocation(Doom::ToUE(T.P, Floor) + FVector(0, 0, Doom::HalfHeight(P) + 2), false, nullptr, ETeleportType::TeleportPhysics);
-				if (AController* C = P->GetController())
-				{
-					C->SetControlRotation(FRotator(0, Doom::AngleToYaw(T.Angle), 0));
-				}
-			}
+			if (PlayerStarts[T.Type - 1].Type == 0) PlayerStarts[T.Type - 1] = T;
+			continue;
+		}
+		if (T.Type == 11)
+		{
+			DeathmatchStarts.Add(T);
 			continue;
 		}
 		if (T.Type == 87 || T.Type == 89)
@@ -440,11 +468,12 @@ void UDoomWorld::SpawnMapThings()
 			(T.Type == 87 ? BrainTargets : BrainShooters).Add(Feet);
 			continue;
 		}
-		if ((T.Type >= 2 && T.Type <= 4) || T.Type == 11 || T.Type == 14)
+		if (T.Type == 14)
 		{
 			continue;
 		}
-		if (!(T.Flags & SkillBit) || (T.Flags & 16))
+		// flag 16: only in network games
+		if (!(T.Flags & SkillBit) || ((T.Flags & 16) && !bNet))
 		{
 			continue;
 		}
@@ -453,6 +482,10 @@ void UDoomWorld::SpawnMapThings()
 		{
 			UE_LOG(LogDoom, Verbose, TEXT("Unknown thing type %d"), T.Type);
 			continue;
+		}
+		if (bDM && Def->Pickup >= EPickup::BlueCard && Def->Pickup <= EPickup::RedSkull)
+		{
+			continue; // Doom's MF_NOTDMATCH: no keys in deathmatch
 		}
 		const int32 Sec = Map->SectorAt(T.P);
 		const float Floor = Sec >= 0 ? Map->Sectors[Sec].Floor : 0;
@@ -470,6 +503,10 @@ void UDoomWorld::SpawnMapThings()
 		{
 			SpawnThing(T.Type, Doom::ToUE(T.P, Floor), T.Angle);
 		}
+	}
+	for (ADoomPlayer* P : GetPlayers())
+	{
+		PlacePlayer(P);
 	}
 	UE_LOG(LogDoom, Log, TEXT("Spawned %d things, %d monsters"), Things.Num(), Monsters.Num());
 }
@@ -585,6 +622,22 @@ ADoomThing* UDoomWorld::SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float
 
 ADoomThing* UDoomWorld::SpawnEffect(const FString& SpriteName, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright, bool bLoop)
 {
+	if (IsNetServer())
+	{
+		if (ADoomGameState* GS = GetDoomGameState())
+		{
+			GS->MulticastEffect(SpriteName, Frames, (uint8)FMath::Clamp(Tics, 1, 255), UEPos, bFullBright, bLoop);
+		}
+	}
+	return SpawnEffectLocal(SpriteName, Frames, Tics, UEPos, bFullBright, bLoop);
+}
+
+ADoomThing* UDoomWorld::SpawnEffectLocal(const FString& SpriteName, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright, bool bLoop)
+{
+	if (!Gfx.IsValid())
+	{
+		return nullptr;
+	}
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	ADoomThing* T = GetWorld()->SpawnActor<ADoomThing>(ADoomThing::StaticClass(), FTransform(UEPos), SP);
@@ -600,12 +653,24 @@ ADoomThing* UDoomWorld::SpawnEffect(const FString& SpriteName, const FString& Fr
 		const ADoomPlayer* P = GetPlayer();
 		const FVector Back = P ? (P->GetActorLocation() - UEPos).GetSafeNormal() : FVector::UpVector;
 		const EDoomParticles Kind = SpriteName == TEXT("BLUD") ? EDoomParticles::Blood : SpriteName == TEXT("BFE2") ? EDoomParticles::BFG : EDoomParticles::Sparks;
-		SpawnParticles(Kind, UEPos, (Back + FVector(0, 0, 0.5f)).GetSafeNormal());
+		SpawnParticlesLocal(Kind, UEPos, (Back + FVector(0, 0, 0.5f)).GetSafeNormal());
 	}
 	return T;
 }
 
 void UDoomWorld::SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up)
+{
+	if (IsNetServer())
+	{
+		if (ADoomGameState* GS = GetDoomGameState())
+		{
+			GS->MulticastParticles((uint8)Kind, UEPos, Up);
+		}
+	}
+	SpawnParticlesLocal(Kind, UEPos, Up);
+}
+
+void UDoomWorld::SpawnParticlesLocal(EDoomParticles Kind, const FVector& UEPos, const FVector& Up)
 {
 	if (!bModern || bNoParticles)
 	{
@@ -723,6 +788,18 @@ float UDoomWorld::CeilingAt(const FVector& UEPos) const
 }
 
 void UDoomWorld::PlaySound(const FString& Name, const FVector* Location, float Volume)
+{
+	PlaySoundLocal(Name, Location, Volume);
+	if (IsNetServer())
+	{
+		if (ADoomGameState* GS = GetDoomGameState())
+		{
+			GS->MulticastSound(Name, Location ? *Location : FVector::ZeroVector, Location != nullptr, Volume, nullptr);
+		}
+	}
+}
+
+void UDoomWorld::PlaySoundLocal(const FString& Name, const FVector* Location, float Volume)
 {
 	if (Sound.IsValid())
 	{
@@ -884,7 +961,7 @@ void UDoomWorld::RunTic()
 	++Flow().LevelTic;
 	if (MessageTics > 0) --MessageTics;
 
-	if (ADoomPlayer* P = GetPlayer())
+	for (ADoomPlayer* P : GetPlayers())
 	{
 		P->DoomTic();
 	}
@@ -1054,7 +1131,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M)
 				C->SetActorLocation(L, false, nullptr, ETeleportType::None);
 			}
 		};
-		Lift(GetPlayer());
+		for (ADoomPlayer* P : GetPlayers()) Lift(P);
 		for (const TWeakObjectPtr<ADoomMonster>& Mon : Monsters)
 		{
 			if (Mon.IsValid()) Lift(Mon.Get());
@@ -1483,16 +1560,22 @@ void UDoomWorld::TicLights()
 
 void UDoomWorld::TicSectorDamage()
 {
-	ADoomPlayer* P = GetPlayer();
-	if (!P || P->IsDead())
+	for (ADoomPlayer* P : GetPlayers())
 	{
-		return;
+		if (P->IsDead())
+		{
+			continue;
+		}
+		const int32 Sec = Map->SectorAt(P->DoomPos());
+		if (Sec >= 0)
+		{
+			TicSectorDamage(P, Sec);
+		}
 	}
-	const int32 Sec = Map->SectorAt(P->DoomPos());
-	if (Sec < 0)
-	{
-		return;
-	}
+}
+
+void UDoomWorld::TicSectorDamage(ADoomPlayer* P, int32 Sec)
+{
 	FDoomSector& S = Map->Sectors[Sec];
 	if (P->DoomZ() > S.Floor + 1.f)
 	{
@@ -1508,8 +1591,8 @@ void UDoomWorld::TicSectorDamage()
 	case 9:
 		CreditSecret(P);
 		S.Special = 0;
-		ShowMessage(TEXT("You found a secret area!"));
-		PlaySound(TEXT("GETPOW"), nullptr);
+		P->Message(TEXT("You found a secret area!"));
+		P->PlaySelfSound(TEXT("GETPOW"));
 		break;
 	case 11:
 		P->bGodMode = false;
@@ -1540,8 +1623,8 @@ bool UDoomWorld::CheckLock(AActor* Activator, int32 Lock)
 		return true;
 	}
 	static const TCHAR* Names[] = { TEXT("blue"), TEXT("yellow"), TEXT("red") };
-	ShowMessage(FString::Printf(TEXT("You need a %s key to open this door."), Names[Lock - 1]));
-	PlaySound(TEXT("OOF"), nullptr);
+	P->Message(FString::Printf(TEXT("You need a %s key to open this door."), Names[Lock - 1]));
+	P->PlaySelfSound(TEXT("OOF"));
 	return false;
 }
 
@@ -1774,10 +1857,10 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 		}
 		break;
 	case EAct::Exit:
-		if (Activator == GetPlayer()) { if (How == EActivation::Use) FlipSwitch(LineIndex, SideIdx, false); ExitLevel(false); return true; }
+		if (Activator && Activator->IsA<ADoomPlayer>()) { if (How == EActivation::Use) FlipSwitch(LineIndex, SideIdx, false); ExitLevel(false); return true; }
 		break;
 	case EAct::SecretExit:
-		if (Activator == GetPlayer()) { if (How == EActivation::Use) FlipSwitch(LineIndex, SideIdx, false); ExitLevel(true); return true; }
+		if (Activator && Activator->IsA<ADoomPlayer>()) { if (How == EActivation::Use) FlipSwitch(LineIndex, SideIdx, false); ExitLevel(true); return true; }
 		break;
 	}
 
@@ -2255,23 +2338,20 @@ const FDoomLevelFlow& UDoomWorld::Flow() const
 	return GS ? GS->Flow : LocalFlow;
 }
 
-namespace
+/** The player behind a kill: the shooter of a missile, the player, or their controller
+    (damage reports a pawn's owner, which for players is the PlayerController). */
+ADoomPlayerState* UDoomWorld::CreditedPlayer(AActor* Actor)
 {
-	/** The player behind a kill: the shooter of a missile, the player, or their controller
-	    (damage reports a pawn's owner, which for players is the PlayerController). */
-	ADoomPlayerState* CreditedPlayer(AActor* Actor)
+	if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(Actor))
 	{
-		if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(Actor))
-		{
-			Actor = Missile->Source.Get();
-		}
-		if (const AController* C = Cast<AController>(Actor))
-		{
-			return C->GetPlayerState<ADoomPlayerState>();
-		}
-		const ADoomPlayer* P = Cast<ADoomPlayer>(Actor);
-		return P ? P->GetDoomPlayerState() : nullptr;
+		Actor = Missile->Source.Get();
 	}
+	if (const AController* C = Cast<AController>(Actor))
+	{
+		return C->GetPlayerState<ADoomPlayerState>();
+	}
+	const ADoomPlayer* P = Cast<ADoomPlayer>(Actor);
+	return P ? P->GetDoomPlayerState() : nullptr;
 }
 
 void UDoomWorld::CreditKill(AActor* Killer)
@@ -2309,3 +2389,268 @@ void UDoomWorld::ResetClock()
 	}
 }
 
+
+// ------------------------------------------------------------------------------------------------
+// Networking and players
+// ------------------------------------------------------------------------------------------------
+
+bool UDoomWorld::IsNetClient() const
+{
+	return GetWorld() && GetWorld()->GetNetMode() == NM_Client;
+}
+
+bool UDoomWorld::IsNetServer() const
+{
+	const ENetMode M = GetWorld() ? GetWorld()->GetNetMode() : NM_Standalone;
+	return M == NM_ListenServer || M == NM_DedicatedServer;
+}
+
+bool UDoomWorld::IsNetGame() const
+{
+	return GetWorld() && GetWorld()->GetNetMode() != NM_Standalone;
+}
+
+TArray<ADoomPlayer*> UDoomWorld::GetPlayers() const
+{
+	TArray<ADoomPlayer*> Out;
+	if (UWorld* W = GetWorld())
+	{
+		for (TActorIterator<ADoomPlayer> It(W); It; ++It)
+		{
+			if (!It->IsActorBeingDestroyed()) Out.Add(*It);
+		}
+	}
+	return Out;
+}
+
+ADoomPlayer* UDoomWorld::NearestPlayer(const AActor* From, bool bInSight) const
+{
+	ADoomPlayer* Best = nullptr;
+	double BestDist = TNumericLimits<double>::Max();
+	for (ADoomPlayer* P : GetPlayers())
+	{
+		if (P->IsDead() || (bInSight && !CheckSight(From, P)))
+		{
+			continue;
+		}
+		const double D = FVector::DistSquared(P->GetActorLocation(), From->GetActorLocation());
+		if (D < BestDist)
+		{
+			BestDist = D;
+			Best = P;
+		}
+	}
+	return Best;
+}
+
+void UDoomWorld::PlacePlayer(ADoomPlayer* P)
+{
+	if (!P || !Map.IsValid())
+	{
+		return;
+	}
+	const ADoomPlayerState* PS = P->GetDoomPlayerState();
+	const int32 Number = PS ? FMath::Clamp(PS->PlayerNumber, 0, 3) : 0;
+	FDoomMapThing Start;
+	FVector2f Offset = FVector2f::ZeroVector;
+	if (IsDeathmatch() && DeathmatchStarts.Num() > 0)
+	{
+		Start = DeathmatchStarts[FMath::RandRange(0, DeathmatchStarts.Num() - 1)];
+	}
+	else if (PlayerStarts.IsValidIndex(Number) && PlayerStarts[Number].Type != 0)
+	{
+		Start = PlayerStarts[Number];
+	}
+	else if (PlayerStarts.Num() > 0 && PlayerStarts[0].Type != 0)
+	{
+		// a single-player map: line up beside player 1's start
+		Start = PlayerStarts[0];
+		Offset = FVector2f(0, 40.f * Number);
+	}
+	else
+	{
+		return;
+	}
+	const FVector2f At = Start.P + Offset;
+	const int32 Sec = Map->SectorAt(At);
+	const float Floor = Sec >= 0 ? Map->Sectors[Sec].Floor : 0;
+	P->SetActorLocation(Doom::ToUE(At, Floor) + FVector(0, 0, Doom::HalfHeight(P) + 2), false, nullptr, ETeleportType::TeleportPhysics);
+	const FRotator Facing(0, Doom::AngleToYaw(Start.Angle), 0);
+	if (AController* C = P->GetController())
+	{
+		C->SetControlRotation(Facing);
+		if (APlayerController* PC = Cast<APlayerController>(C))
+		{
+			PC->ClientSetRotation(Facing); // a remote player's view turns on their machine
+		}
+	}
+}
+
+void UDoomWorld::OnFlowReplicated()
+{
+	if (!IsNetClient() || !EnsureWads())
+	{
+		return;
+	}
+	const FDoomLevelFlow& F = Flow();
+	if (!F.CurrentMap.IsEmpty() && F.LevelSerial != LoadedSerial && F.Phase == EDoomGameState::Playing)
+	{
+		UE_LOG(LogDoom, Log, TEXT("Client: building %s (level %d) from the server"), *F.CurrentMap, F.LevelSerial);
+		LoadMap(F.CurrentMap, false, true);
+		// changes the server published before this map was built
+		if (const ADoomGameState* GS = GetDoomGameState())
+		{
+			for (const FDoomSectorNet& N : GS->SectorNet.Items) ApplySectorNet(N);
+			for (const FDoomSideNet& N : GS->SideNet.Items) ApplySideNet(N);
+		}
+	}
+	if (F.Phase != LastClientPhase)
+	{
+		if (F.Phase == EDoomGameState::Intermission)
+		{
+			const FDoomMapInfo* Info = MapInfo(F.CurrentMap);
+			PlayMusic((Info && !Info->InterMusic.IsEmpty()) ? Info->InterMusic : Wad->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
+		}
+		LastClientPhase = F.Phase;
+	}
+}
+
+void UDoomWorld::ApplySectorNet(const FDoomSectorNet& N)
+{
+	if (!IsNetClient() || !Map.IsValid() || !Level || N.LevelSerial != LoadedSerial || !Map->Sectors.IsValidIndex(N.Sector))
+	{
+		return; // not built yet: OnFlowReplicated applies the whole array after building
+	}
+	FDoomSector& S = Map->Sectors[N.Sector];
+	const bool bGeometry = S.Floor != N.Floor || S.Ceiling != N.Ceiling || S.FloorPic != N.FloorPic || S.CeilingPic != N.CeilingPic;
+	S.Floor = N.Floor;
+	S.Ceiling = N.Ceiling;
+	S.Light = N.Light;
+	S.Special = N.Special;
+	S.FloorPic = N.FloorPic;
+	S.CeilingPic = N.CeilingPic;
+	if (bGeometry)
+	{
+		Level->SectorChanged(N.Sector);
+	}
+	bClientGeometryDirty = true;
+}
+
+void UDoomWorld::ApplySideNet(const FDoomSideNet& N)
+{
+	if (!IsNetClient() || !Map.IsValid() || !Level || N.LevelSerial != LoadedSerial || !Map->Sides.IsValidIndex(N.Side))
+	{
+		return;
+	}
+	FDoomSide& S = Map->Sides[N.Side];
+	S.Upper = N.Upper;
+	S.Middle = N.Middle;
+	S.Lower = N.Lower;
+	if (S.Line != INDEX_NONE)
+	{
+		Level->LineChanged(S.Line);
+	}
+	bClientGeometryDirty = true;
+}
+
+void UDoomWorld::ClientTick(float DeltaTime)
+{
+	if (!Map.IsValid() || !Level)
+	{
+		return;
+	}
+	if (bClientGeometryDirty)
+	{
+		bClientGeometryDirty = false;
+		Level->Flush();
+		Level->UpdateSectorLights();
+		for (const TWeakObjectPtr<ADoomThing>& T : Things)
+		{
+			if (T.IsValid()) T->SnapToPlanes();
+		}
+	}
+	ClientAccumulator += FMath::Min(DeltaTime, 0.25f);
+	while (ClientAccumulator >= Doom::TicSeconds)
+	{
+		ClientAccumulator -= Doom::TicSeconds;
+		++ClientTic;
+		if (MessageTics > 0) --MessageTics;
+		Level->AnimateTextures(ClientTic);
+	}
+	UpdateMaterialGlobals(ClientAccumulator / Doom::TicSeconds);
+}
+
+int32 UDoomWorld::NetTestDoorSector() const
+{
+	if (Map.IsValid())
+	{
+		for (const FDoomLine& L : Map->Lines)
+		{
+			if (L.Special == 1 && L.BackSector != INDEX_NONE) return L.BackSector;
+		}
+	}
+	return INDEX_NONE;
+}
+
+void UDoomWorld::NetTestOpenDoor()
+{
+	const int32 Sec = NetTestDoorSector();
+	if (Sec != INDEX_NONE && !SectorHasMover(Sec))
+	{
+		AddDoor(Sec, 0, 2.f, nullptr);
+	}
+}
+
+FString UDoomWorld::NetFingerprint() const
+{
+	if (!Map.IsValid())
+	{
+		return TEXT("no map");
+	}
+	int32 Alive = 0, Dead = 0, NumThings = 0;
+	for (TActorIterator<ADoomMonster> It(GetWorld()); It; ++It)
+	{
+		if (It->bNetCorpse || It->IsDead()) ++Dead; else ++Alive;
+	}
+	for (TActorIterator<ADoomThing> It(GetWorld()); It; ++It)
+	{
+		if (!It->bEffect && It->Def) ++NumThings;
+	}
+	const int32 Door = NetTestDoorSector();
+	FString Players;
+	if (const ADoomGameState* GS = GetDoomGameState())
+	{
+		for (const ADoomPlayerState* PS : GS->DoomPlayers())
+		{
+			Players += FString::Printf(TEXT(" [P%d hp%d am%d w%d k%d f%d]"), PS->PlayerNumber + 1, PS->Inv.Health, PS->Inv.Ammo[0],
+				(int32)PS->Inv.Weapons[(int32)EDoomWeapon::Shotgun], PS->LevelKills, PS->Frags);
+		}
+	}
+	return FString::Printf(TEXT("%s level%d phase%d monsters%d/%d things%d door%d ceiling%.0f kills%d/%d%s"),
+		*Flow().CurrentMap, Flow().LevelSerial, (int32)Flow().Phase, Alive, Dead, NumThings, Door,
+		Door != INDEX_NONE ? Map->Sectors[Door].Ceiling : 0.f, Flow().Kills, Flow().TotalKills, *Players);
+}
+
+void UDoomWorld::SetState(EDoomGameState S)
+{
+	if (IsNetGame())
+	{
+		// network games never pause: the menu is this player's overlay, not a phase of the game
+		if (S == EDoomGameState::Menu)
+		{
+			bNetMenu = true;
+			return;
+		}
+		if (bNetMenu && (S == EDoomGameState::Playing || S == EDoomGameState::Title))
+		{
+			bNetMenu = false;
+			return;
+		}
+		bNetMenu = false;
+		if (IsNetClient())
+		{
+			return; // the server decides the phase
+		}
+	}
+	Flow().Phase = S;
+}

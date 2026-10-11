@@ -2,6 +2,10 @@
 // patch's size and offsets, turned to face the camera around the vertical axis like
 // Doom's screen-aligned sprites, picking one of 8 rotations from the viewing angle.
 // Lighting comes from the same per-sector light texture as the walls.
+//
+// Networking: the server's animation state (prefix, sequence, timing, brightness, fuzz,
+// facing) replicates in FDoomSpriteNet; clients restart the sequence when its serial changes
+// and animate it themselves at 35 Hz, so frames cost no bandwidth.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -10,6 +14,24 @@
 
 class UMaterialInstanceDynamic;
 class UDoomWorld;
+
+/** What clients need to show a server-animated sprite. */
+USTRUCT()
+struct FDoomSpriteNet
+{
+	GENERATED_BODY()
+
+	UPROPERTY() FString Sprite;
+	UPROPERTY() FString Seq;
+	UPROPERTY() uint8 Tics = 8;
+	UPROPERTY() bool bLoop = true;
+	UPROPERTY() bool bBright = false;
+	UPROPERTY() bool bFuzz = false;
+	/** Bumped by every PlaySequence, so replaying the same frames restarts them. */
+	UPROPERTY() uint8 Serial = 0;
+	/** Facing, whole degrees. */
+	UPROPERTY() uint16 Angle = 0;
+};
 
 UCLASS(ClassGroup = Doom, meta = (BlueprintSpawnableComponent))
 class DOOMUE_API UDoomSpriteComponent : public UProceduralMeshComponent
@@ -42,8 +64,21 @@ public:
 	void DoomSerialize(FArchive& Ar);
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 private:
+	UPROPERTY(ReplicatedUsing = OnRep_Net)
+	FDoomSpriteNet Net;
+	UFUNCTION()
+	void OnRep_Net();
+	/** True where this sprite's state is decided (server, standalone, or a client-only effect). */
+	bool IsSimulated() const;
+	/** Points the material at the level's sector light texture once the level exists. */
+	void BindLevel();
+	uint8 LastSerial = 0;
+	float ClientTicTime = 0;
+	bool bLevelBound = false;
+
 	void UpdateVisual(const FVector& ViewLocation);
 
 	UPROPERTY()

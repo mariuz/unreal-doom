@@ -251,6 +251,11 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 {
 	ADoomPlayer* P = GetPlayer();
+	if (IsNetGame())
+	{
+		ShowMessage(TEXT("You can't save a network game."));
+		return false;
+	}
 	if (!Map.IsValid() || !P || P->IsDead() || (Flow().Phase != EDoomGameState::Playing && Flow().Phase != EDoomGameState::Menu))
 	{
 		ShowMessage(TEXT("You can't save now."));
@@ -275,6 +280,11 @@ bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 
 bool UDoomWorld::LoadGame(int32 Slot)
 {
+	if (IsNetGame())
+	{
+		ShowMessage(TEXT("You can't load a game during a network game."));
+		return false;
+	}
 	const FString Name = SlotName(Slot);
 	UDoomSaveGame* Save = UGameplayStatics::DoesSaveGameExist(Name, 0) ? Cast<UDoomSaveGame>(UGameplayStatics::LoadGameFromSlot(Name, 0)) : nullptr;
 	if (!Save)

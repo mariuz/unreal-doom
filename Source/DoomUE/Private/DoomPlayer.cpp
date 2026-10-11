@@ -5,6 +5,7 @@
 #include "DoomPlayerController.h"
 #include "DoomSettings.h"
 #include "DoomLevel.h"
+#include "Interfaces/MovementBaseInterface.h"
 #include "DoomGraphics.h"
 #include "DoomUE.h"
 #include "Camera/CameraComponent.h"
@@ -14,6 +15,10 @@
 #include "EnhancedInputComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/DamageEvents.h"
+#include "DoomSpriteComponent.h"
+#include "DoomGameState.h"
+#include "DoomGameMode.h"
+#include "Net/UnrealNetwork.h"
 
 namespace
 {
@@ -50,6 +55,10 @@ ADoomPlayer::ADoomPlayer(const FObjectInitializer& ObjectInitializer)
 	MuzzleLight->SetAttenuationRadius(400.f * S);
 	MuzzleLight->SetLightColor(FLinearColor(1.f, 0.75f, 0.45f));
 	MuzzleLight->SetCastShadows(true);
+
+	Body = CreateDefaultSubobject<UDoomSpriteComponent>(TEXT("Body"));
+	Body->SetupAttachment(Cap);
+	Body->SetOwnerNoSee(true);
 
 	bUseControllerRotationYaw = true;
 	bUseControllerRotationPitch = false;
@@ -99,9 +108,45 @@ void ADoomPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	}
 }
 
+void ADoomPlayer::SetBase(FMovementBaseInterfaceData* MovementBaseInterfaceData, const FName BoneName, bool bNotifyActor)
+{
+	const UActorComponent* Base = MovementBaseInterfaceData ? Cast<UActorComponent>(MovementBaseInterfaceData->PhysicsObjectOwner.Get()) : nullptr;
+	if (Base && Base->GetOwner() && Base->GetOwner()->IsA<ADoomLevel>())
+	{
+		MovementBaseInterfaceData = nullptr;
+	}
+	Super::SetBase(MovementBaseInterfaceData, BoneName, bNotifyActor);
+}
+
+void ADoomPlayer::BeginPlay()
+{
+	Super::BeginPlay();
+	if (!DoomWorld)
+	{
+		DoomWorld = GetWorld()->GetSubsystem<UDoomWorld>();
+	}
+}
+
+void ADoomPlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(ADoomPlayer, View, COND_OwnerOnly);
+}
+
 void ADoomPlayer::InitForLevel(UDoomWorld* InWorld, bool bPistolStart)
 {
 	DoomWorld = InWorld;
+	if (HasAuthority() && DoomWorld->GetGraphics())
+	{
+		Body->Init(DoomWorld, TEXT("PLAY"));
+		BodySeq.Reset();
+	}
+	if (!HasAuthority())
+	{
+		// a network client's own pawn: the server owns the inventory and the weapon state
+		Camera->SetFieldOfView(GetDefault<UDoomSettings>()->FieldOfView);
+		return;
+	}
 	if (bPistolStart || Inv().Health <= 0)
 	{
 		Inv().Reset();
@@ -179,9 +224,46 @@ void ADoomPlayer::Look(const FInputActionValue& V)
 	AddControllerPitchInput(-In.Y);
 }
 
+void ADoomPlayer::FirePressed(const FInputActionValue& V)
+{
+	bFireHeld = !InputLocked();
+	if (!HasAuthority())
+	{
+		ServerSetFire(bFireHeld);
+	}
+}
+
+void ADoomPlayer::FireReleased(const FInputActionValue& V)
+{
+	bFireHeld = false;
+	if (!HasAuthority())
+	{
+		ServerSetFire(false);
+	}
+}
+
+void ADoomPlayer::ServerSetFire_Implementation(bool bHeld) { bFireHeld = bHeld; }
+void ADoomPlayer::ServerUse_Implementation() { UseLinesOrRespawn(); }
+void ADoomPlayer::ServerSelectSlot_Implementation(int32 Slot) { SelectSlotNow(Slot); }
+void ADoomPlayer::ServerCycleWeapon_Implementation(int32 Dir) { CycleWeaponNow(Dir); }
+
 void ADoomPlayer::UsePressed(const FInputActionValue& V)
 {
 	if (!DoomWorld || InputLocked())
+	{
+		return;
+	}
+	if (!HasAuthority())
+	{
+		ServerUse();
+		return;
+	}
+	UseLinesOrRespawn();
+}
+
+void ADoomPlayer::UseLinesOrRespawn()
+{
+	if (!DoomWorld)
 	{
 		return;
 	}
@@ -189,11 +271,170 @@ void ADoomPlayer::UsePressed(const FInputActionValue& V)
 	{
 		if (DeathTics > Doom::TicRate)
 		{
-			DoomWorld->LoadMap(DoomWorld->GetMapName(), true);
+			if (DoomWorld->IsNetGame())
+			{
+				// network games: reborn at a start with a pistol; the level carries on
+				if (ADoomGameMode* GM = GetWorld()->GetAuthGameMode<ADoomGameMode>())
+				{
+					GM->RespawnPlayer(GetController());
+				}
+			}
+			else
+			{
+				DoomWorld->LoadMap(DoomWorld->GetMapName(), true);
+			}
 		}
 		return;
 	}
 	DoomWorld->UseLines(this, GetActorLocation(), DoomAngle());
+}
+
+void ADoomPlayer::Message(const FString& Text)
+{
+	if (IsLocallyControlled())
+	{
+		if (DoomWorld) DoomWorld->ShowMessage(Text);
+	}
+	else if (HasAuthority())
+	{
+		ClientShowMessage(Text);
+	}
+}
+
+void ADoomPlayer::ClientShowMessage_Implementation(const FString& Text)
+{
+	if (UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>()) W->ShowMessage(Text);
+}
+
+void ADoomPlayer::PlaySelfSound(const FString& Name, float Volume)
+{
+	if (!DoomWorld)
+	{
+		return;
+	}
+	const FVector L = GetActorLocation();
+	if (IsLocallyControlled())
+	{
+		DoomWorld->PlaySoundLocal(Name, nullptr, Volume);
+	}
+	else if (HasAuthority())
+	{
+		ClientPlaySound(Name, Volume);
+		if (GetNetMode() == NM_ListenServer)
+		{
+			DoomWorld->PlaySoundLocal(Name, &L, Volume); // the host hears the other player
+		}
+	}
+	if (DoomWorld->IsNetServer())
+	{
+		if (ADoomGameState* GS = DoomWorld->GetDoomGameState())
+		{
+			GS->MulticastSound(Name, L, true, Volume, GetPlayerState()); // everyone but this player
+		}
+	}
+}
+
+void ADoomPlayer::ClientPlaySound_Implementation(const FString& Name, float Volume)
+{
+	if (UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>()) W->PlaySoundLocal(Name, nullptr, Volume);
+}
+
+void ADoomPlayer::PublishView()
+{
+	View.WeaponSprite = WeaponSprite;
+	View.FlashSprite = FlashSprite;
+	View.WeaponFrame = (uint16)WeaponFrame;
+	View.FlashFrame = (uint16)FlashFrame;
+	View.WeaponY = WeaponY;
+	View.BobX = BobX;
+	View.BobY = BobY;
+	View.CameraZ = Camera->GetRelativeLocation().Z;
+	View.Invulnerability = Invulnerability;
+	View.Invisibility = Invisibility;
+	View.RadSuit = RadSuit;
+	View.LightAmp = LightAmp;
+	View.BerserkTics = BerserkTics;
+	View.DamageCount = DamageCount;
+	View.BonusCount = BonusCount;
+	View.ExtraLight = ExtraLight;
+	View.FaceDamageDir = FaceDamageDir;
+	View.FaceEvilGrin = FaceEvilGrin;
+	View.AttackDown = AttackDown;
+	View.DeathTics = DeathTics;
+	View.bBerserk = bBerserk;
+	View.bGodMode = bGodMode;
+}
+
+void ADoomPlayer::OnRep_View()
+{
+	if (View.ExtraLight > ExtraLight && MuzzleLight && DoomWorld && DoomWorld->IsModern())
+	{
+		MuzzleLight->SetIntensity(60000.f);
+	}
+	WeaponSprite = View.WeaponSprite;
+	FlashSprite = View.FlashSprite;
+	WeaponFrame = (TCHAR)View.WeaponFrame;
+	FlashFrame = (TCHAR)View.FlashFrame;
+	WeaponY = View.WeaponY;
+	BobX = View.BobX;
+	BobY = View.BobY;
+	Invulnerability = View.Invulnerability;
+	Invisibility = View.Invisibility;
+	RadSuit = View.RadSuit;
+	LightAmp = View.LightAmp;
+	BerserkTics = View.BerserkTics;
+	DamageCount = View.DamageCount;
+	BonusCount = View.BonusCount;
+	ExtraLight = View.ExtraLight;
+	FaceDamageDir = View.FaceDamageDir;
+	FaceEvilGrin = View.FaceEvilGrin;
+	AttackDown = View.AttackDown;
+	DeathTics = View.DeathTics;
+	bBerserk = View.bBerserk;
+	bGodMode = View.bGodMode;
+	const FVector Rel = Camera->GetRelativeLocation();
+	Camera->SetRelativeLocation(FVector(Rel.X, Rel.Y, View.CameraZ));
+}
+
+void ADoomPlayer::AnimateBody()
+{
+	if (!Body)
+	{
+		return;
+	}
+	// Doom's S_PLAY states: run ABCD, attack E (F while the flash shows), pain G, death H-N, gibs O-W
+	FString Seq = TEXT("A");
+	int32 Tics = 4;
+	bool bLoop = true;
+	if (IsDead())
+	{
+		Seq = Inv().Health < -50 ? TEXT("OPQRSTUVW") : TEXT("HIJKLMN");
+		Tics = 5;
+		bLoop = false;
+	}
+	else if (Phase == EWeaponPhase::Firing)
+	{
+		Seq = FlashFrame ? TEXT("F") : TEXT("E");
+	}
+	else if (DamageCount > 0 && FaceDamageDir != 0)
+	{
+		Seq = TEXT("G");
+	}
+	else if (GetVelocity().Size2D() > 1.f * Doom::Scale * Doom::TicRate)
+	{
+		Seq = TEXT("ABCD");
+	}
+	if (Seq != BodySeq)
+	{
+		BodySeq = Seq;
+		Body->PlaySequence(Seq, Tics, bLoop, false);
+	}
+	Body->DoomAngle = DoomAngle();
+	if (DoomWorld)
+	{
+		Body->SetSector(DoomWorld->SectorAt(GetActorLocation()));
+	}
+	Body->AnimateTic();
 }
 
 void ADoomPlayer::ToggleAutomap(const FInputActionValue& V)
@@ -207,6 +448,20 @@ void ADoomPlayer::ToggleAutomap(const FInputActionValue& V)
 void ADoomPlayer::SelectSlot(int32 Slot)
 {
 	if (IsDead() || InputLocked())
+	{
+		return;
+	}
+	if (!HasAuthority())
+	{
+		ServerSelectSlot(Slot);
+		return;
+	}
+	SelectSlotNow(Slot);
+}
+
+void ADoomPlayer::SelectSlotNow(int32 Slot)
+{
+	if (IsDead())
 	{
 		return;
 	}
@@ -235,6 +490,16 @@ void ADoomPlayer::SelectSlot(int32 Slot)
 }
 
 void ADoomPlayer::CycleWeapon(int32 Dir)
+{
+	if (!HasAuthority())
+	{
+		ServerCycleWeapon(Dir);
+		return;
+	}
+	CycleWeaponNow(Dir);
+}
+
+void ADoomPlayer::CycleWeaponNow(int32 Dir)
 {
 	int32 Cur = 0;
 	for (int32 i = 0; i < UE_ARRAY_COUNT(CycleOrder); ++i) if (CycleOrder[i] == Inv().Ready) Cur = i;
@@ -301,6 +566,11 @@ void ADoomPlayer::DoomTic()
 	if (BonusCount > 0) --BonusCount;
 	if (FaceEvilGrin > 0) --FaceEvilGrin;
 	if (AttackDown > 0) --AttackDown;
+	AnimateBody();
+	if (DoomWorld->IsNetServer())
+	{
+		PublishView();
+	}
 }
 
 void ADoomPlayer::TicPowerups()
@@ -391,7 +661,7 @@ void ADoomPlayer::TicWeapon()
 			Phase = EWeaponPhase::Raising;
 			if (Inv().Ready == EDoomWeapon::Chainsaw)
 			{
-				DoomWorld->PlaySound(TEXT("SAWUP"), nullptr);
+				PlaySelfSound(TEXT("SAWUP"));
 			}
 		}
 		break;
@@ -399,7 +669,7 @@ void ADoomPlayer::TicWeapon()
 		if (Inv().Ready == EDoomWeapon::Chainsaw)
 		{
 			WeaponFrame = ((DoomWorld->GetTic() / 4) & 1) ? 'D' : 'C';
-			if ((DoomWorld->GetTic() % 16) == 0) DoomWorld->PlaySound(TEXT("SAWIDL"), nullptr, 0.6f);
+			if ((DoomWorld->GetTic() % 16) == 0) PlaySelfSound(TEXT("SAWIDL"), 0.6f);
 		}
 		else
 		{
@@ -452,9 +722,9 @@ void ADoomPlayer::TicWeapon()
 			}
 			if (Inv().Ready == EDoomWeapon::SuperShotgun)
 			{
-				if (F.Frame == 'D') DoomWorld->PlaySound(TEXT("DBOPN"), nullptr);
-				if (F.Frame == 'F') DoomWorld->PlaySound(TEXT("DBLOAD"), nullptr);
-				if (F.Frame == 'H') DoomWorld->PlaySound(TEXT("DBCLS"), nullptr);
+				if (F.Frame == 'D') PlaySelfSound(TEXT("DBOPN"));
+				if (F.Frame == 'F') PlaySelfSound(TEXT("DBLOAD"));
+				if (F.Frame == 'H') PlaySelfSound(TEXT("DBCLS"));
 			}
 			if (F.Tics == 0)
 			{
@@ -475,7 +745,7 @@ void ADoomPlayer::StartFire()
 	FrameTics = FMath::Max(1, F.Tics);
 	if (Inv().Ready == EDoomWeapon::BFG)
 	{
-		DoomWorld->PlaySound(TEXT("BFG"), nullptr);
+		PlaySelfSound(TEXT("BFG"));
 	}
 	if (F.bFire)
 	{
@@ -516,7 +786,7 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 	DoomWorld->NoiseAlert(this, GetActorLocation());
 	if (*D.Sound && Inv().Ready != EDoomWeapon::Chainsaw && Inv().Ready != EDoomWeapon::Fist && Inv().Ready != EDoomWeapon::BFG)
 	{
-		DoomWorld->PlaySound(D.Sound, nullptr);
+		PlaySelfSound(D.Sound);
 	}
 
 	const FVector Eye = GetActorLocation() + FVector(0, 0, 8.f * Doom::Scale);
@@ -668,7 +938,7 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 		FCollisionShape::MakeSphere(4.f * Doom::Scale), Q);
 	if (!bHit)
 	{
-		if (bSaw) DoomWorld->PlaySound(TEXT("SAWFUL"), nullptr);
+		if (bSaw) PlaySelfSound(TEXT("SAWFUL"));
 		return;
 	}
 	AActor* A = Hit.GetActor();
@@ -676,7 +946,7 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 	{
 		UGameplayStatics::ApplyPointDamage(A, Damage, Dir, Hit, GetController(), this, nullptr);
 		DoomWorld->SpawnEffect(TEXT("BLUD"), TEXT("BC"), 8, Hit.ImpactPoint, false);
-		DoomWorld->PlaySound(bSaw ? TEXT("SAWHIT") : TEXT("PUNCH"), nullptr);
+		PlaySelfSound(bSaw ? TEXT("SAWHIT") : TEXT("PUNCH"));
 		// punches and the saw turn you towards what they hit
 		if (AController* C = GetController())
 		{
@@ -688,7 +958,7 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 	else
 	{
 		DoomWorld->SpawnEffect(TEXT("PUFF"), TEXT("ABCD"), 4, Hit.ImpactPoint - Dir * 4.f * Doom::Scale, true);
-		if (bSaw) DoomWorld->PlaySound(TEXT("SAWFUL"), nullptr);
+		if (bSaw) PlaySelfSound(TEXT("SAWFUL"));
 	}
 }
 
@@ -743,7 +1013,16 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	if (Inv().Health <= 0)
 	{
 		Inv().Health = FMath::Max(Inv().Health, -99);
-		DoomWorld->PlaySound(Inv().Health < -50 ? TEXT("PDIEHI") : TEXT("PLDETH"), nullptr);
+		if (DoomWorld->IsNetGame())
+		{
+			// frags (P_KillMobj): another player's kill counts for them; your own rocket, or a death with
+			// no source at all (slime, crushers), costs you one; monsters change nothing
+			ADoomPlayerState* Killer = UDoomWorld::CreditedPlayer(EventInstigator ? (AActor*)EventInstigator : DamageCauser);
+			ADoomPlayerState* Mine = GetDoomPlayerState();
+			if (Killer && Killer != Mine) ++Killer->Frags;
+			else if (Mine && (Killer == Mine || (!EventInstigator && !DamageCauser))) --Mine->Frags;
+		}
+		PlaySelfSound(Inv().Health < -50 ? TEXT("PDIEHI") : TEXT("PLDETH"));
 		GetCharacterMovement()->StopMovementImmediately();
 		bFireHeld = false;
 		Phase = EWeaponPhase::Lowering;
@@ -751,7 +1030,7 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	}
 	else
 	{
-		DoomWorld->PlaySound(TEXT("PLPAIN"), nullptr);
+		PlaySelfSound(TEXT("PLPAIN"));
 	}
 	return Damage;
 }
@@ -776,9 +1055,9 @@ ADoomPlayerState* ADoomPlayer::GetDoomPlayerState() const
 void ADoomPlayer::DoomSerialize(FArchive& Ar)
 {
 	FVector Location = GetActorLocation();
-	FRotator View = GetControlRotation();
+	FRotator ViewRotation = GetControlRotation();
 	FVector Velocity = GetCharacterMovement()->Velocity;
-	Ar << Location << View << Velocity;
+	Ar << Location << ViewRotation << Velocity;
 	// the inventory and this player's level credit, from the player state
 	if (ADoomPlayerState* PS = GetDoomPlayerState())
 	{
@@ -797,7 +1076,7 @@ void ADoomPlayer::DoomSerialize(FArchive& Ar)
 		SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
 		if (AController* C = GetController())
 		{
-			C->SetControlRotation(View);
+			C->SetControlRotation(ViewRotation);
 		}
 		GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 		GetCharacterMovement()->Velocity = Velocity;
@@ -924,9 +1203,9 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		return false;
 	}
 	BonusCount = FMath::Min(BonusCount + 6, 24);
-	DoomWorld->ShowMessage(Def.Pickup == EPickup::Health
+	Message(Def.Pickup == EPickup::Health
 		? DoomInfo::Text(Def.DoomEdNum == 2011 ? TEXT("GOTSTIM") : TEXT("GOTMEDIKIT"), DoomInfo::PickupMessage(Def.Pickup))
 		: DoomInfo::PickupMessage(Def.Pickup));
-	DoomWorld->PlaySound(Sound, nullptr);
+	PlaySelfSound(Sound);
 	return true;
 }

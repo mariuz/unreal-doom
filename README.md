@@ -47,6 +47,7 @@ with `-iwad=` / `-file=`.
 | Endings (`f_finale.c`) | Episode and chapter texts (`E1TEXT`.., `C1TEXT`.. from the WAD's strings) typed out on their backdrop flats, end pictures (`CREDIT`, `VICTORY2`, `ENDPIC`), the bunny scroller (`PFUB2` to `PFUB1`, then `END0`..`END6`), and the Doom 2 cast call on `BOSSBACK`: each monster walks, attacks and dies when you fire, named by the WAD's `CC_*` strings. UMAPINFO `endpic` / `endbunny` / `endcast` choose the ending |
 | MAP30's Icon of Sin | The spawn shooters (type 89) wake when they see you and spit cubes at the spawn targets (87) in turn; each cube hatches a monster with Doom's weighted pick; the brain's death sets off explosions before the level ends |
 | Game loop (`G_Ticker`, `G_ExitLevel`) | **Gameplay framework** split: `ADoomGameMode` runs the fixed 35 Hz clock and the level flow (exits, intermission, next map); `ADoomGameState` holds the replicated flow record (phase, map, level tic, kill / item / secret totals); `ADoomPlayerState` holds the inventory and each player's own kills, items, secrets and frags, and carries them through travel. See [docs/Architecture.md](docs/Architecture.md) |
+| Network games (`d_net.c`, co-op, deathmatch) | Unreal **replication**, server-authoritative instead of Doom's lockstep. The listen or dedicated server simulates; clients build the map named by the replicated flow record. Changed sectors and switch textures arrive through fast arrays, and monsters, things and missiles are replicated actors with replicated sprite state. Input reaches the server through RPCs, the inventory uses a bit-packed net serializer, and sounds and effects are multicast. Up to 4 players get co-op starts, or deathmatch starts with weapons-stay, frags and respawn. See [docs/Multiplayer.md](docs/Multiplayer.md) |
 | Simulation (`P_Ticker`) | `UTickableWorldSubsystem` (`UDoomWorld`) running one tic when the game mode's clock asks: movers, lights, specials, monsters, things, missiles |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
 | Authored assets | **None checked in.** The editor module (`DoomUEEditor`) generates the materials, the parameter collection, a default texture and the Niagara effects in code (`UMaterialEditingLibrary`, reflection on Niagara's lightweight emitters) on first editor launch, or `-run=DoomContent` |
@@ -120,6 +121,9 @@ loose files.
 | `-spawnfront=DoomEdNum` | a monster in front of the player at start |
 | `-savename=TEXT [-savecommit]` | with `-warp`: type TEXT as save slot 1's name, optionally press Enter |
 | `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
+| `"/Engine/Maps/Entry?listen"` / `127.0.0.1` | host a network game (listen server) / join one; see [docs/Multiplayer.md](docs/Multiplayer.md) |
+| `-deathmatch` | deathmatch rules for a network game (deathmatch starts, weapons stay, no keys, frags) |
+| `-nettest` | on a listen server and a client: the scripted two-process network test (logs `NetFingerprint`, screenshots) |
 | `-exittest` | with `-warp`: kill two monsters as the player, exit, wait in the intermission, continue; checks the level totals, the player state's credit and the inventory carried into the next map (PASS/FAIL) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
@@ -135,8 +139,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 ## Documentation
 
 * [docs/Architecture.md](docs/Architecture.md): how the port uses Unreal's gameplay framework
-  (game mode, game state, player state, world subsystem), the 35 Hz clock, credit, saves, and
-  what co-op and deathmatch still need.
+  (game mode, game state, player state, world subsystem), the 35 Hz clock, credit and saves.
+* [docs/Multiplayer.md](docs/Multiplayer.md): co-op and deathmatch for up to 4 players: how to
+  host and join, the rules, what replicates, and the two-process `-nettest`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
 
 ## Editing maps in the Unreal editor
@@ -238,6 +243,19 @@ Screen palettes: `-forcepalette=4` (pain) and `-forcepalette=13` (radiation suit
 the world, sky, sprites, weapon and status bar all shifted through the WAD's own palettes. The
 first run after regenerating materials compiles shaders for several minutes; later runs are cached.
 
+Network games (`-nettest`, a listen server and a client on one machine, E1M1):
+* **Co-op:** the players start at co-op starts 1 and 2 and see each other's marine sprite. The
+  client builds the map from the replicated flow and receives 208 things (the multiplayer-only
+  ones included) and 29 monsters. Two monster kills by the host reach the client as corpses and
+  as the host's credit. The opened door's ceiling follows on the client (−128 → −4), the
+  client's shot through the server RPC costs it a bullet, and the intermission shows a row per
+  player.
+* **Deathmatch:** the players use deathmatch starts and keys are left out. The host fragging the
+  client counts one frag, the client's Use respawns it at a start, and the intermission and
+  status bar show frags.
+* **Not yet verified:** the second process on this 4-core machine was still compiling shaders
+  during its short run, so the client's 3D view itself has not been captured.
+
 Gameplay framework: `-exittest` on E1M1 kills 2 monsters as the player. The game state counts
 2 kills and the player state credits 2. The exit goes to the intermission (52 tics in 1.5 s),
 then E1M2 starts with both counters at zero and the shells set before the exit (17) carried
@@ -269,7 +287,7 @@ Not done yet (roughly in priority order):
 3. Unreal practices worth adopting next:
    * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
    * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.
-   * **Multiplayer on top of the gameplay framework split** (done: see [docs/Architecture.md](docs/Architecture.md)): replicate weapons and keys as bit masks, spawn a pawn per player at the imported starts, run the simulation on the server and replicate monsters, things and movers, co-op intermission columns and deathmatch frags.
+   * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Asynchronous loading**: build the level geometry and textures on worker threads (`UE::Tasks`) with a loading screen instead of on the game thread at map load.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.

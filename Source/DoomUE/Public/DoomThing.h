@@ -34,6 +34,20 @@ public:
 	void DoomSerialize(FArchive& Ar);
 
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Networking: things replicate (pickups vanish, barrels burst); effects stay local. */
+	UPROPERTY(ReplicatedUsing = OnRep_NetType)
+	int32 NetType = 0;
+	UPROPERTY(Replicated)
+	bool bNetDropped = false;
+	UPROPERTY(ReplicatedUsing = OnRep_NetDead)
+	bool bNetDead = false;
+	UFUNCTION()
+	void OnRep_NetType();
+	UFUNCTION()
+	void OnRep_NetDead();
 
 	const FDoomThingDef* Def = nullptr;
 	bool bDropped = false;

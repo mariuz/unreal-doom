@@ -58,4 +58,10 @@ private:
 
 	bool bMenuContextActive = false;
 	bool bContextsInitialized = false;
+private:
+	/** A client pressed Enter on the intermission screen. */
+	UFUNCTION(Server, Reliable)
+	void ServerFinishIntermission();
+	/** -nettest on a network client. */
+	void RunClientNetTest();
 };

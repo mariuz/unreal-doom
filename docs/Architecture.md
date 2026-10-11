@@ -17,7 +17,7 @@ The port follows that split:
 | `ADoomPlayer` | `ACharacter` | The marine's body: movement, weapon state machine, powerups, damage, pickups. `Inv()` returns the player state's inventory | `mobj_t` of the player, `P_PlayerThink` |
 | `ADoomPlayerController` | `APlayerController` | Enhanced Input, menu and screen keys | `G_Responder` |
 | `ADoomHUD` | `AHUD` | Status bar, weapon, automap, menu, intermission, title, finale | `ST_`, `HU_`, `AM_`, `WI_`, `F_` |
-| `UDoomWorld` | `UTickableWorldSubsystem` | The simulation of one tic (`RunTic`): sectors, movers, lights, specials, monsters, things, missiles, the brain. Also the WAD, graphics, sound, map, save games and the menu model | `P_Ticker` and the `p_*.c` files |
+| `UDoomWorld` | `UTickableWorldSubsystem` | The simulation of one tic (`RunTic`, server and standalone only; network clients run `ClientTick` for animation and replicated geometry): sectors, movers, lights, specials, monsters, things, missiles, the brain. Also the WAD, graphics, sound, map, save games and the menu model | `P_Ticker` and the `p_*.c` files |
 
 ### The clock
 
@@ -46,18 +46,17 @@ The save blob (version 4) keeps the level flow record and, through
 Doom player state (a custom game mode), it falls back to a local inventory and default credit,
 so saves keep the same layout.
 
-### Towards co-op and deathmatch
+### Multiplayer
 
-Already in place: the per-player inventory and credit, replicated properties on both states,
-and the imported player 2 to 4 and deathmatch starts (`ADoomThingMarker` types 2, 3, 4 and 11).
-Still to do:
+Co-op and deathmatch for up to 4 players run on this split; see [Multiplayer](Multiplayer.md).
+In short:
 
-* Replicate weapons and keys. They are `bool` arrays, which reflected properties cannot hold;
-  send them as bit masks.
-* Spawn a pawn per player at their start. `UDoomWorld::GetPlayer()` assumes player 0.
-* Run the simulation on the server and replicate monsters, things and movers. `UDoomWorld`
-  state is not replicated yet.
-* Add the co-op columns to the intermission (per-player credit), deathmatch frags, and respawning.
+* Only the server (where `ADoomGameMode` exists) runs tics.
+* Clients build the map named by the replicated flow record.
+* Changed sectors and sidedefs arrive through fast arrays on the game state.
+* Monsters, things and missiles are replicated actors with replicated sprite state.
+* Sounds and short effects are multicast.
+* `UDoomWorld::GetPlayers()` covers every player, and `GetPlayer()` is the local one.
 
 ## Rendering and assets
 

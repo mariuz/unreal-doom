@@ -32,6 +32,21 @@ public:
 
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 	virtual void Landed(const FHitResult& Hit) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	/** Level geometry is never a movement base: UDoomWorld carries bodies on lifts itself, and the
+	    level's runtime mesh components cannot be referenced over the network. */
+	virtual void SetBase(FMovementBaseInterfaceData* MovementBaseInterfaceData, const FName BoneName = NAME_None, bool bNotifyActor = true) override;
+	using ACharacter::SetBase;
+
+	/** Networking: the type (clients set up the same capsule and sprite) and whether it is a corpse. */
+	UPROPERTY(ReplicatedUsing = OnRep_NetType)
+	int32 NetType = 0;
+	UPROPERTY(ReplicatedUsing = OnRep_NetCorpse)
+	bool bNetCorpse = false;
+	UFUNCTION()
+	void OnRep_NetType();
+	UFUNCTION()
+	void OnRep_NetCorpse();
 	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 
 	/** Woken by noise or sight. */

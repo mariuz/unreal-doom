@@ -30,6 +30,8 @@ private:
 	void DrawNumber(int32 Value, float RightX, float Y, const FString& Prefix, int32 MaxDigits);
 	void DrawWeapon(ADoomPlayer* P);
 	void DrawStatusBar(ADoomPlayer* P);
+	/** Co-op / deathmatch intermission: a row per player (kills, items, secrets, frags). */
+	void DrawNetgameStats(const TArray<class ADoomPlayerState*>& Players, bool bDeathmatch, float T);
 	void DrawFace(ADoomPlayer* P);
 	void DrawTint(ADoomPlayer* P);
 	void DrawAutomap(ADoomPlayer* P);

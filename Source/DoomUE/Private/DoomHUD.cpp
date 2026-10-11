@@ -1,4 +1,6 @@
 #include "DoomHUD.h"
+#include "DoomPlayerState.h"
+#include "DoomGameState.h"
 #include "DoomWorld.h"
 #include "DoomPlayer.h"
 #include "DoomGraphics.h"
@@ -316,6 +318,59 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 	DrawPatchByName(Face, 143, 168, true);
 }
 
+void ADoomHUD::DrawNetgameStats(const TArray<ADoomPlayerState*>& Players, bool bDeathmatch, float T)
+{
+	// WI_drawNetgameStats / WI_drawDeathmatchStats: one row per player, coloured by player number
+	UDoomWorld* W = DW();
+	const FDoomLevelFlow& F = W->Flow();
+	const APlayerController* PC = GetOwningPlayerController();
+	const float Top = 44;
+	auto Pct = [](int32 Got, int32 Total) { return Total > 0 ? Got * 100 / Total : 100; };
+	auto Header = [&](const TCHAR* Label, const TCHAR* Patch, float X)
+	{
+		if (const FDoomPicture* Pic = W->GetGraphics()->Patch(Patch)) DrawPatch(Pic, X - Pic->Width, Top - 12, false);
+		else DrawText(Label, X - TextWidth(Label), Top - 10, 1.f);
+	};
+	if (bDeathmatch)
+	{
+		Header(TEXT("FRAGS"), TEXT("WIFRGS"), 230);
+	}
+	else
+	{
+		Header(TEXT("KILLS"), TEXT("WIOSTK"), 150);
+		Header(TEXT("ITEMS"), TEXT("WIOSTI"), 210);
+		Header(TEXT("SCRT"), TEXT("WIOSTS"), 260);
+		Header(TEXT("FRAGS"), TEXT("WIFRGS"), 310);
+	}
+	for (int32 i = 0; i < Players.Num(); ++i)
+	{
+		const ADoomPlayerState* PS = Players[i];
+		const float Y = Top + 8 + i * 22;
+		// the player's colour square (STPB0..3) and a marker on your own row
+		DrawPatchByName(FString::Printf(TEXT("STPB%d"), FMath::Clamp(PS->PlayerNumber, 0, 3)), 24, Y - 2, false);
+		if (PC && PC->PlayerState == PS) DrawPatchByName(TEXT("STFST01"), 24, Y - 2, false);
+		DrawText(FString::Printf(TEXT("PLAYER %d"), PS->PlayerNumber + 1), 54, Y + 2, 1.f);
+		if (T < 10)
+		{
+			continue;
+		}
+		if (bDeathmatch)
+		{
+			DrawNumber(PS->Frags, 230, Y, TEXT("WINUM"), 3);
+		}
+		else
+		{
+			DrawNumber(Pct(PS->LevelKills, F.TotalKills), 150, Y, TEXT("WINUM"), 3);
+			DrawPatchByName(TEXT("WIPCNT"), 150, Y, false);
+			DrawNumber(Pct(PS->LevelItems, F.TotalItems), 210, Y, TEXT("WINUM"), 3);
+			DrawPatchByName(TEXT("WIPCNT"), 210, Y, false);
+			DrawNumber(Pct(PS->LevelSecrets, F.TotalSecrets), 260, Y, TEXT("WINUM"), 3);
+			DrawPatchByName(TEXT("WIPCNT"), 260, Y, false);
+			DrawNumber(PS->Frags, 310, Y, TEXT("WINUM"), 3);
+		}
+	}
+}
+
 void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 {
 	UDoomWorld* W = DW();
@@ -333,6 +388,14 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	DrawNumber(P->Inv().Armor, 221, 171, TEXT("STTNUM"), 3);
 	DrawPatchByName(TEXT("STTPRCNT"), 221, 171, false);
 
+	const ADoomPlayerState* PS = P->GetDoomPlayerState();
+	if (W->IsDeathmatch() && PS)
+	{
+		// deathmatch: the bar's FRAGS panel instead of the arms
+		DrawNumber(PS->Frags, 138, 171, TEXT("STTNUM"), 2);
+	}
+	else
+	{
 	// arms
 	DrawPatchByName(TEXT("STARMS"), 104, 168, false);
 	const bool Owned[6] = {
@@ -344,7 +407,13 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	{
 		DrawPatchByName(FString::Printf(TEXT("%s%d"), Owned[i] ? TEXT("STYSNUM") : TEXT("STGNUM"), i + 2), 111 + (i % 3) * 12, 172 + (i / 3) * 10, false);
 	}
+	}
 
+	// network games: the face sits on the player's colour (STFB0..3)
+	if (W->IsNetGame() && PS)
+	{
+		DrawPatchByName(FString::Printf(TEXT("STFB%d"), FMath::Clamp(PS->PlayerNumber, 0, 3)), 143, 169, false);
+	}
 	DrawFace(P);
 
 	// keys: skull keys win over cards in the same slot
@@ -584,9 +653,18 @@ void ADoomHUD::DrawIntermission()
 		DrawNumber(Value, bPercent ? 270 : 286, Y, TEXT("WINUM"), 4);
 		if (bPercent) DrawPatchByName(TEXT("WIPCNT"), 270, Y, false);
 	};
-	Line(TEXT("KILLS"), TEXT("WIOSTK"), Count(W->Flow().Kills, W->Flow().TotalKills, 10), 50, true);
-	if (T > 40) Line(TEXT("ITEMS"), TEXT("WIOSTI"), Count(W->Flow().Items, W->Flow().TotalItems, 40), 70, true);
-	if (T > 70) Line(TEXT("SECRET"), TEXT("WISCRT2"), Count(W->Flow().Secrets, W->Flow().TotalSecrets, 70), 90, true);
+	const ADoomGameState* GS = GetWorld()->GetGameState<ADoomGameState>();
+	const TArray<ADoomPlayerState*> Players = GS ? GS->DoomPlayers() : TArray<ADoomPlayerState*>();
+	if (Players.Num() > 1)
+	{
+		DrawNetgameStats(Players, W->Flow().bDeathmatch, T);
+	}
+	else
+	{
+		Line(TEXT("KILLS"), TEXT("WIOSTK"), Count(W->Flow().Kills, W->Flow().TotalKills, 10), 50, true);
+		if (T > 40) Line(TEXT("ITEMS"), TEXT("WIOSTI"), Count(W->Flow().Items, W->Flow().TotalItems, 40), 70, true);
+		if (T > 70) Line(TEXT("SECRET"), TEXT("WISCRT2"), Count(W->Flow().Secrets, W->Flow().TotalSecrets, 70), 90, true);
+	}
 	if (T > 100)
 	{
 		const int32 Secs = W->GetTic() / Doom::TicRate;

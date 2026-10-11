@@ -7,6 +7,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Net/UnrealNetwork.h"
 
 UDoomSpriteComponent::UDoomSpriteComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -19,6 +20,57 @@ UDoomSpriteComponent::UDoomSpriteComponent(const FObjectInitializer& ObjectIniti
 	SetUsingAbsoluteLocation(true);
 	SetUsingAbsoluteRotation(true);
 	SetUsingAbsoluteScale(true);
+	SetIsReplicatedByDefault(true);
+}
+
+void UDoomSpriteComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(UDoomSpriteComponent, Net);
+}
+
+bool UDoomSpriteComponent::IsSimulated() const
+{
+	const AActor* Owner = GetOwner();
+	return !Owner || Owner->HasAuthority();
+}
+
+void UDoomSpriteComponent::OnRep_Net()
+{
+	if (!DoomWorld || !MID)
+	{
+		UDoomWorld* W = GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
+		if (!W || !W->EnsureWads())
+		{
+			return;
+		}
+		Init(W, Net.Sprite);
+	}
+	if (Sprite != Net.Sprite)
+	{
+		Sprite = Net.Sprite;
+		bDirty = true;
+		LastPicture = nullptr;
+	}
+	if (Net.Serial != LastSerial)
+	{
+		LastSerial = Net.Serial;
+		PlaySequence(Net.Seq, Net.Tics, Net.bLoop, Net.bBright);
+	}
+	SetFuzz(Net.bFuzz);
+	DoomAngle = Net.Angle;
+}
+
+void UDoomSpriteComponent::BindLevel()
+{
+	ADoomLevel* Level = DoomWorld ? DoomWorld->GetLevel() : nullptr;
+	if (!MID || !Level || !DoomWorld->GetMap())
+	{
+		return;
+	}
+	MID->SetTextureParameterValue(TEXT("SectorLights"), Level->GetSectorLightTexture());
+	MID->SetScalarParameterValue(TEXT("SectorLightRows"), FMath::Max(1, FMath::DivideAndRoundUp(DoomWorld->GetMap()->Sectors.Num(), 256)));
+	bLevelBound = true;
 }
 
 void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
@@ -36,12 +88,12 @@ void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
 
 	MID = UMaterialInstanceDynamic::Create(DoomAssets::SpriteMaterial(), this);
 	MID->SetTextureParameterValue(TEXT("Colormap"), DoomWorld->GetGraphics()->ColormapTexture());
-	if (ADoomLevel* Level = DoomWorld ? DoomWorld->GetLevel() : nullptr)
-	{
-		MID->SetTextureParameterValue(TEXT("SectorLights"), Level->GetSectorLightTexture());
-		MID->SetScalarParameterValue(TEXT("SectorLightRows"), FMath::Max(1, FMath::DivideAndRoundUp(DoomWorld->GetMap()->Sectors.Num(), 256)));
-	}
+	BindLevel();
 	SetMaterial(0, MID);
+	if (IsSimulated())
+	{
+		Net.Sprite = Sprite;
+	}
 	// generous bounds: the quad is resized every frame
 	SetBoundsScale(4.f);
 	bDirty = true;
@@ -57,6 +109,14 @@ void UDoomSpriteComponent::PlaySequence(const FString& Frames, int32 Tics, bool 
 	bDone = false;
 	bDirty = true;
 	SetFullBright(bFullBright);
+	if (IsSimulated())
+	{
+		Net.Seq = Seq;
+		Net.Tics = (uint8)FMath::Clamp(TicsPerFrame, 1, 255);
+		Net.bLoop = bLoop;
+		Net.bBright = bFullBright;
+		++Net.Serial;
+	}
 }
 
 bool UDoomSpriteComponent::AnimateTic()
@@ -119,6 +179,10 @@ void UDoomSpriteComponent::SetFuzz(bool b)
 		LastPicture = nullptr;
 	}
 	bFuzzOn = b;
+	if (IsSimulated())
+	{
+		Net.bFuzz = b;
+	}
 	if (MID)
 	{
 		MID->SetScalarParameterValue(TEXT("Fuzz"), b ? 1.f : 0.f);
@@ -142,6 +206,28 @@ void UDoomSpriteComponent::DoomSerialize(FArchive& Ar)
 void UDoomSpriteComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	if (!bLevelBound)
+	{
+		BindLevel(); // a client's things can arrive before its level is built
+	}
+	if (IsSimulated())
+	{
+		const uint16 Angle = (uint16)FMath::RoundToInt(FMath::Fmod(DoomAngle + 720.f, 360.f));
+		if (Angle != Net.Angle) Net.Angle = Angle;
+		if (Sprite != Net.Sprite) Net.Sprite = Sprite;
+	}
+	if (DoomWorld && GetNetMode() == NM_Client)
+	{
+		// clients run no game tics: they animate sprites (replicated ones and their own
+		// effects) on a local 35 Hz clock
+		ClientTicTime += FMath::Min(DeltaTime, 0.25f);
+		while (ClientTicTime >= Doom::TicSeconds)
+		{
+			ClientTicTime -= Doom::TicSeconds;
+			AnimateTic();
+			SetSector(DoomWorld->SectorAt(GetOwner()->GetActorLocation()));
+		}
+	}
 	APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0);
 	if (Cam)
 	{

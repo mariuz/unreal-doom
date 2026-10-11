@@ -1,4 +1,5 @@
 #include "DoomThing.h"
+#include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomPlayer.h"
 #include "DoomSpriteComponent.h"
@@ -10,7 +11,8 @@
 
 ADoomThing::ADoomThing()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false; // only network clients' effects tick
 	Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Capsule"));
 	Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Capsule->SetCanEverAffectNavigation(false);
@@ -19,11 +21,55 @@ ADoomThing::ADoomThing()
 	Sprite->SetupAttachment(Capsule);
 }
 
+void ADoomThing::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ADoomThing, NetType);
+	DOREPLIFETIME(ADoomThing, bNetDropped);
+	DOREPLIFETIME(ADoomThing, bNetDead);
+}
+
+void ADoomThing::OnRep_NetType()
+{
+	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+	const FDoomThingDef* D = DoomInfo::FindThing(NetType);
+	if (W && D && W->EnsureWads())
+	{
+		InitThing(W, D, Sprite->DoomAngle, bNetDropped);
+	}
+}
+
+void ADoomThing::OnRep_NetDead()
+{
+	if (bNetDead)
+	{
+		bDead = true;
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
+void ADoomThing::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	// a network client's own effects (puffs, blood) end with their animation
+	if (bEffect && Sprite->IsSequenceDone())
+	{
+		Destroy();
+	}
+}
+
 void ADoomThing::InitThing(UDoomWorld* InWorld, const FDoomThingDef* InDef, float InDoomAngle, bool bInDropped)
 {
 	DoomWorld = InWorld;
 	Def = InDef;
 	bDropped = bInDropped;
+	if (HasAuthority() && DoomWorld->IsNetServer())
+	{
+		SetReplicates(true);
+		SetReplicateMovement(true); // things ride lifts and fall
+		NetType = Def->DoomEdNum;
+		bNetDropped = bDropped;
+	}
 	Health = Def->Health;
 	const float S = Doom::Scale;
 	Capsule->SetCapsuleSize(Def->Radius * S, FMath::Max(Def->Height * 0.5f, Def->Radius) * S);
@@ -66,6 +112,10 @@ void ADoomThing::InitEffect(UDoomWorld* InWorld, const FString& SpriteName, cons
 {
 	DoomWorld = InWorld;
 	bEffect = true;
+	if (DoomWorld->IsNetClient())
+	{
+		SetActorTickEnabled(true); // no game tics here: Tick removes the effect when it ends
+	}
 	Capsule->SetCapsuleSize(1, 1);
 	Sprite->Init(DoomWorld, SpriteName);
 	Sprite->PlaySequence(Frames, Tics, bLoop, bFullBright);
@@ -140,12 +190,13 @@ void ADoomThing::DoomTic()
 	if (Def && (Def->Flags & EThingFlag::Pickup) && (DoomWorld->GetTic() & 3) == 0)
 	{
 		// standing on an item while full: retry like Doom's per-move touch checks
-		if (ADoomPlayer* P = DoomWorld->GetPlayer())
+		for (ADoomPlayer* P : DoomWorld->GetPlayers())
 		{
 			if (Capsule->IsOverlappingActor(P))
 			{
 				FHitResult Dummy;
 				OnOverlap(Capsule, P, nullptr, 0, false, Dummy);
+				if (IsActorBeingDestroyed()) break;
 			}
 		}
 	}
@@ -154,9 +205,23 @@ void ADoomThing::DoomTic()
 void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& Sweep)
 {
 	ADoomPlayer* P = Cast<ADoomPlayer>(Other);
-	if (!P || P->IsDead() || !Def || IsActorBeingDestroyed())
+	if (!P || P->IsDead() || !Def || IsActorBeingDestroyed() || !HasAuthority())
 	{
-		return;
+		return; // pickups happen on the server
+	}
+	// deathmatch: weapons stay for the next player, and you cannot take one you already carry
+	const bool bWeaponStays = DoomWorld->IsDeathmatch() && !bDropped && Def->Pickup >= EPickup::Chainsaw;
+	if (bWeaponStays)
+	{
+		static const TMap<EPickup, EDoomWeapon> Weapons = {
+			{ EPickup::Chainsaw, EDoomWeapon::Chainsaw }, { EPickup::Shotgun, EDoomWeapon::Shotgun },
+			{ EPickup::SuperShotgun, EDoomWeapon::SuperShotgun }, { EPickup::Chaingun, EDoomWeapon::Chaingun },
+			{ EPickup::RocketLauncher, EDoomWeapon::Rocket }, { EPickup::Plasma, EDoomWeapon::Plasma }, { EPickup::BFG, EDoomWeapon::BFG } };
+		const EDoomWeapon* W = Weapons.Find(Def->Pickup);
+		if (W && P->Inv().Weapons[(int32)*W])
+		{
+			return;
+		}
 	}
 	if (P->TryPickup(*Def, bDropped))
 	{
@@ -164,7 +229,10 @@ void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, U
 		{
 			DoomWorld->CreditItem(P);
 		}
-		Destroy();
+		if (!bWeaponStays)
+		{
+			Destroy();
+		}
 	}
 }
 
@@ -188,6 +256,7 @@ float ADoomThing::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACon
 	if (Health <= 0)
 	{
 		bDead = true;
+		bNetDead = true;
 		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Sprite->SetSpritePrefix(TEXT("BEXP"));
 		Sprite->PlaySequence(Def->Death, 5, false, true);

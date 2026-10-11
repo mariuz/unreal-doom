@@ -1,4 +1,5 @@
 #include "DoomProjectile.h"
+#include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomMonster.h"
 #include "DoomPlayer.h"
@@ -48,12 +49,49 @@ ADoomProjectile::ADoomProjectile()
 	Movement->bRotationFollowsVelocity = true;
 	Movement->bShouldBounce = false;
 	Movement->bSweepCollision = true;
+	bReplicates = true;
+	SetReplicatingMovement(true);
+}
+
+void ADoomProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ADoomProjectile, NetType);
+}
+
+void ADoomProjectile::OnRep_NetType()
+{
+	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+	const FDoomProjectileDef* D = DoomInfo::FindProjectile(NetType);
+	if (!W || !D || !W->EnsureWads())
+	{
+		return;
+	}
+	// a client's copy: no simulation of its own, just the server's position, sprite and light
+	DoomWorld = W;
+	Def = D;
+	Movement->StopMovementImmediately();
+	Movement->SetUpdatedComponent(nullptr);
+	Movement->Deactivate();
+	Sphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Sprite->Init(DoomWorld, Def->Sprite);
+	if (DoomWorld->IsModern())
+	{
+		Light = NewObject<UPointLightComponent>(this, TEXT("Light"));
+		Light->SetupAttachment(Sphere);
+		Light->SetLightColor(Def->Light);
+		Light->SetIntensity(8000.f);
+		Light->SetAttenuationRadius(200.f * Doom::Scale);
+		Light->SetCastShadows(true);
+		Light->RegisterComponent();
+	}
 }
 
 void ADoomProjectile::InitProjectile(UDoomWorld* InWorld, const FDoomProjectileDef* InDef, AActor* InSource, const FVector& Direction, AActor* InTracer)
 {
 	DoomWorld = InWorld;
 	Def = InDef;
+	NetType = Def->Name;
 	Source = InSource;
 	Tracer = InTracer;
 	const float S = Doom::Scale;
@@ -139,7 +177,7 @@ void ADoomProjectile::DoomSerialize(FArchive& Ar)
 
 void ADoomProjectile::OnStop(const FHitResult& Hit)
 {
-	if (bExploded)
+	if (bExploded || !HasAuthority())
 	{
 		return;
 	}
