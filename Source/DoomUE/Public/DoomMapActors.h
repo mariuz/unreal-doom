@@ -10,6 +10,9 @@
 //    them, change their type from a list, or set their skill / ambush flags.
 //  * ADoomSectorEdit actors, dropped into any room: they override that sector's floor and
 //    ceiling heights, light, flats, special and tag ("Read From Sector" fills in the current values).
+//  * Baked static mesh tiles of the level's static geometry (/Game/Doom/Maps/<MAP>_Tiles), saved
+//    at import or with "Bake Static Meshes": the modern renderer draws them with distance fields
+//    for Lumen, also in packaged builds (which cannot bake meshes at runtime).
 //
 // Pressing Play in such a level starts its map: the game loads the WAD map, applies the sector
 // edits and spawns the things from the markers instead of the map's THINGS lump.
@@ -26,6 +29,7 @@ class UArrowComponent;
 class UTextRenderComponent;
 class FDoomWad;
 class FDoomGraphics;
+class UStaticMesh;
 
 UCLASS(HideCategories = (Rendering, Physics, Collision, Input, HLOD, Cooking, Replication, Networking, LOD, Actor, DataLayers, WorldPartition, LevelInstance))
 class DOOMUE_API ADoomMapActor : public ADoomLevel
@@ -62,6 +66,20 @@ public:
 	/** Adds a sector edit actor at the middle of the sector under the active viewport's camera. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void AddSectorEdit();
+
+	/** Saves the static geometry, with the current sector edits, as static mesh tile assets. Do it
+	    again after editing sectors: the game ignores tiles that no longer match. */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void BakeStaticMeshes();
+
+	/** The level's baked tiles and the geometry signature they were baked from. */
+	UPROPERTY(VisibleAnywhere, Category = "Doom|Baked")
+	TArray<TSoftObjectPtr<UStaticMesh>> BakedTiles;
+	UPROPERTY(VisibleAnywhere, Category = "Doom|Baked")
+	int64 BakedTileSignature = 0;
+
+	/** Set by the editor module: writes the tile assets (needs editor-only asset tools). */
+	static TFunction<bool(ADoomMapActor*)> BakeHook;
 
 	/** Applies the level's sector edits and (when enabled) thing markers to a freshly loaded map. */
 	void ApplyEdits(FDoomMap& InMap) const;

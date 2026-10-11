@@ -20,6 +20,10 @@
 #include "Misc/PackageName.h"
 #include "NiagaraSystem.h"
 #include "DoomMapActors.h"
+#include "Misc/FileHelper.h"
+#include "DoomLevel.h"
+#include "StaticMeshCompiler.h"
+#include "Engine/StaticMesh.h"
 #include "DoomWad.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -848,6 +852,58 @@ void DoomContent::DumpNiagara(const FString& Path)
 
 // ---- Map import --------------------------------------------------------------------------------
 
+bool DoomContent::BakeMapTiles(ADoomMapActor* MapActor)
+{
+	if (!MapActor)
+	{
+		return false;
+	}
+	// the preview builds the same chunks as the game, sector edits included
+	MapActor->RebuildPreview();
+	TMap<FName, ADoomLevel::FSectionData> Solid, NonSolid;
+	MapActor->GetStaticSections(Solid, NonSolid);
+	if (Solid.Num() == 0 && NonSolid.Num() == 0)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Bake: no geometry for %s (is the IWAD in Content/WADs?)"), *MapActor->MapName);
+		return false;
+	}
+	const uint32 Sig = ADoomLevel::Signature(Solid, NonSolid);
+	int32 Verts = 0;
+	for (const auto& P : Solid) Verts += P.Value.V.Num();
+	for (const auto& P : NonSolid) Verts += P.Value.V.Num();
+	UE_LOG(LogDoomContent, Display, TEXT("Bake: static chunk %d + %d sections, %d vertices"), Solid.Num(), NonSolid.Num(), Verts);
+	TArray<ADoomLevel::FTile> Tiles;
+	ADoomLevel::SplitTiles(Solid, NonSolid, Tiles);
+	// slots keep their section key as the name; the game puts its own material instances there
+	UMaterialInterface* Placeholder = DoomAssets::WorldMaterial(true);
+	const FString MapName = MapActor->MapName.ToUpper();
+	const FString TileFolder = FString::Printf(TEXT("/Game/Doom/Maps/%s_Tiles/"), *MapName);
+	auto Coord = [](int32 V) { return V < 0 ? FString::Printf(TEXT("N%d"), -V) : FString::FromInt(V); };
+	TArray<UStaticMesh*> Meshes;
+	for (const ADoomLevel::FTile& Tile : Tiles)
+	{
+		const FString Name = FString::Printf(TEXT("SM_%s_%s_%s"), *MapName, *Coord(Tile.Cell.X), *Coord(Tile.Cell.Y));
+		UPackage* Pkg = MakePackage(Name, *TileFolder);
+		UStaticMesh* Mesh = NewObject<UStaticMesh>(Pkg, FName(*Name), RF_Public | RF_Standalone);
+		ADoomLevel::FillTileMesh(Mesh, Tile, [Placeholder](FName) { return Placeholder; });
+		Mesh->Build(true);
+		Meshes.Add(Mesh);
+	}
+	FStaticMeshCompilingManager::Get().FinishCompilation(Meshes);
+	bool bOk = true;
+	MapActor->Modify();
+	MapActor->BakedTiles.Reset();
+	for (UStaticMesh* Mesh : Meshes)
+	{
+		bOk &= Save(Mesh);
+		MapActor->BakedTiles.Add(Mesh);
+	}
+	MapActor->BakedTileSignature = Sig;
+	MapActor->MarkPackageDirty();
+	UE_LOG(LogDoomContent, Display, TEXT("Bake: %s: %d static mesh tiles in %s (signature %08x)"), *MapName, Meshes.Num(), *TileFolder, Sig);
+	return bOk;
+}
+
 FString DoomContent::MapPackage(const FString& MapName)
 {
 	return FString(TEXT("/Game/Doom/Maps/")) + MapName.ToUpper();
@@ -874,6 +930,7 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 		return false;
 	}
 	UPackage* Pkg = CreatePackage(*PkgName);
+	Pkg->MarkAsFullyLoaded(); // replacing a level on disk: this new package is the whole of it
 	UWorld* World = UWorld::CreateWorld(EWorldType::Inactive, false, FName(*MapName), Pkg);
 	World->SetFlags(RF_Public | RF_Standalone);
 
@@ -884,6 +941,7 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 	MapActor->SetActorLabel(FString::Printf(TEXT("DoomMap %s"), *MapName));
 	MapActor->SetFolderPath(TEXT("Doom"));
 	MapActor->ImportThings();
+	BakeMapTiles(MapActor); // static geometry as tile assets: distance fields in packaged builds
 
 	FAssetRegistryModule::AssetCreated(World);
 	Pkg->MarkPackageDirty();
@@ -897,6 +955,29 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 	UE_LOG(LogDoomContent, Display, TEXT("Import: %s %s (%d thing markers)"), bOk ? TEXT("saved") : TEXT("FAILED to save"), *File, Markers);
 	World->DestroyWorld(false);
 	World->RemoveFromRoot();
+	if (bOk)
+	{
+		// packaged builds cook the maps listed in the packaging settings: add one line to
+		// DefaultGame.ini (written as text so the rest of the file stays as it is)
+		const FString Ini = FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("DefaultGame.ini"));
+		const FString Line = FString::Printf(TEXT("+MapsToCook=(FilePath=\"%s\")"), *PkgName);
+		const FString Section = TEXT("[/Script/UnrealEd.ProjectPackagingSettings]");
+		FString Text;
+		if (FFileHelper::LoadFileToString(Text, *Ini) && !Text.Contains(Line))
+		{
+			const int32 At = Text.Find(Section);
+			if (At == INDEX_NONE)
+			{
+				Text += FString::Printf(TEXT("\r\n%s\r\n%s\r\n"), *Section, *Line);
+			}
+			else
+			{
+				Text.InsertAt(At + Section.Len(), TEXT("\r\n") + Line);
+			}
+			FFileHelper::SaveStringToFile(Text, *Ini);
+			UE_LOG(LogDoomContent, Display, TEXT("Import: %s added to the maps to cook"), *PkgName);
+		}
+	}
 	return bOk;
 }
 

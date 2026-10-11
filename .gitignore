@@ -8,3 +8,6 @@ DerivedDataCache/
 
 # -edittest output
 Content/Doom/Tests/
+
+# packaging by-products
+Build/Windows/

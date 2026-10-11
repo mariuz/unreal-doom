@@ -84,6 +84,13 @@ public:
 			{
 				DoomContent::Build(false); // only what is missing: materials, effects
 			});
+			ADoomMapActor::BakeHook = [](ADoomMapActor* MapActor)
+			{
+				const bool bOk = DoomContent::BakeMapTiles(MapActor);
+				Notify(bOk ? FText::Format(LOCTEXT("Baked", "Baked {0}'s static mesh tiles (save the level to keep them)"), FText::FromString(MapActor->MapName))
+					: LOCTEXT("BakeFailed", "Baking failed (see the Output Log)"), bOk);
+				return bOk;
+			};
 			UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateLambda([]()
 			{
 				FToolMenuOwnerScoped Owner(TEXT("DoomUEEditor"));
@@ -94,6 +101,7 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+		ADoomMapActor::BakeHook = nullptr;
 		if (UObjectInitialized() && UToolMenus::TryGet())
 		{
 			UToolMenus::UnregisterOwner(TEXT("DoomUEEditor"));

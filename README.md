@@ -23,7 +23,7 @@ with `-iwad=` / `-file=`.
 | WAD lumps, `PLAYPAL`, `COLORMAP` | `FDoomWad` (plain C++), stacked IWAD + PWADs, last lump wins |
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
 | `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP. Vanilla nodes, ZDoom extended nodes (`XNOD`/`ZNOD`, `XGLN`/`ZGLN`, `XGL2`/`ZGL2`, `XGL3`/`ZGL3`; the `Z` variants inflated with the engine's zlib) and glBSP GL nodes (`GL_<map>` lumps, versions 1 to 5) all load into the same structures. UDMF maps (`TEXTMAP` with `ZNODES`) load through the same path: vertices, sectors, sidedefs, linedefs (flags, Doom specials with the tag in `arg0`) and things (skill, ambush, single-player flags) |
-| Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components. With the modern renderer the static chunk is also baked at load into runtime **`UStaticMesh`** tiles (1024 map units square, built from `FMeshDescription`s) that get mesh **distance fields** and Lumen surface cards; the procedural chunk then only collides. Content-hash GUIDs make each map's distance fields come from the DDC after their first build |
+| Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components. With the modern renderer the static chunk is also baked at load into runtime **`UStaticMesh`** tiles (1024 map units square, built from `FMeshDescription`s) that get mesh **distance fields** and Lumen surface cards; the procedural chunk then only collides. Content-hash GUIDs make each map's distance fields come from the DDC after their first build. Imported levels carry these tiles as saved assets (`/Game/Doom/Maps/<MAP>_Tiles`, baked at import or with **Bake Static Meshes**). They are used whenever a geometry signature matches, and they are how packaged builds get distance fields |
 | Palette-exact colours | Every texture also has a palette-index twin (mips pick the palette entry nearest each 2x2 average); the classic shader computes Doom's colormap row and looks the colour up in the WAD's `COLORMAP` through `PLAYPAL` (Options > Colors: exact / smooth). The weapon uses the psprite's own row. Damage, pickup and radiation-suit palettes switch the whole `PLAYPAL` set (world, sky, sprites, weapon, status bar) exactly as Doom does; the smooth and modern modes use screen tints |
 | Sector light, fake contrast, light diminishing | One texel per sector in a light texture updated each tic (`UpdateTextureRegions`), so flickering lights never rebuild meshes. A **Custom HLSL** node runs Doom's `scalelight` / `zlight` colormap selection per pixel from `PixelDepth` |
 | Gun flash light, invulnerability, light amp | `UMaterialParameterCollection` (`MPC_Doom`) globals: `ExtraLight`, `FixedColormap`, `Tic` |
@@ -93,6 +93,24 @@ The first time each material permutation is used, Unreal compiles shaders on dem
 "Preparing Shaders" and draws untextured surfaces for a few seconds to a few minutes (longer for
 modern mode). A packaged build precompiles them. When packaging, `Content/WADs` is staged as
 loose files.
+
+### Packaging
+
+The project packages as a standalone Win64 game:
+
+```bash
+"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.bat" BuildCookRun -project="E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -noP4 -platform=Win64 -clientconfig=Development -build -cook -stage -pak -archive -archivedirectory="E:/Work/DoomUE_Package"
+```
+
+* `Content/WADs` is staged as loose files (`DirectoriesToAlwaysStageAsNonUFS`), so WADs can be
+  swapped after packaging.
+* The generated materials and effects cook from `/Game/Doom` (`DirectoriesToAlwaysCook`).
+* Every imported level is added to `MapsToCook` in `DefaultGame.ini` by the importer.
+
+Run `DoomUE.exe` from the archive folder. It takes the same switches; for example
+`DoomUE.exe /Game/Doom/Maps/E1M1 -modern` plays an imported level. Packaged games cannot build
+meshes at runtime, so the modern renderer's distance fields come from the levels' baked tiles.
+Maps played straight from the WAD (`-warp`) draw the procedural geometry.
 
 ### Command line
 
@@ -261,6 +279,16 @@ Gameplay framework: `-exittest` on E1M1 kills 2 monsters as the player. The game
 then E1M2 starts with both counters at zero and the shells set before the exit (17) carried
 over (PASS). `-savetest`, `-endtest` and the imported E1M1 level behave as before.
 
+Packaged build: `BuildCookRun` produces a 970 MB Win64 build in about 2 to 6 minutes (cook
+included).
+* `DoomUE.exe /Game/Doom/Maps/E1M1 -modern` draws E1M1 with its 18 saved tiles and cooked
+  distance fields, with no "Preparing" messages.
+* `DoomUE.exe -warp=E1M1 -savetest` passes.
+
+The tile signature is quantized and upper-cases its texture keys. A packaged game creates its
+names in a different order than the editor, and an `FName` keeps the casing of its first use, so
+the raw names hashed differently.
+
 Editable levels: `-run=DoomContent -importmap=E1M1` saves E1M1 with 292 thing markers;
 playing it spawns the same 180 things and 29 monsters, at the same positions, as the WAD's own
 lump. `-run=DoomContent -edittest=E1M1` opens the level as the editor does and builds the
@@ -283,7 +311,7 @@ cases, knockback strength, and HUD offsets.
 Not done yet (roughly in priority order):
 
 1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-2. Packaged (non-editor) builds: baking static meshes and their distance fields at runtime needs the editor's mesh builders, so a packaged game keeps the procedural meshes (no mesh distance fields). Imported levels could instead save their baked tiles as assets.
+2. Packaged builds of maps played straight from the WAD (`-warp`, not imported) have no static mesh tiles; importing every map of a WAD (`-importmap=all`) covers them.
 3. Unreal practices worth adopting next:
    * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
    * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.

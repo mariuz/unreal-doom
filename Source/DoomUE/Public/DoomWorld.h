@@ -114,6 +114,10 @@ public:
 	/** Moves a player to their start: co-op start by player number, or a random deathmatch start. */
 	void PlacePlayer(ADoomPlayer* P);
 
+	/** Sectors that doors, lifts, floors, stairs and sector specials can move: each gets its own
+	    geometry chunk; the rest is the static chunk (also used by the editor preview and tile bake). */
+	static void ComputeMovableSectors(const FDoomMap& Map, TSet<int32>& Out);
+
 	/** -nettest: the sector behind the map's first manual door (both sides find the same one). */
 	int32 NetTestDoorSector() const;
 	/** -nettest on the server: open that door. */
@@ -295,7 +299,6 @@ public:
 private:
 	friend class ADoomGameMode; // the level flow (exits, intermission, next map) uses the internals below
 	void SpawnMapThings();
-	void ComputeMovableSectors(TSet<int32>& Out) const;
 	void StartSectorSpecials();
 	void TicMovers();
 	void TicLights();

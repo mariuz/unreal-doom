@@ -5,6 +5,8 @@
 #include "DoomAssets.h"
 #include "DoomSettings.h"
 #include "DoomUE.h"
+#include "DoomWorld.h"
+#include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "Components/BillboardComponent.h"
 #include "Components/ArrowComponent.h"
@@ -83,6 +85,16 @@ TArray<FString> DoomEditorData::MapNames()
 // ------------------------------------------------------------------------------------------------
 // ADoomMapActor
 // ------------------------------------------------------------------------------------------------
+
+TFunction<bool(ADoomMapActor*)> ADoomMapActor::BakeHook;
+
+void ADoomMapActor::BakeStaticMeshes()
+{
+	if (BakeHook)
+	{
+		BakeHook(this);
+	}
+}
 
 ADoomMapActor::ADoomMapActor()
 {
@@ -199,7 +211,10 @@ void ADoomMapActor::RebuildPreview()
 			I->SetScalarParameterValue(TEXT("Modern"), bPreviewModern ? 1.f : 0.f);
 		}
 	}
-	Build(*PreviewMap, *G, TSet<int32>(), bPreviewModern, FDoomGraphics::SkyTextureFor(MapName));
+	// the same chunks as the game, so the static chunk (and its baked tiles) match exactly
+	TSet<int32> Movable;
+	UDoomWorld::ComputeMovableSectors(*PreviewMap, Movable);
+	Build(*PreviewMap, *G, Movable, bPreviewModern, FDoomGraphics::SkyTextureFor(MapName));
 }
 
 void ADoomMapActor::ImportThings()

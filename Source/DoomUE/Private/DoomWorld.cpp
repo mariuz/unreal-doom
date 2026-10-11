@@ -331,7 +331,7 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	bFullMap = false;
 
 	TSet<int32> Movable;
-	ComputeMovableSectors(Movable);
+	ComputeMovableSectors(*Map, Movable);
 
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -373,9 +373,9 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	return true;
 }
 
-void UDoomWorld::ComputeMovableSectors(TSet<int32>& Out) const
+void UDoomWorld::ComputeMovableSectors(const FDoomMap& InMap, TSet<int32>& Out)
 {
-	for (const FDoomLine& L : Map->Lines)
+	for (const FDoomLine& L : InMap.Lines)
 	{
 		if (L.Special == 0)
 		{
@@ -398,7 +398,7 @@ void UDoomWorld::ComputeMovableSectors(TSet<int32>& Out) const
 			if (L.BackSector != INDEX_NONE) Out.Add(L.BackSector);
 			continue;
 		}
-		for (int32 Sec : Map->SectorsWithTag(L.Tag))
+		for (int32 Sec : InMap.SectorsWithTag(L.Tag))
 		{
 			Out.Add(Sec);
 			if (S->Act == EAct::Stairs8 || S->Act == EAct::Stairs16)
@@ -408,11 +408,11 @@ void UDoomWorld::ComputeMovableSectors(TSet<int32>& Out) const
 				while (Stack.Num())
 				{
 					const int32 Cur = Stack.Pop();
-					for (int32 Li : Map->Sectors[Cur].Lines)
+					for (int32 Li : InMap.Sectors[Cur].Lines)
 					{
-						const FDoomLine& L2 = Map->Lines[Li];
+						const FDoomLine& L2 = InMap.Lines[Li];
 						if (L2.FrontSector == Cur && L2.BackSector != INDEX_NONE && !Out.Contains(L2.BackSector)
-							&& Map->Sectors[L2.BackSector].FloorPic == Map->Sectors[Sec].FloorPic)
+							&& InMap.Sectors[L2.BackSector].FloorPic == InMap.Sectors[Sec].FloorPic)
 						{
 							Out.Add(L2.BackSector);
 							Stack.Add(L2.BackSector);
@@ -422,18 +422,18 @@ void UDoomWorld::ComputeMovableSectors(TSet<int32>& Out) const
 			}
 			if (S->Act == EAct::Donut)
 			{
-				for (int32 Li : Map->Sectors[Sec].Lines)
+				for (int32 Li : InMap.Sectors[Sec].Lines)
 				{
-					const int32 Ring = Map->OtherSector(Li, Sec);
+					const int32 Ring = InMap.OtherSector(Li, Sec);
 					if (Ring != INDEX_NONE) Out.Add(Ring);
 				}
 			}
 		}
 	}
 	// sector specials that move: door close in 30 s, raise in 5 min
-	for (int32 i = 0; i < Map->Sectors.Num(); ++i)
+	for (int32 i = 0; i < InMap.Sectors.Num(); ++i)
 	{
-		if (Map->Sectors[i].Special == 10 || Map->Sectors[i].Special == 14)
+		if (InMap.Sectors[i].Special == 10 || InMap.Sectors[i].Special == 14)
 		{
 			Out.Add(i);
 		}
@@ -578,9 +578,9 @@ void UDoomWorld::SetupEnvironment()
 	EnvironmentActors.Add(Fog);
 
 	ADirectionalLight* Sun = W->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), FTransform(FRotator(-55, 35, 0), FVector::ZeroVector), SP);
-	Sun->GetComponent()->SetMobility(EComponentMobility::Movable);
-	Sun->GetComponent()->SetIntensity(2.5f);
-	Sun->GetComponent()->SetLightColor(FLinearColor(1.f, 0.85f, 0.7f));
+	Sun->GetLightComponent()->SetMobility(EComponentMobility::Movable);
+	Sun->GetLightComponent()->SetIntensity(2.5f);
+	Sun->GetLightComponent()->SetLightColor(FLinearColor(1.f, 0.85f, 0.7f));
 	Sun->GetLightComponent()->SetVolumetricScatteringIntensity(1.f);
 	EnvironmentActors.Add(Sun);
 

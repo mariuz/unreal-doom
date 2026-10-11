@@ -27,7 +27,7 @@ class FDoomMap;
 struct FDoomSector;
 struct FDoomSide;
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, meta = (ScriptName = "DoomPhase"))
 enum class EDoomGameState : uint8 { Title, Menu, Playing, Intermission, Finale };
 
 /** Where the game is in Doom's flow, and the level's running totals. */
