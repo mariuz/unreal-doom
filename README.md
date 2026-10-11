@@ -24,7 +24,7 @@ with `-iwad=` / `-file=`.
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
 | `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP. Vanilla nodes, ZDoom extended nodes (`XNOD`/`ZNOD`, `XGLN`/`ZGLN`, `XGL2`/`ZGL2`, `XGL3`/`ZGL3`; the `Z` variants inflated with the engine's zlib) and glBSP GL nodes (`GL_<map>` lumps, versions 1 to 5) all load into the same structures. UDMF maps (`TEXTMAP` with `ZNODES`) load through the same path: vertices, sectors, sidedefs, linedefs (flags, Doom specials with the tag in `arg0`) and things (skill, ambush, single-player flags) |
 | Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components |
-| Palette-exact colours | Every texture also has a palette-index twin (mips pick the palette entry nearest each 2x2 average); the classic shader computes Doom's colormap row and looks the colour up in the WAD's `COLORMAP` through `PLAYPAL` (Options > Colors: exact / smooth). The weapon uses the psprite's own row |
+| Palette-exact colours | Every texture also has a palette-index twin (mips pick the palette entry nearest each 2x2 average); the classic shader computes Doom's colormap row and looks the colour up in the WAD's `COLORMAP` through `PLAYPAL` (Options > Colors: exact / smooth). The weapon uses the psprite's own row. Damage, pickup and radiation-suit palettes switch the whole `PLAYPAL` set (world, sky, sprites, weapon, status bar) exactly as Doom does; the smooth and modern modes use screen tints |
 | Sector light, fake contrast, light diminishing | One texel per sector in a light texture updated each tic (`UpdateTextureRegions`), so flickering lights never rebuild meshes. A **Custom HLSL** node runs Doom's `scalelight` / `zlight` colormap selection per pixel from `PixelDepth` |
 | Gun flash light, invulnerability, light amp | `UMaterialParameterCollection` (`MPC_Doom`) globals: `ExtraLight`, `FixedColormap`, `Tic` |
 | Sky | Unlit material that projects the sky texture from the camera vector (1024 columns per turn, rows at slope `(100-R)/160`). Applied to sky ceilings and to the sky gaps Doom leaves undrawn |
@@ -110,6 +110,7 @@ loose files.
 | `-menupage=N [-menuitem=N]` | open a menu page (0 main, 2 skill, 4 options, 5 sound, 6 load, 7 save, 8 help, 9 quit) for screenshots |
 | `-respawn` | Nightmare-style monster respawning on any skill |
 | `-smooth` | the smooth light approximation instead of the exact COLORMAP |
+| `-forcepalette=N` | hold `PLAYPAL` palette N (1-8 pain, 9-12 pickup, 13 radiation suit) for screenshots |
 | `-spawnfront=DoomEdNum` | a monster in front of the player at start |
 | `-savename=TEXT [-savecommit]` | with `-warp`: type TEXT as save slot 1's name, optionally press Enter |
 | `-killtype=DoomEdNum` | 2 s in, kill every monster of a type (boss-action checks) |
@@ -186,6 +187,10 @@ in place (a crash while a lift moved); textures are filled completely before the
 resource is created (an intermittent startup assertion). `-steptest=x,y,angle,seconds[,sector]`
 walks the player from a point and logs height and a sector's floor.
 
+Screen palettes: `-forcepalette=4` (pain) and `-forcepalette=13` (radiation suit) captures show
+the world, sky, sprites, weapon and status bar all shifted through the WAD's own palettes. The
+first run after regenerating materials compiles shaders for several minutes; later runs are cached.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -195,5 +200,4 @@ cases, knockback strength, and HUD offsets.
 Not done yet (roughly in priority order):
 
 1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-2. The PLAYPAL damage / pickup palettes applied exactly (today they are screen tints).
-3. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.
+2. Saving missiles in flight; Niagara particle effects, and baking the static chunk to a runtime `UStaticMesh` so software Lumen gets distance fields.

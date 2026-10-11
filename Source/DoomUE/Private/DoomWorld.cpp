@@ -683,6 +683,45 @@ void UDoomWorld::PlaySound(const FString& Name, const FVector* Location, float V
 	}
 }
 
+bool UDoomWorld::IsPaletteExact() const
+{
+	return !bModern && GetDefault<UDoomSettings>()->bPaletteExact && !FParse::Param(FCommandLine::Get(), TEXT("smooth"));
+}
+
+int32 UDoomWorld::ScreenPalette() const
+{
+	const ADoomPlayer* P = GetPlayer();
+	if (!P || !Wad.IsValid() || State != EDoomGameState::Playing)
+	{
+		return 0;
+	}
+	static int32 Forced = -1;
+	static const bool bForced = FParse::Value(FCommandLine::Get(), TEXT("-forcepalette="), Forced);
+	if (bForced)
+	{
+		return FMath::Clamp(Forced, 0, Wad->NumPalettes() - 1); // screenshots of a given palette
+	}
+	int32 Palette = 0;
+	int32 Hurt = P->DamageCount;
+	if (P->bBerserk)
+	{
+		Hurt = FMath::Max(Hurt, 12 - (P->BerserkTics >> 6)); // berserk's fading red
+	}
+	if (Hurt > 0)
+	{
+		Palette = 1 + FMath::Min((Hurt + 7) >> 3, 7);
+	}
+	else if (P->BonusCount > 0)
+	{
+		Palette = 9 + FMath::Min((P->BonusCount + 7) >> 3, 3);
+	}
+	else if (P->RadSuit > 4 * 32 || (P->RadSuit & 8))
+	{
+		Palette = 13;
+	}
+	return FMath::Clamp(Palette, 0, Wad->NumPalettes() - 1);
+}
+
 void UDoomWorld::ApplyUserSettings()
 {
 	const UDoomSettings* S = GetDefault<UDoomSettings>();
@@ -819,6 +858,8 @@ void UDoomWorld::Tick(float DeltaTime)
 		}
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("FixedColormap"), Fixed);
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Modern"), bModern ? 1.f : 0.f);
+		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Palette"), IsPaletteExact() ? ScreenPalette() : 0);
+		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("PaletteRows"), Gfx->ColormapRows());
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("PaletteExact"),
 			(GetDefault<UDoomSettings>()->bPaletteExact && !FParse::Param(FCommandLine::Get(), TEXT("smooth"))) ? 1.f : 0.f);
 	}

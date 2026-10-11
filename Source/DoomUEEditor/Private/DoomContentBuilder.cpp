@@ -235,16 +235,30 @@ else if (doomLevel >= 0.0)
 	 * the smooth approximation (Approx) is used instead.
 	 */
 	UMaterialExpression* PaletteExact(UMaterial* M, UMaterialParameterCollection* MPC, UMaterialExpression* UV, UMaterialExpression* Level,
-		UMaterialExpression* Approx, UTexture* ColorDefault, UTexture* LinearDefaultTex, int32 X, int32 Y)
+		UMaterialExpression* Approx, UTexture* ColorDefault, UTexture* LinearDefaultTex, int32 X, int32 Y, bool bMipZero = false)
 	{
 		UMaterialExpressionTextureSampleParameter2D* Index = TexParam(M, X - 600, Y, TEXT("TexIndex"), LinearDefaultTex, SAMPLERTYPE_LinearColor);
 		Index->Coordinates.Connect(0, UV);
+		if (bMipZero)
+		{
+			// the sky: no derivative-based mips (its u jumps where atan2 wraps)
+			Index->MipValueMode = TMVM_MipLevel;
+			UMaterialExpressionConstant* Mip0 = Expr<UMaterialExpressionConstant>(M, X - 800, Y + 100);
+			Mip0->R = 0.f;
+			Index->MipValue.Connect(0, Mip0);
+		}
+		// rows: 34 per PLAYPAL palette; Palette picks the screen palette (damage red, pickup gold...)
+		UMaterialExpressionCollectionParameter* Pal = Global(M, MPC, X - 600, Y + 200, TEXT("Palette"));
+		UMaterialExpressionCollectionParameter* Rows = Global(M, MPC, X - 600, Y + 280, TEXT("PaletteRows"));
 		UMaterialExpressionCustom* CmapUV = Custom(M, X - 400, Y, TEXT("ColormapUV"), TEXT(
 			"float i = floor(Index * 255.0 + 0.5);\n"
-			"return float2((i + 0.5) / 256.0, (clamp(Level, 0.0, 33.0) + 0.5) / 34.0);"),
-			CMOT_Float2, { TEXT("Index"), TEXT("Level") });
+			"float row = floor(Palette + 0.5) * 34.0 + clamp(Level, 0.0, 33.0);\n"
+			"return float2((i + 0.5) / 256.0, (row + 0.5) / max(Rows, 34.0));"),
+			CMOT_Float2, { TEXT("Index"), TEXT("Level"), TEXT("Palette"), TEXT("Rows") });
 		Wire(Index, TEXT("R"), CmapUV, TEXT("Index"));
 		WireIndex(Level, 0, CmapUV, TEXT("Level"));
+		Wire(Pal, TEXT(""), CmapUV, TEXT("Palette"));
+		Wire(Rows, TEXT(""), CmapUV, TEXT("Rows"));
 		UMaterialExpressionTextureSampleParameter2D* Cmap = TexParam(M, X - 200, Y, TEXT("Colormap"), ColorDefault, SAMPLERTYPE_Color);
 		Cmap->Coordinates.Connect(0, CmapUV);
 		Cmap->MipValueMode = TMVM_MipLevel;
@@ -351,7 +365,7 @@ else if (doomLevel >= 0.0)
 		return M;
 	}
 
-	UMaterial* BuildSky(UMaterialParameterCollection* MPC, UTexture* ColorDefault)
+	UMaterial* BuildSky(UMaterialParameterCollection* MPC, UTexture* ColorDefault, UTexture* LinearDefaultTex)
 	{
 		UMaterial* M = NewMaterial(TEXT("M_DoomSky"));
 		M->SetShadingModel(MSM_Unlit);
@@ -384,7 +398,20 @@ else if (doomLevel >= 0.0)
 			"return c;"), CMOT_Float3, { TEXT("TexRGB"), TEXT("Fixed") });
 		Wire(Tex, TEXT("RGB"), Out, TEXT("TexRGB"));
 		Wire(Fixed, TEXT(""), Out, TEXT("Fixed"));
-		UMaterialEditingLibrary::ConnectMaterialProperty(Out, TEXT(""), MP_EmissiveColor);
+
+		// classic renderer, exact colours: the sky's palette indices through COLORMAP row 0
+		// (or 32 under invulnerability) of the current screen palette
+		UMaterialExpressionCustom* SkyLevel = Custom(M, -150, 300, TEXT("SkyLevel"),
+			TEXT("return Fixed > 31.5 ? 32.0 : 0.0;"), CMOT_Float1, { TEXT("Fixed") });
+		Wire(Fixed, TEXT(""), SkyLevel, TEXT("Fixed"));
+		UMaterialExpression* Exact = PaletteExact(M, MPC, UV, SkyLevel, Out, ColorDefault, LinearDefaultTex, 300, 300, true);
+		UMaterialExpressionCollectionParameter* Modern = Global(M, MPC, 300, 600, TEXT("Modern"));
+		UMaterialExpressionCustom* Final = Custom(M, 550, 100, TEXT("SkySelect"), TEXT("return Modern > 0.5 ? Lit : Classic;"),
+			CMOT_Float3, { TEXT("Lit"), TEXT("Classic"), TEXT("Modern") });
+		WireIndex(Out, 0, Final, TEXT("Lit"));
+		WireIndex(Exact, 0, Final, TEXT("Classic"));
+		Wire(Modern, TEXT(""), Final, TEXT("Modern"));
+		UMaterialEditingLibrary::ConnectMaterialProperty(Final, TEXT(""), MP_EmissiveColor);
 		return M;
 	}
 
@@ -533,6 +560,8 @@ else if (doomLevel >= 0.0)
 		Add(TEXT("Modern"), 0.f);
 		Add(TEXT("DoomScale"), 3.f);
 		Add(TEXT("PaletteExact"), 1.f);
+		Add(TEXT("Palette"), 0.f);
+		Add(TEXT("PaletteRows"), 34.f);
 		MPC->PostEditChange();
 		Save(MPC);
 		return MPC;
@@ -564,7 +593,7 @@ bool DoomContent::Build(bool bForce)
 	TArray<UMaterial*> Mats = {
 		BuildWorld(MPC, ColorDefault, Linear, false),
 		BuildWorld(MPC, ColorDefault, Linear, true),
-		BuildSky(MPC, ColorDefault),
+		BuildSky(MPC, ColorDefault, Linear),
 		BuildSprite(MPC, ColorDefault, Linear),
 		BuildSpriteFuzz(MPC, ColorDefault),
 	};

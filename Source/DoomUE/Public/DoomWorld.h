@@ -223,6 +223,10 @@ public:
 	const FDoomMapInfoSet& GetMapInfos() const { return MapInfos; }
 	/** Pushes volumes and field of view from UDoomSettings to the running game. */
 	void ApplyUserSettings();
+	/** Doom's screen palette for the player (0 normal, 1-8 red, 9-12 gold, 13 radiation suit). */
+	int32 ScreenPalette() const;
+	/** True when the classic renderer shows exact COLORMAP / PLAYPAL colours. */
+	bool IsPaletteExact() const;
 	void StartNewGame(const FString& MapName, int32 InSkill);
 
 	void SetModern(bool b);

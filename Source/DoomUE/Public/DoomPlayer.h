@@ -62,6 +62,7 @@ public:
 	// powerups, in tics remaining
 	int32 Invulnerability = 0, Invisibility = 0, RadSuit = 0, LightAmp = 0;
 	bool bBerserk = false;
+	int32 BerserkTics = 0;   // counts up from the pickup (the red tinge fades with it)
 	int32 DamageCount = 0;   // red tint
 	int32 BonusCount = 0;    // gold tint
 	int32 ExtraLight = 0;    // gun flash

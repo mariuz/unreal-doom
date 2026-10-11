@@ -179,6 +179,8 @@ UMaterialInterface* ADoomLevel::MaterialForKey(FName Key)
 		if (Pic && Pic->Texture)
 		{
 			MID->SetTextureParameterValue(TEXT("Tex"), Pic->Texture);
+			MID->SetTextureParameterValue(TEXT("TexIndex"), Pic->IndexTexture);
+			MID->SetTextureParameterValue(TEXT("Colormap"), Gfx->ColormapTexture());
 			MID->SetScalarParameterValue(TEXT("SkyHeight"), Pic->Height);
 		}
 	}

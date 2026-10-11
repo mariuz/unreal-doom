@@ -28,7 +28,20 @@ void ADoomHUD::DrawPatch(const FDoomPicture* Pic, float X, float Y, bool bUseOff
 	}
 	const float PX = X - (bUseOffsets ? Pic->LeftOffset : 0);
 	const float PY = Y - (bUseOffsets ? Pic->TopOffset : 0);
-	DrawTexture(Pic->Texture, OX + PX * SX, OY + PY * SY, Pic->Width * SX, Pic->Height * SY, 0, 0, 1, 1, Tint, BLEND_Translucent);
+	DrawTexture(PatchTexture(Pic), OX + PX * SX, OY + PY * SY, Pic->Width * SX, Pic->Height * SY, 0, 0, 1, 1, Tint, BLEND_Translucent);
+}
+
+UTexture2D* ADoomHUD::PatchTexture(const FDoomPicture* Pic)
+{
+	// Doom shifts the whole screen's palette, the status bar and text included
+	if (ScreenPal > 0 && Pic)
+	{
+		if (UTexture2D* Shifted = DW()->GetGraphics()->ColormappedPicture(*Pic, 0, ScreenPal))
+		{
+			return Shifted;
+		}
+	}
+	return Pic ? Pic->Texture : nullptr;
 }
 
 void ADoomHUD::DrawPatchByName(const FString& Name, float X, float Y, bool bUseOffsets)
@@ -72,7 +85,7 @@ void ADoomHUD::DrawText(const FString& Text, float X, float Y, float Scale, FLin
 		const FDoomPicture* P = (C > ' ' && C <= '_') ? W->GetGraphics()->Patch(FString::Printf(TEXT("STCFN%03d"), (int32)C)) : nullptr;
 		if (P && P->Texture)
 		{
-			DrawTexture(P->Texture, OX + CX * SX, OY + Y * SY, P->Width * SX * Scale, P->Height * SY * Scale, 0, 0, 1, 1, Tint, BLEND_Translucent);
+			DrawTexture(PatchTexture(P), OX + CX * SX, OY + Y * SY, P->Width * SX * Scale, P->Height * SY * Scale, 0, 0, 1, 1, Tint, BLEND_Translucent);
 			CX += P->Width * Scale;
 		}
 		else
@@ -116,6 +129,7 @@ void ADoomHUD::DrawHUD()
 	{
 		return;
 	}
+	ScreenPal = (W->GetState() == EDoomGameState::Playing && W->IsPaletteExact()) ? W->ScreenPalette() : 0;
 	// Doom's 320x200 frame, shown at 4:3 (non-square pixels) and centred
 	SY = Canvas->ClipY / 200.f;
 	SX = Canvas->ClipY / 240.f;
@@ -210,7 +224,7 @@ void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 			const int32 LightNum = FMath::Clamp(SecLight / 16 + P->ExtraLight, 0, 15);
 			Row = FMath::Clamp((15 - LightNum) * 4 - 23, 0, 31);
 		}
-		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row))
+		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row, ScreenPal))
 		{
 			DrawTexture(Lit, OX + (SXp - F.Picture->LeftOffset) * SX, OY + (SYp - F.Picture->TopOffset) * SY,
 				F.Picture->Width * SX, F.Picture->Height * SY, 0, 0, 1, 1, FLinearColor::White, BLEND_Translucent);
@@ -232,6 +246,10 @@ void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 
 void ADoomHUD::DrawTint(ADoomPlayer* P)
 {
+	if (DW()->IsPaletteExact())
+	{
+		return; // the real PLAYPAL palettes are applied to the world and the 2D graphics instead
+	}
 	// PLAYPAL's red, gold and green palettes as screen overlays
 	if (P->DamageCount > 0)
 	{
