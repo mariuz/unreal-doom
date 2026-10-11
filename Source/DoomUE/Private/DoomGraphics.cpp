@@ -6,6 +6,8 @@
 #include "TextureResource.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "DoomMap.h"
+#include "Async/ParallelFor.h"
 
 using namespace WadRead;
 
@@ -253,7 +255,7 @@ FName FDoomGraphics::AnimatedFrame(FName Name, bool bFlat, int32 Tic) const
 	return G.Frames[(L->Value + Tic / G.Speed) % G.Frames.Num()];
 }
 
-FName FDoomGraphics::SwitchPartner(FName Name)
+FName FDoomGraphics::SwitchPartner(FName Name) const
 {
 	if (bSwitchLump)
 	{
@@ -353,12 +355,18 @@ bool FDoomGraphics::DecodePatch(TConstArrayView<uint8> Data, FDoomPicture& Out) 
 	return true;
 }
 
-void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
+void FDoomGraphics::PrepareMips(const FDoomPicture& Pic, bool bMips, FDoomPictureMips& Out) const
 {
+	static const bool bNoMips = FParse::Param(FCommandLine::Get(), TEXT("nomips"));
 	const TArray<FColor>& Pal = Wad.Palette(0);
-	TArray<FColor> Pixels;
-	Pixels.SetNumUninitialized(Pic.Width * Pic.Height);
-	for (int32 i = 0; i < Pixels.Num(); ++i)
+	const int32 Num = Pic.Width * Pic.Height;
+	Out.Color.Reset();
+	Out.Index.Reset();
+
+	// colour: the palette colour per texel
+	TArray<FColor>& Pixels = Out.Color.AddDefaulted_GetRef();
+	Pixels.SetNumUninitialized(Num);
+	for (int32 i = 0; i < Num; ++i)
 	{
 		const int16 Idx = Pic.Indices[i];
 		Pixels[i] = Idx < 0 ? FColor(0, 0, 0, 0) : Pal[Idx];
@@ -390,193 +398,227 @@ void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
 			}
 		}
 	}
-
-	const FName ObjName = MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(), FName(*FString::Printf(TEXT("Doom_%s"), *Pic.Name.ToString())));
-	UTexture2D* Tex = NewTexture(Pic.Width, Pic.Height, Pixels, ObjName);
-	if (!Tex)
-	{
-		return;
-	}
-
-	// Box-filtered mip chain for power-of-two textures (walls and flats), so distant
-	// surfaces do not sparkle; magnification stays nearest for crisp Doom texels.
-	static const bool bNoMips = FParse::Param(FCommandLine::Get(), TEXT("nomips"));
-	TArray<TArray<FColor>> MipPixels;
-	if (bMips && !bNoMips && IsPow2(Pic.Width) && IsPow2(Pic.Height))
-	{
-		FTexturePlatformData* PD = Tex->GetPlatformData();
-		TArray<FColor> Prev = Pixels;
-		int32 W = Pic.Width, H = Pic.Height;
-		while (W > 1 || H > 1)
-		{
-			const int32 NW = FMath::Max(1, W / 2), NH = FMath::Max(1, H / 2);
-			TArray<FColor> Next;
-			Next.SetNumUninitialized(NW * NH);
-			for (int32 Y = 0; Y < NH; ++Y)
-			{
-				for (int32 X = 0; X < NW; ++X)
-				{
-					int32 R = 0, G = 0, B = 0, A = 0, N = 0;
-					for (int32 dy = 0; dy < 2; ++dy)
-					{
-						for (int32 dx = 0; dx < 2; ++dx)
-						{
-							const FColor& C = Prev[FMath::Min(Y * 2 + dy, H - 1) * W + FMath::Min(X * 2 + dx, W - 1)];
-							R += C.R; G += C.G; B += C.B; A += C.A; ++N;
-						}
-					}
-					// alpha: keep coverage stable for masked textures (majority vote)
-					Next[Y * NW + X] = FColor(R / N, G / N, B / N, A * 2 >= 255 * N ? 255 : 0);
-				}
-			}
-			// The platform data's mip count sizes the GPU texture; the pixels themselves are
-			// uploaded below, since a transient texture's resource only initializes mip 0.
-			FTexture2DMipMap* Mip = new FTexture2DMipMap(NW, NH, 1);
-			PD->Mips.Add(Mip);
-			Mip->BulkData.Lock(LOCK_READ_WRITE);
-			void* Dest = Mip->BulkData.Realloc((int64)NW * NH * 4);
-			FMemory::Memcpy(Dest, Next.GetData(), (int64)NW * NH * 4);
-			Mip->BulkData.Unlock();
-			MipPixels.Add(Next);
-			Prev = MoveTemp(Next);
-			W = NW;
-			H = NH;
-		}
-	}
-
-	Tex->Filter = TF_Nearest;
-	Tex->SRGB = true;
-	Tex->AddressX = bWrap ? TA_Wrap : TA_Clamp;
-	Tex->AddressY = bWrap ? TA_Wrap : TA_Clamp;
-	// Pixels2D is never LOD-biased: a World-group bias could leave a one-mip texture with no resident mip
-	Tex->LODGroup = TEXTUREGROUP_Pixels2D;
-	Tex->NeverStream = true;
-	Tex->UpdateResource();
-	for (int32 m = 0; m < MipPixels.Num(); ++m)
-	{
-		const int32 MW = FMath::Max(1, Pic.Width >> (m + 1));
-		const int32 MH = FMath::Max(1, Pic.Height >> (m + 1));
-		FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, MW, MH);
-		uint8* Copy = (uint8*)FMemory::Malloc((SIZE_T)MW * MH * 4);
-		FMemory::Memcpy(Copy, MipPixels[m].GetData(), (SIZE_T)MW * MH * 4);
-		Tex->UpdateTextureRegions(m + 1, 1, Region, MW * 4, 4, Copy,
-			[](uint8* Data, const FUpdateTextureRegion2D* Regions)
-			{
-				FMemory::Free(Data);
-				delete Regions;
-			});
-	}
-	Pic.Texture = Tex;
-	Owned.Add(Tex);
-	UploadIndices(Pic, bWrap, bMips && !bNoMips);
-}
-
-int32 FDoomGraphics::NearestPaletteIndex(int32 R, int32 G, int32 B)
-{
-	const uint32 Key = (R << 16) | (G << 8) | B;
-	if (const uint8* Found = NearestCache.Find(Key))
-	{
-		return *Found;
-	}
-	const TArray<FColor>& Pal = Wad.Palette(0);
-	int32 Best = 0, BestDist = MAX_int32;
-	for (int32 i = 0; i < 256; ++i)
-	{
-		const int32 DR = Pal[i].R - R, DG = Pal[i].G - G, DB = Pal[i].B - B;
-		const int32 D = DR * DR + DG * DG + DB * DB;
-		if (D < BestDist) { BestDist = D; Best = i; }
-	}
-	NearestCache.Add(Key, (uint8)Best);
-	return Best;
-}
-
-void FDoomGraphics::UploadIndices(FDoomPicture& Pic, bool bWrap, bool bMips)
-{
-	// R = palette index, A = coverage; linear (not sRGB) so the index survives sampling exactly
-	TArray<FColor> Pixels;
-	Pixels.SetNumUninitialized(Pic.Width * Pic.Height);
-	for (int32 i = 0; i < Pixels.Num(); ++i)
+	// index: R = palette index, A = coverage; linear (not sRGB) so the index survives sampling exactly
+	TArray<FColor>& Indices = Out.Index.AddDefaulted_GetRef();
+	Indices.SetNumUninitialized(Num);
+	for (int32 i = 0; i < Num; ++i)
 	{
 		const int16 Idx = Pic.Indices[i];
-		Pixels[i] = FColor((uint8)FMath::Max<int16>(Idx, 0), 0, 0, Idx < 0 ? 0 : 255);
+		Indices[i] = FColor((uint8)FMath::Max<int16>(Idx, 0), 0, 0, Idx < 0 ? 0 : 255);
 	}
-	UTexture2D* Tex = NewTexture(Pic.Width, Pic.Height, Pixels, NAME_None);
-	if (!Tex)
+
+	// Box-filtered mip chains for power-of-two textures (walls and flats), so distant surfaces do
+	// not sparkle; magnification stays nearest for crisp Doom texels. The index mips hold the
+	// palette colour nearest each 2x2 block's average (indices cannot be averaged).
+	if (!bMips || bNoMips || !IsPow2(Pic.Width) || !IsPow2(Pic.Height))
 	{
 		return;
 	}
-	// mips: the palette colour nearest each 2x2 block's average (indices cannot be averaged)
-	TArray<TArray<FColor>> MipPixels;
-	if (bMips && IsPow2(Pic.Width) && IsPow2(Pic.Height))
+	TMap<uint32, uint8> Nearest; // per picture: this runs on worker threads
+	auto NearestIndex = [&Pal, &Nearest](const FColor& C) -> uint8
 	{
-		const TArray<FColor>& Pal = Wad.Palette(0);
-		FTexturePlatformData* PD = Tex->GetPlatformData();
-		TArray<FColor> PrevRgb;
-		PrevRgb.SetNumUninitialized(Pixels.Num());
-		for (int32 i = 0; i < Pixels.Num(); ++i)
+		const uint32 Key = (C.R << 16) | (C.G << 8) | C.B;
+		if (const uint8* Found = Nearest.Find(Key))
 		{
-			const FColor& P = Pal[Pixels[i].R];
-			PrevRgb[i] = FColor(P.R, P.G, P.B, Pixels[i].A);
+			return *Found;
 		}
-		int32 W = Pic.Width, H = Pic.Height;
-		while (W > 1 || H > 1)
+		int32 Best = 0, BestDist = MAX_int32;
+		for (int32 i = 0; i < 256; ++i)
 		{
-			const int32 NW = FMath::Max(1, W / 2), NH = FMath::Max(1, H / 2);
-			TArray<FColor> NextRgb, Next;
-			NextRgb.SetNumUninitialized(NW * NH);
-			Next.SetNumUninitialized(NW * NH);
-			for (int32 Y = 0; Y < NH; ++Y)
+			const int32 DR = Pal[i].R - C.R, DG = Pal[i].G - C.G, DB = Pal[i].B - C.B;
+			const int32 D = DR * DR + DG * DG + DB * DB;
+			if (D < BestDist) { BestDist = D; Best = i; }
+		}
+		Nearest.Add(Key, (uint8)Best);
+		return (uint8)Best;
+	};
+	TArray<FColor> PrevRgb;
+	PrevRgb.SetNumUninitialized(Num);
+	for (int32 i = 0; i < Num; ++i)
+	{
+		const FColor& P = Pal[Indices[i].R];
+		PrevRgb[i] = FColor(P.R, P.G, P.B, Indices[i].A);
+	}
+	int32 W = Pic.Width, H = Pic.Height;
+	while (W > 1 || H > 1)
+	{
+		const int32 NW = FMath::Max(1, W / 2), NH = FMath::Max(1, H / 2);
+		const TArray<FColor>& Prev = Out.Color.Last();
+		TArray<FColor> Next, NextRgb, NextIndex;
+		Next.SetNumUninitialized(NW * NH);
+		NextRgb.SetNumUninitialized(NW * NH);
+		NextIndex.SetNumUninitialized(NW * NH);
+		for (int32 Y = 0; Y < NH; ++Y)
+		{
+			for (int32 X = 0; X < NW; ++X)
 			{
-				for (int32 X = 0; X < NW; ++X)
+				int32 R = 0, G = 0, B = 0, A = 0, IR = 0, IG = 0, IB = 0, IA = 0, N = 0;
+				for (int32 dy = 0; dy < 2; ++dy)
 				{
-					int32 R = 0, G = 0, B = 0, A = 0, N = 0;
-					for (int32 dy = 0; dy < 2; ++dy)
+					for (int32 dx = 0; dx < 2; ++dx)
 					{
-						for (int32 dx = 0; dx < 2; ++dx)
-						{
-							const FColor& C = PrevRgb[FMath::Min(Y * 2 + dy, H - 1) * W + FMath::Min(X * 2 + dx, W - 1)];
-							R += C.R; G += C.G; B += C.B; A += C.A; ++N;
-						}
+						const int32 i = FMath::Min(Y * 2 + dy, H - 1) * W + FMath::Min(X * 2 + dx, W - 1);
+						const FColor& C = Prev[i];
+						R += C.R; G += C.G; B += C.B; A += C.A;
+						const FColor& P = PrevRgb[i];
+						IR += P.R; IG += P.G; IB += P.B; IA += P.A;
+						++N;
 					}
-					const FColor Avg(R / N, G / N, B / N, A * 2 >= 255 * N ? 255 : 0);
-					NextRgb[Y * NW + X] = Avg;
-					Next[Y * NW + X] = FColor((uint8)NearestPaletteIndex(Avg.R, Avg.G, Avg.B), 0, 0, Avg.A);
 				}
+				// alpha: keep coverage stable for masked textures (majority vote)
+				Next[Y * NW + X] = FColor(R / N, G / N, B / N, A * 2 >= 255 * N ? 255 : 0);
+				const FColor Avg(IR / N, IG / N, IB / N, IA * 2 >= 255 * N ? 255 : 0);
+				NextRgb[Y * NW + X] = Avg;
+				NextIndex[Y * NW + X] = FColor(NearestIndex(Avg), 0, 0, Avg.A);
 			}
-			FTexture2DMipMap* Mip = new FTexture2DMipMap(NW, NH, 1);
-			PD->Mips.Add(Mip);
-			Mip->BulkData.Lock(LOCK_READ_WRITE);
-			FMemory::Memcpy(Mip->BulkData.Realloc((int64)NW * NH * 4), Next.GetData(), (int64)NW * NH * 4);
-			Mip->BulkData.Unlock();
-			MipPixels.Add(MoveTemp(Next));
-			PrevRgb = MoveTemp(NextRgb);
-			W = NW;
-			H = NH;
 		}
+		Out.Color.Add(MoveTemp(Next));
+		Out.Index.Add(MoveTemp(NextIndex));
+		PrevRgb = MoveTemp(NextRgb);
+		W = NW;
+		H = NH;
+	}
+}
+
+UTexture2D* FDoomGraphics::CreateTexture(int32 Width, int32 Height, const TArray<TArray<FColor>>& Mips, bool bSRGB, bool bWrap, FName Name)
+{
+	UTexture2D* Tex = NewTexture(Width, Height, Mips[0], Name);
+	if (!Tex)
+	{
+		return nullptr;
+	}
+	// The platform data's mip count sizes the GPU texture; the pixels themselves are uploaded
+	// below, since a transient texture's resource only initializes mip 0.
+	FTexturePlatformData* PD = Tex->GetPlatformData();
+	for (int32 m = 1; m < Mips.Num(); ++m)
+	{
+		const int32 MW = FMath::Max(1, Width >> m), MH = FMath::Max(1, Height >> m);
+		FTexture2DMipMap* Mip = new FTexture2DMipMap(MW, MH, 1);
+		PD->Mips.Add(Mip);
+		Mip->BulkData.Lock(LOCK_READ_WRITE);
+		FMemory::Memcpy(Mip->BulkData.Realloc((int64)MW * MH * 4), Mips[m].GetData(), (int64)MW * MH * 4);
+		Mip->BulkData.Unlock();
 	}
 	Tex->Filter = TF_Nearest;
-	Tex->SRGB = false;
+	Tex->SRGB = bSRGB;
 	Tex->AddressX = Tex->AddressY = bWrap ? TA_Wrap : TA_Clamp;
 	// Pixels2D is never LOD-biased: a World-group bias could leave a one-mip texture with no resident mip
 	Tex->LODGroup = TEXTUREGROUP_Pixels2D;
 	Tex->NeverStream = true;
 	Tex->UpdateResource();
-	for (int32 m = 0; m < MipPixels.Num(); ++m)
+	for (int32 m = 1; m < Mips.Num(); ++m)
 	{
-		const int32 MW = FMath::Max(1, Pic.Width >> (m + 1));
-		const int32 MH = FMath::Max(1, Pic.Height >> (m + 1));
+		const int32 MW = FMath::Max(1, Width >> m), MH = FMath::Max(1, Height >> m);
 		FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, MW, MH);
 		uint8* Copy = (uint8*)FMemory::Malloc((SIZE_T)MW * MH * 4);
-		FMemory::Memcpy(Copy, MipPixels[m].GetData(), (SIZE_T)MW * MH * 4);
-		Tex->UpdateTextureRegions(m + 1, 1, Region, MW * 4, 4, Copy,
+		FMemory::Memcpy(Copy, Mips[m].GetData(), (SIZE_T)MW * MH * 4);
+		Tex->UpdateTextureRegions(m, 1, Region, MW * 4, 4, Copy,
 			[](uint8* Data, const FUpdateTextureRegion2D* Regions)
 			{
 				FMemory::Free(Data);
 				delete Regions;
 			});
 	}
-	Pic.IndexTexture = Tex;
 	Owned.Add(Tex);
+	return Tex;
+}
+
+void FDoomGraphics::CreateTextures(FDoomPicture& Pic, const FDoomPictureMips& Mips, bool bWrap)
+{
+	const FName ObjName = MakeUniqueObjectName(GetTransientPackage(), UTexture2D::StaticClass(), FName(*FString::Printf(TEXT("Doom_%s"), *Pic.Name.ToString())));
+	Pic.Texture = CreateTexture(Pic.Width, Pic.Height, Mips.Color, true, bWrap, ObjName);
+	Pic.IndexTexture = Pic.Texture ? CreateTexture(Pic.Width, Pic.Height, Mips.Index, false, bWrap, NAME_None) : nullptr;
+}
+
+void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
+{
+	FDoomPictureMips Mips;
+	PrepareMips(Pic, bMips, Mips);
+	CreateTextures(Pic, Mips, bWrap);
+}
+
+TSharedRef<FDoomPicturePrefetch> FDoomGraphics::CollectPrefetch(const FDoomMap& Map) const
+{
+	TSharedRef<FDoomPicturePrefetch> P = MakeShared<FDoomPicturePrefetch>();
+	TSet<FName> Walls, Flats;
+	auto AddWithFrames = [this](TSet<FName>& Set, FName Name, bool bFlat)
+	{
+		if (Name.IsNone() || (bFlat && IsSkyFlat(Name)))
+		{
+			return;
+		}
+		Set.Add(Name);
+		// animation frames and switch partners: no decoding hitch when they first show
+		if (const TPair<int32, int32>* Anim = (bFlat ? AnimLookupFlat : AnimLookupWall).Find(Name))
+		{
+			Set.Append(Anims[Anim->Key].Frames);
+		}
+		if (!bFlat)
+		{
+			const FName Partner = SwitchPartner(Name);
+			if (!Partner.IsNone()) Set.Add(Partner);
+		}
+	};
+	for (const FDoomSide& S : Map.Sides)
+	{
+		AddWithFrames(Walls, S.Upper, false);
+		AddWithFrames(Walls, S.Middle, false);
+		AddWithFrames(Walls, S.Lower, false);
+	}
+	for (const FDoomSector& S : Map.Sectors)
+	{
+		AddWithFrames(Flats, S.FloorPic, true);
+		AddWithFrames(Flats, S.CeilingPic, true);
+	}
+	for (const FName Name : Walls)
+	{
+		if (!TextureCache.Contains(Name)) P->Items.Add({ Name, false });
+	}
+	for (const FName Name : Flats)
+	{
+		if (!FlatCache.Contains(Name)) P->Items.Add({ Name, true });
+	}
+	return P;
+}
+
+void FDoomGraphics::DecodePrefetch(FDoomPicturePrefetch& P) const
+{
+	ParallelFor(P.Items.Num(), [this, &P](int32 i)
+	{
+		FDoomPicturePrefetch::FItem& Item = P.Items[i];
+		TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
+		if (Item.bFlat ? ComposeFlat(Item.Name, *Pic) : ComposeTexture(Item.Name, *Pic))
+		{
+			PrepareMips(*Pic, true, Item.Mips);
+			Item.Pic = Pic;
+		}
+	});
+}
+
+void FDoomGraphics::CachePrefetch(FDoomPicturePrefetch& P)
+{
+	for (FDoomPicturePrefetch::FItem& Item : P.Items)
+	{
+		(Item.bFlat ? FlatCache : TextureCache).Add(Item.Name, Item.Pic);
+	}
+}
+
+bool FDoomGraphics::CreatePrefetchTextures(FDoomPicturePrefetch& P, double Deadline)
+{
+	while (P.NextToCreate < P.Items.Num())
+	{
+		FDoomPicturePrefetch::FItem& Item = P.Items[P.NextToCreate++];
+		if (Item.Pic.IsValid())
+		{
+			CreateTextures(*Item.Pic, Item.Mips, true);
+			Item.Mips = FDoomPictureMips();
+		}
+		if (FPlatformTime::Seconds() > Deadline)
+		{
+			break;
+		}
+	}
+	return P.NextToCreate >= P.Items.Num();
 }
 
 UTexture2D* FDoomGraphics::ColormappedPicture(const FDoomPicture& Pic, int32 Row, int32 Palette)
@@ -602,13 +644,26 @@ const FDoomPicture* FDoomGraphics::Texture(FName Name)
 	{
 		return Cached->Get();
 	}
-	const FTexDef* Def = TexDefs.Find(Name);
-	if (!Def || Def->Width <= 0 || Def->Height <= 0)
+	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
+	if (!ComposeTexture(Name, *Pic))
 	{
 		TextureCache.Add(Name, nullptr);
 		return nullptr;
 	}
-	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
+	Upload(*Pic, true, true);
+	const FDoomPicture* Result = Pic.Get();
+	TextureCache.Add(Name, MoveTemp(Pic));
+	return Result;
+}
+
+bool FDoomGraphics::ComposeTexture(FName Name, FDoomPicture& Out) const
+{
+	const FTexDef* Def = TexDefs.Find(Name);
+	if (!Def || Def->Width <= 0 || Def->Height <= 0)
+	{
+		return false;
+	}
+	FDoomPicture* Pic = &Out;
 	Pic->Name = Name;
 	Pic->Width = Def->Width;
 	Pic->Height = Def->Height;
@@ -643,10 +698,7 @@ const FDoomPicture* FDoomGraphics::Texture(FName Name)
 		}
 	}
 	Pic->bMasked = Pic->Indices.Contains(-1);
-	Upload(*Pic, true, true);
-	const FDoomPicture* Result = Pic.Get();
-	TextureCache.Add(Name, MoveTemp(Pic));
-	return Result;
+	return true;
 }
 
 int32 FDoomGraphics::TextureHeight(FName Name)
@@ -665,25 +717,34 @@ const FDoomPicture* FDoomGraphics::Flat(FName Name)
 	{
 		return Cached->Get();
 	}
-	const int32* Lump = FlatLumps.Find(Name);
-	if (!Lump)
+	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
+	if (!ComposeFlat(Name, *Pic))
 	{
 		FlatCache.Add(Name, nullptr);
 		return nullptr;
-	}
-	TConstArrayView<uint8> D = Wad.LumpData(*Lump);
-	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
-	Pic->Name = Name;
-	Pic->Width = Pic->Height = 64;
-	Pic->Indices.SetNum(4096);
-	for (int32 i = 0; i < 4096; ++i)
-	{
-		Pic->Indices[i] = i < D.Num() ? D[i] : 0;
 	}
 	Upload(*Pic, true, true);
 	const FDoomPicture* Result = Pic.Get();
 	FlatCache.Add(Name, MoveTemp(Pic));
 	return Result;
+}
+
+bool FDoomGraphics::ComposeFlat(FName Name, FDoomPicture& Out) const
+{
+	const int32* Lump = FlatLumps.Find(Name);
+	if (!Lump)
+	{
+		return false;
+	}
+	TConstArrayView<uint8> D = Wad.LumpData(*Lump);
+	Out.Name = Name;
+	Out.Width = Out.Height = 64;
+	Out.Indices.SetNum(4096);
+	for (int32 i = 0; i < 4096; ++i)
+	{
+		Out.Indices[i] = i < D.Num() ? D[i] : 0;
+	}
+	return true;
 }
 
 const FDoomPicture* FDoomGraphics::Patch(const FString& LumpName)

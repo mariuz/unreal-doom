@@ -146,7 +146,7 @@ void UDoomWorld::FinishFinale()
 	if (FinaleStage == EFinaleStage::Text && !Flow().PendingMap.IsEmpty())
 	{
 		FinaleText.Reset();
-		LoadMap(Flow().PendingMap, false);
+		LoadMapAsync(Flow().PendingMap, false);
 		return;
 	}
 	if (FinaleStage == EFinaleStage::Text)

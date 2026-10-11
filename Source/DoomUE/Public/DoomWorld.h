@@ -161,6 +161,18 @@ public:
 
 	/** Loads a map and places the player. Inventory carries over unless bPistolStart. */
 	bool LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame = false);
+	/**
+	 * Starts loading a map behind the loading screen and returns at once. The map's pictures are
+	 * decoded and its geometry generated on worker threads, and the game thread creates textures
+	 * and commits mesh chunks a few milliseconds per frame (ADoomGameMode::Tick calls StepLoad).
+	 * LoadMap runs the same steps without returning in between.
+	 */
+	bool LoadMapAsync(const FString& MapName, bool bPistolStart);
+	bool IsLoadingMap() const { return PendingLoad.IsValid(); }
+	/** Advances a pending load until Deadline (FPlatformTime::Seconds); true once the map is playing. */
+	bool StepLoad(double Deadline);
+	/** 0..1, for the loading screen. */
+	float LoadingProgress() const;
 
 	// --- save games (DoomSave.cpp) ------------------------------------------------------------
 	/** Slot 0 = quicksave, 1..6 = menu slots. */
@@ -329,6 +341,10 @@ private:
 	TUniquePtr<FDoomGraphics> Gfx;
 	TUniquePtr<FDoomSound> Sound;
 	TUniquePtr<FDoomMap> Map;
+	/** The map load in progress (LoadMapAsync), or null. */
+	TSharedPtr<struct FDoomMapLoad> PendingLoad;
+	bool BeginLoad(const FString& MapName, bool bPistolStart, bool bForSaveGame);
+	void FinishLoad(const struct FDoomMapLoad& Load);
 
 	UPROPERTY()
 	TObjectPtr<ADoomLevel> Level;

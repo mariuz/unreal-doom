@@ -12,6 +12,7 @@
 #include "Engine/StaticMesh.h"
 #include "StaticMeshAttributes.h"
 #include "Misc/Crc.h"
+#include "Async/ParallelFor.h"
 #if WITH_EDITOR
 #include "StaticMeshCompiler.h"
 #endif
@@ -64,6 +65,21 @@ UProceduralMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool
 }
 
 void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bInModern, FName SkyTexture)
+{
+	// the map's pictures first (decoded in parallel), so generating the chunks in parallel only reads the caches
+	TSharedRef<FDoomPicturePrefetch> Pictures = InGfx.CollectPrefetch(InMap);
+	InGfx.DecodePrefetch(*Pictures);
+	InGfx.CachePrefetch(*Pictures);
+	InGfx.CreatePrefetchTextures(*Pictures, MAX_dbl);
+	BeginBuild(InMap, InGfx, MovableSectors, bInModern, SkyTexture);
+	TArray<FChunkSections> Sections;
+	GenerateChunks(Sections);
+	int32 Next = 0;
+	CommitChunks(Sections, Next, MAX_dbl);
+	FinishBuild();
+}
+
+void ADoomLevel::BeginBuild(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>& MovableSectors, bool bInModern, FName SkyTexture)
 {
 	Map = &InMap;
 	Gfx = &InGfx;
@@ -147,7 +163,35 @@ void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>&
 		Chunks[i].NonSolid = NewMeshComponent(FString::Printf(TEXT("Chunk%d_Masked"), i), false);
 		Chunks[i].bDirty = true;
 	}
-	Flush();
+}
+
+void ADoomLevel::GenerateChunks(TArray<FChunkSections>& Out) const
+{
+	Out.SetNum(Chunks.Num());
+	ParallelFor(Chunks.Num(), [this, &Out](int32 i)
+	{
+		Generate(Chunks[i], Out[i].Solid, Out[i].NonSolid);
+	});
+}
+
+bool ADoomLevel::CommitChunks(TArray<FChunkSections>& Sections, int32& Next, double Deadline)
+{
+	while (Next < Chunks.Num())
+	{
+		const int32 i = Next++;
+		Chunks[i].bDirty = false;
+		CommitChunk(i, Sections[i]);
+		Sections[i] = FChunkSections();
+		if (FPlatformTime::Seconds() > Deadline)
+		{
+			break;
+		}
+	}
+	return Next >= Chunks.Num();
+}
+
+void ADoomLevel::FinishBuild()
+{
 	BuildBlockingCollision();
 	for (FChunk& C : Chunks)
 	{
@@ -238,7 +282,7 @@ UMaterialInterface* ADoomLevel::MaterialForKey(FName Key)
 }
 
 void ADoomLevel::EmitQuad(FSectionData& S, const FVector2f& A, const FVector2f& B, float Bottom, float Top,
-	float U0, float U1, float TexTop, float TexW, float TexH, int32 Sector, float ContrastLight, float Kind)
+	float U0, float U1, float TexTop, float TexW, float TexH, int32 Sector, float ContrastLight, float Kind) const
 {
 	const int32 Base = S.V.Num();
 	const FVector2f D = B - A;
@@ -258,7 +302,7 @@ void ADoomLevel::EmitQuad(FSectionData& S, const FVector2f& A, const FVector2f& 
 	S.I.Append({ Base, Base + 1, Base + 2, Base, Base + 2, Base + 3 });
 }
 
-void ADoomLevel::EmitPlanes(int32 SectorIndex, TMap<FName, FSectionData>& Out)
+void ADoomLevel::EmitPlanes(int32 SectorIndex, TMap<FName, FSectionData>& Out) const
 {
 	const FDoomSector& Sec = Map->Sectors[SectorIndex];
 	for (int32 Pass = 0; Pass < 2; ++Pass)
@@ -305,7 +349,7 @@ void ADoomLevel::EmitPlanes(int32 SectorIndex, TMap<FName, FSectionData>& Out)
 	}
 }
 
-void ADoomLevel::EmitLine(int32 LineIndex, bool bDynamic, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid)
+void ADoomLevel::EmitLine(int32 LineIndex, bool bDynamic, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid) const
 {
 	const FDoomLine& L = Map->Lines[LineIndex];
 	const float Len = FVector2f::Distance(Map->V(L.V1), Map->V(L.V2));
@@ -390,7 +434,7 @@ void ADoomLevel::EmitLine(int32 LineIndex, bool bDynamic, TMap<FName, FSectionDa
 	}
 }
 
-void ADoomLevel::Generate(FChunk& Chunk, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid)
+void ADoomLevel::Generate(const FChunk& Chunk, TMap<FName, FSectionData>& OutSolid, TMap<FName, FSectionData>& OutNonSolid) const
 {
 	for (int32 Sec : Chunk.Sectors)
 	{
@@ -406,6 +450,17 @@ void ADoomLevel::Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FNam
 {
 	TArray<FProcMeshTangent> NoTangents;
 	TArray<FVector2D> Empty;
+	// The plugin recooks the whole component's collision on every section change, which made a
+	// 136-section chunk cook 136 times (most of a map's load time). Sections are created without
+	// collision while they change, then flagged together and cooked once at the end.
+	bool bCollisionChanged = false;
+	if (bCollision)
+	{
+		for (int32 i = 0; i < Comp->GetNumSections(); ++i)
+		{
+			Comp->GetProcMeshSection(i)->bEnableCollision = false;
+		}
+	}
 	// sections that disappeared
 	for (auto It = Sections.CreateIterator(); It; ++It)
 	{
@@ -413,6 +468,7 @@ void ADoomLevel::Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FNam
 		{
 			Comp->ClearMeshSection(It.Value());
 			Counts[It.Value()] = -1;
+			bCollisionChanged = true;
 		}
 	}
 	for (auto& Pair : Data)
@@ -443,9 +499,26 @@ void ADoomLevel::Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FNam
 			Counts.Add(-1);
 			Sections.Add(Pair.Key, Index);
 		}
-		Comp->CreateMeshSection_LinearColor(Index, D.V, D.I, D.N, D.UV0, D.UV1, Empty, Empty, D.C, NoTangents, bCollision, false);
+		Comp->CreateMeshSection_LinearColor(Index, D.V, D.I, D.N, D.UV0, D.UV1, Empty, Empty, D.C, NoTangents, false, false);
 		Comp->SetMaterial(Index, MaterialForKey(Pair.Key));
 		Counts[Index] = Signature;
+		bCollisionChanged = true;
+	}
+	if (bCollision)
+	{
+		int32 Last = INDEX_NONE;
+		for (int32 i = 0; i < Comp->GetNumSections(); ++i)
+		{
+			FProcMeshSection* S = Comp->GetProcMeshSection(i);
+			S->bEnableCollision = S->ProcIndexBuffer.Num() > 0;
+			Last = S->bEnableCollision ? i : Last;
+		}
+		if (bCollisionChanged && Last != INDEX_NONE)
+		{
+			// re-setting a section is the plugin's public way to recook the component's collision
+			const FProcMeshSection Copy = *Comp->GetProcMeshSection(Last);
+			Comp->SetProcMeshSection(Last, Copy);
+		}
 	}
 }
 
@@ -478,33 +551,41 @@ void ADoomLevel::Flush()
 			continue;
 		}
 		C.bDirty = false;
-		TMap<FName, FSectionData> Solid, NonSolid;
-		Generate(C, Solid, NonSolid);
-		Commit(C, C.Solid, C.SolidSections, C.SolidCounts, Solid, true);
-		Commit(C, C.NonSolid, C.NonSolidSections, C.NonSolidCounts, NonSolid, false);
-		if (i == 0 && bModern && !bEditorPreview)
+		FChunkSections Sections;
+		Generate(C, Sections.Solid, Sections.NonSolid);
+		CommitChunk(i, Sections);
+	}
+}
+
+void ADoomLevel::CommitChunk(int32 i, FChunkSections& Sections)
+{
+	FChunk& C = Chunks[i];
+	TMap<FName, FSectionData>& Solid = Sections.Solid;
+	TMap<FName, FSectionData>& NonSolid = Sections.NonSolid;
+	Commit(C, C.Solid, C.SolidSections, C.SolidCounts, Solid, true);
+	Commit(C, C.NonSolid, C.NonSolidSections, C.NonSolidCounts, NonSolid, false);
+	if (i == 0 && bModern && !bEditorPreview)
+	{
+		// The static chunk only changes on rare texture swaps; loading a save marks it dirty
+		// without changing anything, so rebake only when the geometry really differs.
+		const uint32 Sig = Signature(Solid, NonSolid);
+		if (Sig != BakedSignature)
 		{
-			// The static chunk only changes on rare texture swaps; loading a save marks it dirty
-			// without changing anything, so rebake only when the geometry really differs.
-			const uint32 Sig = Signature(Solid, NonSolid);
-			if (Sig != BakedSignature)
+			int32 Verts = 0;
+			for (const auto& P : Solid) Verts += P.Value.V.Num();
+			for (const auto& P : NonSolid) Verts += P.Value.V.Num();
+			UE_LOG(LogDoom, Log, TEXT("Static chunk: %d + %d sections, %d vertices, signature %08x"), Solid.Num(), NonSolid.Num(), Verts, Sig);
+			// an imported level's saved tiles (the only way in packaged builds), else bake now
+			TArray<UStaticMesh*> Saved;
+			if (FindSavedTiles(Sig, Saved))
 			{
-				int32 Verts = 0;
-				for (const auto& P : Solid) Verts += P.Value.V.Num();
-				for (const auto& P : NonSolid) Verts += P.Value.V.Num();
-				UE_LOG(LogDoom, Log, TEXT("Static chunk: %d + %d sections, %d vertices, signature %08x"), Solid.Num(), NonSolid.Num(), Verts, Sig);
-				// an imported level's saved tiles (the only way in packaged builds), else bake now
-				TArray<UStaticMesh*> Saved;
-				if (FindSavedTiles(Sig, Saved))
-				{
-					ShowTiles(Saved, true);
-				}
-				else
-				{
-					BakeStaticChunk(Solid, NonSolid);
-				}
-				BakedSignature = Sig;
+				ShowTiles(Saved, true);
 			}
+			else
+			{
+				BakeStaticChunk(Solid, NonSolid);
+			}
+			BakedSignature = Sig;
 		}
 	}
 }

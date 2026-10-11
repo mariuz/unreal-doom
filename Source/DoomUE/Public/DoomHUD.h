@@ -38,6 +38,8 @@ private:
 	void DrawMenu();
 	void DrawThermo(float X, float Y, int32 Width, int32 Value);
 	void DrawIntermission();
+	/** While a map loads in the background (UDoomWorld::LoadMapAsync). */
+	void DrawLoading();
 	void DrawFinale();
 	void Rect(float X, float Y, float W, float H, FLinearColor C);
 

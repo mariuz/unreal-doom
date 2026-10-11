@@ -37,6 +37,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Tasks/Task.h"
 
 // ------------------------------------------------------------------------------------------------
 // Linedef special table (vanilla Doom numbers)
@@ -237,7 +238,7 @@ void UDoomWorld::StartNewGame(const FString& MapName, int32 InSkill)
 		return;
 	}
 	Skill = FMath::Clamp(InSkill, 1, 5);
-	LoadMap(MapName, true);
+	LoadMapAsync(MapName, true);
 }
 
 void UDoomWorld::SetModern(bool b)
@@ -256,8 +257,28 @@ void UDoomWorld::SetModern(bool b)
 // Map loading
 // ------------------------------------------------------------------------------------------------
 
+// A map load in steps (LoadMapAsync / StepLoad); LoadMap runs it without returning in between.
+struct FDoomMapLoad
+{
+	enum class EStage : uint8 { Pictures, Geometry, Commit };
+	EStage Stage = EStage::Pictures;
+	bool bPistolStart = false;
+	bool bForSaveGame = false;
+	FName Sky;
+	TSharedPtr<FDoomPicturePrefetch> Pictures;
+	TArray<ADoomLevel::FChunkSections> Sections;
+	UE::Tasks::FTask Task;
+	int32 NextChunk = 0;
+	double StartTime = 0, PicturesTime = 0, GeometryTime = 0;
+};
+
 void UDoomWorld::UnloadMap()
 {
+	if (PendingLoad.IsValid())
+	{
+		PendingLoad->Task.Wait(); // a worker may still be reading the map
+		PendingLoad.Reset();
+	}
 	for (TWeakObjectPtr<ADoomThing>& T : Things) if (T.IsValid()) T->Destroy();
 	for (TWeakObjectPtr<ADoomMonster>& M : Monsters) if (M.IsValid()) M->Destroy();
 	for (TWeakObjectPtr<ADoomProjectile>& P : Projectiles) if (P.IsValid()) P->Destroy();
@@ -290,6 +311,22 @@ void UDoomWorld::UnloadMap()
 
 bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame)
 {
+	if (!BeginLoad(MapName, bPistolStart, bForSaveGame))
+	{
+		return false;
+	}
+	StepLoad(MAX_dbl);
+	return true;
+}
+
+bool UDoomWorld::LoadMapAsync(const FString& MapName, bool bPistolStart)
+{
+	return BeginLoad(MapName, bPistolStart, false);
+}
+
+bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForSaveGame)
+{
+	const double StartTime = FPlatformTime::Seconds();
 	if (!Wad.IsValid() && !InitWads())
 	{
 		return false;
@@ -337,9 +374,93 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	Level = GetWorld()->SpawnActor<ADoomLevel>(ADoomLevel::StaticClass(), FTransform::Identity, SP);
 	const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
-	const FName Sky = (Info && !Info->Sky.IsEmpty()) ? FName(*Info->Sky) : FDoomGraphics::SkyTextureFor(Flow().CurrentMap);
-	Level->Build(*Map, *Gfx, Movable, bModern, Sky);
-	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *Flow().CurrentMap, *LevelTitle(Flow().CurrentMap), *Sky.ToString());
+
+	PendingLoad = MakeShared<FDoomMapLoad>();
+	FDoomMapLoad& L = *PendingLoad;
+	L.bPistolStart = bPistolStart;
+	L.bForSaveGame = bForSaveGame;
+	L.StartTime = StartTime;
+	L.Sky = (Info && !Info->Sky.IsEmpty()) ? FName(*Info->Sky) : FDoomGraphics::SkyTextureFor(Flow().CurrentMap);
+	// the map's wall textures and flats decode on worker threads while the chunks are laid out
+	L.Pictures = Gfx->CollectPrefetch(*Map);
+	L.Task = UE::Tasks::Launch(UE_SOURCE_LOCATION, [G = Gfx.Get(), P = L.Pictures]() { G->DecodePrefetch(*P); });
+	Level->BeginBuild(*Map, *Gfx, Movable, bModern, L.Sky);
+	return true;
+}
+
+bool UDoomWorld::StepLoad(double Deadline)
+{
+	if (!PendingLoad.IsValid())
+	{
+		return true;
+	}
+	FDoomMapLoad& L = *PendingLoad;
+	const bool bBlock = Deadline >= MAX_dbl;
+	if (L.Stage == FDoomMapLoad::EStage::Pictures)
+	{
+		if (!L.Task.IsCompleted())
+		{
+			if (!bBlock) return false;
+			L.Task.Wait();
+		}
+		// cached before the geometry starts, so its picture lookups on workers are read-only
+		Gfx->CachePrefetch(*L.Pictures);
+		L.PicturesTime = FPlatformTime::Seconds() - L.StartTime;
+		L.Task = UE::Tasks::Launch(UE_SOURCE_LOCATION, [Lv = Level.Get(), Out = &L.Sections]() { Lv->GenerateChunks(*Out); });
+		L.Stage = FDoomMapLoad::EStage::Geometry;
+	}
+	if (L.Stage == FDoomMapLoad::EStage::Geometry)
+	{
+		// GPU textures on the game thread while the workers generate the geometry
+		if (!Gfx->CreatePrefetchTextures(*L.Pictures, Deadline))
+		{
+			return false;
+		}
+		if (!L.Task.IsCompleted())
+		{
+			if (!bBlock) return false;
+			L.Task.Wait();
+		}
+		L.GeometryTime = FPlatformTime::Seconds() - L.StartTime;
+		L.Stage = FDoomMapLoad::EStage::Commit;
+		if (FPlatformTime::Seconds() > Deadline)
+		{
+			return false;
+		}
+	}
+	if (!Level->CommitChunks(L.Sections, L.NextChunk, Deadline))
+	{
+		return false;
+	}
+	Level->FinishBuild();
+	const TSharedPtr<FDoomMapLoad> Done = MoveTemp(PendingLoad);
+	FinishLoad(*Done);
+	return true;
+}
+
+float UDoomWorld::LoadingProgress() const
+{
+	if (!PendingLoad.IsValid())
+	{
+		return 1.f;
+	}
+	const FDoomMapLoad& L = *PendingLoad;
+	switch (L.Stage)
+	{
+	case FDoomMapLoad::EStage::Pictures:
+		return 0.1f;
+	case FDoomMapLoad::EStage::Geometry:
+		return 0.2f + 0.4f * L.Pictures->NextToCreate / FMath::Max(1, L.Pictures->Items.Num());
+	default:
+		return 0.6f + 0.4f * L.NextChunk / FMath::Max(1, Level ? Level->NumChunks() : 1);
+	}
+}
+
+void UDoomWorld::FinishLoad(const FDoomMapLoad& L)
+{
+	const bool bPistolStart = L.bPistolStart, bForSaveGame = L.bForSaveGame;
+	const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
+	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *Flow().CurrentMap, *LevelTitle(Flow().CurrentMap), *L.Sky.ToString());
 
 	SetupEnvironment();
 	BaselineSectors = Map->Sectors;
@@ -370,7 +491,8 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	}
 	ShowMessage(LevelTitle(Flow().CurrentMap));
 	PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(Flow().CurrentMap));
-	return true;
+	UE_LOG(LogDoom, Log, TEXT("Loaded %s in %.0f ms: %d pictures decoded by %.0f ms, geometry generated by %.0f ms"),
+		*Flow().CurrentMap, (FPlatformTime::Seconds() - L.StartTime) * 1000, L.Pictures->Items.Num(), L.PicturesTime * 1000, L.GeometryTime * 1000);
 }
 
 void UDoomWorld::ComputeMovableSectors(const FDoomMap& InMap, TSet<int32>& Out)

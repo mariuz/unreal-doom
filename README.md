@@ -142,7 +142,7 @@ Maps played straight from the WAD (`-warp`) draw the procedural geometry.
 | `"/Engine/Maps/Entry?listen"` / `127.0.0.1` | host a network game (listen server) / join one; see [docs/Multiplayer.md](docs/Multiplayer.md) |
 | `-deathmatch` | deathmatch rules for a network game (deathmatch starts, weapons stay, no keys, frags) |
 | `-nettest` | on a listen server and a client: the scripted two-process network test (logs `NetFingerprint`, screenshots) |
-| `-exittest` | with `-warp`: kill two monsters as the player, exit, wait in the intermission, continue; checks the level totals, the player state's credit and the inventory carried into the next map (PASS/FAIL) |
+| `-exittest` | with `-warp`: kill two monsters as the player, exit, wait in the intermission, continue; checks the level totals, the player state's credit and the inventory carried into the next map, which loads in the background (PASS/FAIL, then quits) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
@@ -157,7 +157,8 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 ## Documentation
 
 * [docs/Architecture.md](docs/Architecture.md): how the port uses Unreal's gameplay framework
-  (game mode, game state, player state, world subsystem), the 35 Hz clock, credit and saves.
+  (game mode, game state, player state, world subsystem), the 35 Hz clock, credit, saves, and
+  map loading on worker threads.
 * [docs/Multiplayer.md](docs/Multiplayer.md): co-op and deathmatch for up to 4 players: how to
   host and join, the rules, what replicates, and the two-process `-nettest`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
@@ -304,6 +305,14 @@ the first load of a map (the engine shows "Preparing Mesh Distance Fields"); lat
 from the derived data cache. `-fxtest` captures show the five Niagara bursts. The `-autotest`
 log line reports the tile and burst counts.
 
+Map loading: E1M1's level build went from 1.35 s to about 0.2 s (classic) and 0.3 s (modern, with
+the tile bake). Most of the old time was the procedural mesh recooking collision once per section;
+it now cooks once per chunk. The map's 170 pictures decode and the 23 chunks generate on worker
+threads. `-exittest` now also checks that E1M2 loads in the background behind the "Entering" screen
+(about 0.5 s while the screen keeps drawing), and saves `exittest_loading.png`. `-savetest`,
+`-edittest`, the Lyra export and the classic and modern captures give the same results as before.
+A `-steptest` from E1M1's start walks the floors, steps down into the next room and stops at a wall.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -318,7 +327,6 @@ Not done yet (roughly in priority order):
    * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
    * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
-   * **Asynchronous loading**: build the level geometry and textures on worker threads (`UE::Tasks`) with a loading screen instead of on the game thread at map load.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for baked tiles once they are saved assets.

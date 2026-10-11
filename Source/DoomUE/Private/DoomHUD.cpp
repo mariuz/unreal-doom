@@ -138,6 +138,11 @@ void ADoomHUD::DrawHUD()
 	OX = (Canvas->ClipX - 320.f * SX) * 0.5f;
 	OY = 0;
 
+	if (W->IsLoadingMap())
+	{
+		DrawLoading();
+		return;
+	}
 	switch (W->GetState())
 	{
 	case EDoomGameState::Title:
@@ -620,6 +625,35 @@ void ADoomHUD::DrawMenu()
 	// the blinking skull, 32 pixels left of the selected row
 	const bool bBlink = (int32)(GetWorld()->GetRealTimeSeconds() * Doom::TicRate / 8) & 1;
 	DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + M.Item * 16, true);
+}
+
+void ADoomHUD::DrawLoading()
+{
+	// the intermission's "entering" screen, with a progress bar while the map loads
+	UDoomWorld* W = DW();
+	const bool bDoom2 = W->GetWad() && W->GetWad()->IsDoom2();
+	const FString& M = W->GetMapName();
+	if (W->GetGraphics()->Patch(TEXT("INTERPIC")) && (bDoom2 || !W->GetGraphics()->Patch(TEXT("WIMAP0"))))
+	{
+		DrawFullscreenPic(TEXT("INTERPIC"));
+	}
+	else
+	{
+		DrawFullscreenPic(FString::Printf(TEXT("WIMAP%d"), M.Len() > 1 ? FMath::Clamp(M[1] - '1', 0, 2) : 0));
+	}
+	if (const FDoomPicture* Entering = W->GetGraphics()->Patch(TEXT("WIENTER")))
+	{
+		DrawPatch(Entering, 160 - Entering->Width / 2, 4, false);
+	}
+	else
+	{
+		DrawText(TEXT("ENTERING"), 160 - TextWidth(TEXT("ENTERING")) / 2, 4, 1.f);
+	}
+	const FString Title = W->LevelTitle(M);
+	DrawText(Title, 160 - TextWidth(Title) / 2, 22, 1.f);
+	const float Progress = FMath::Clamp(W->LoadingProgress(), 0.f, 1.f);
+	Rect(80, 184, 160, 6, FLinearColor(0.05f, 0.05f, 0.05f, 0.85f));
+	Rect(81, 185, 158 * Progress, 4, FLinearColor(0.75f, 0.08f, 0.05f, 1.f));
 }
 
 void ADoomHUD::DrawIntermission()
