@@ -10,6 +10,11 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "DoomPlayer.h"
+#include "UnrealClient.h"
+#include "TimerManager.h"
+#include "Misc/Paths.h"
+#include "Misc/CommandLine.h"
 
 namespace
 {
@@ -155,6 +160,10 @@ void ADoomPlayerController::BeginPlay()
 	SetInputMode(FInputModeGameOnly());
 	bShowMouseCursor = false;
 	ApplyContexts();
+	if (IsLocalController() && GetNetMode() == NM_Client && FParse::Param(FCommandLine::Get(), TEXT("nettest")))
+	{
+		RunClientNetTest();
+	}
 }
 
 void ADoomPlayerController::SetupInputComponent()
@@ -265,8 +274,15 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 	case EDoomGameState::Intermission:
 		if (W->Flow().IntermissionTic > Doom::TicRate)
 		{
-			W->PlaySound(TEXT("BAREXP"), nullptr);
-			W->FinishIntermission();
+			W->PlaySoundLocal(TEXT("BAREXP"), nullptr);
+			if (HasAuthority())
+			{
+				W->FinishIntermission();
+			}
+			else
+			{
+				ServerFinishIntermission(); // any player may go on, as in Doom
+			}
 		}
 		break;
 	default:
@@ -312,4 +328,70 @@ void ADoomPlayerController::OpenMenuPage(int32 Page)
 	{
 		W->Menu.Open(*W, (EMenuPage)Page);
 	}
+}
+
+void ADoomPlayerController::ServerFinishIntermission_Implementation()
+{
+	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+	if (W && W->GetState() == EDoomGameState::Intermission && W->Flow().IntermissionTic > Doom::TicRate)
+	{
+		W->FinishIntermission();
+	}
+}
+
+void ADoomPlayerController::RunClientNetTest()
+{
+	// -nettest on a client: log what arrived from the server, fire through the server RPC, and take
+	// screenshots of the other player and of the intermission
+	TSharedRef<float> Clock = MakeShared<float>(0.f);
+	FTimerHandle T;
+	TWeakObjectPtr<ADoomPlayerController> Weak(this);
+	GetWorldTimerManager().SetTimer(T, [Weak, Clock]()
+	{
+		ADoomPlayerController* Self = Weak.Get();
+		if (!Self || !Self->GetWorld())
+		{
+			return; // the connection went away and took this controller with it
+		}
+		UDoomWorld* W = Self->GetWorld()->GetSubsystem<UDoomWorld>();
+		if (!W || !W->GetMap())
+		{
+			return; // still joining
+		}
+		*Clock += 0.5f;
+		const float Now = *Clock;
+		ADoomPlayer* Me = Cast<ADoomPlayer>(Self->GetPawn());
+		if (FMath::Fmod(Now, 1.f) < 0.01f)
+		{
+			UE_LOG(LogDoom, Display, TEXT("Nettest client t=%.0f: %s | me hp%d ammo%d"), Now, *W->NetFingerprint(),
+				Me ? Me->Inv().Health : -1, Me ? Me->Inv().Ammo[0] : -1);
+		}
+		if (Me && FMath::IsNearlyEqual(Now, 3.f)) Me->FirePressed(FInputActionValue(true));
+		if (Me && FMath::IsNearlyEqual(Now, 4.f)) Me->FireReleased(FInputActionValue(false));
+		// dead (deathmatch: the host fragged us): press use to be reborn at a start
+		if (Me && Me->IsDead() && FMath::IsNearlyEqual(Now, 4.5f)) Me->UsePressed(FInputActionValue(true));
+		if (FMath::IsNearlyEqual(Now, 8.5f) && Me)
+		{
+			for (ADoomPlayer* Other : W->GetPlayers())
+			{
+				if (Other != Me)
+				{
+					const FRotator Look = (Other->GetActorLocation() - Me->GetActorLocation()).Rotation();
+					Self->SetControlRotation(FRotator(0, Look.Yaw, 0));
+				}
+			}
+		}
+		if (FMath::IsNearlyEqual(Now, 9.f))
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("net_client_play.png"), true, false);
+		}
+		if (FMath::IsNearlyEqual(Now, 22.f))
+		{
+			FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("net_client_inter.png"), true, false);
+		}
+		if (FMath::IsNearlyEqual(Now, 30.f))
+		{
+			FPlatformMisc::RequestExit(false, TEXT("DoomNettest"));
+		}
+	}, 0.5f, true);
 }

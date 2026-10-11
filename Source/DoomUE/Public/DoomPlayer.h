@@ -11,6 +11,37 @@
 #include "DoomPlayer.generated.h"
 
 class UCameraComponent;
+class UDoomSpriteComponent;
+
+/** What the owning player's screen needs from the server-run weapon and powerup logic. */
+USTRUCT()
+struct FDoomPlayerView
+{
+	GENERATED_BODY()
+
+	UPROPERTY() FString WeaponSprite;
+	UPROPERTY() FString FlashSprite;
+	UPROPERTY() uint16 WeaponFrame = 'A';
+	UPROPERTY() uint16 FlashFrame = 0;
+	UPROPERTY() float WeaponY = 128.f;
+	UPROPERTY() float BobX = 0;
+	UPROPERTY() float BobY = 0;
+	UPROPERTY() float CameraZ = 0;
+	UPROPERTY() int32 Invulnerability = 0;
+	UPROPERTY() int32 Invisibility = 0;
+	UPROPERTY() int32 RadSuit = 0;
+	UPROPERTY() int32 LightAmp = 0;
+	UPROPERTY() int32 BerserkTics = 0;
+	UPROPERTY() int32 DamageCount = 0;
+	UPROPERTY() int32 BonusCount = 0;
+	UPROPERTY() int32 ExtraLight = 0;
+	UPROPERTY() int32 FaceDamageDir = 0;
+	UPROPERTY() int32 FaceEvilGrin = 0;
+	UPROPERTY() int32 AttackDown = 0;
+	UPROPERTY() int32 DeathTics = 0;
+	UPROPERTY() bool bBerserk = false;
+	UPROPERTY() bool bGodMode = false;
+};
 class UPointLightComponent;
 class UDoomWorld;
 class UDoomInputConfig;
@@ -72,12 +103,27 @@ public:
 	TObjectPtr<UCameraComponent> Camera;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> MuzzleLight;
+	/** The marine as other players see them (PLAY sprites); hidden from the owner's own view. */
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UDoomSpriteComponent> Body;
+
+	// --- networking ---------------------------------------------------------------------------
+	/** A message on this player's screen (pickups, locked doors, secrets). */
+	void Message(const FString& Text);
+	/** A sound this player makes: heard by them in 2D, by everyone else at their position. */
+	void PlaySelfSound(const FString& Name, float Volume = 1.f);
+	virtual void BeginPlay() override;
+	/** Level geometry is never a movement base: UDoomWorld carries bodies on lifts itself, and the
+	    level's runtime mesh components cannot be referenced over the network. */
+	virtual void SetBase(FMovementBaseInterfaceData* MovementBaseInterfaceData, const FName BoneName = NAME_None, bool bNotifyActor = true) override;
+	using ACharacter::SetBase;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// input handlers
 	void Move(const FInputActionValue& V);
 	void Look(const FInputActionValue& V);
-	void FirePressed(const FInputActionValue& V) { bFireHeld = !InputLocked(); }
-	void FireReleased(const FInputActionValue& V) { bFireHeld = false; }
+	void FirePressed(const FInputActionValue& V);
+	void FireReleased(const FInputActionValue& V);
 	void UsePressed(const FInputActionValue& V);
 	void RunPressed(const FInputActionValue& V) { bRunHeld = true; }
 	void RunReleased(const FInputActionValue& V) { bRunHeld = false; }
@@ -87,6 +133,31 @@ public:
 	bool InputLocked() const;
 
 private:
+	// input that only the server may act on
+	UFUNCTION(Server, Reliable)
+	void ServerSetFire(bool bHeld);
+	UFUNCTION(Server, Reliable)
+	void ServerUse();
+	UFUNCTION(Server, Reliable)
+	void ServerSelectSlot(int32 Slot);
+	UFUNCTION(Server, Reliable)
+	void ServerCycleWeapon(int32 Dir);
+	UFUNCTION(Client, Reliable)
+	void ClientShowMessage(const FString& Text);
+	UFUNCTION(Client, Unreliable)
+	void ClientPlaySound(const FString& Name, float Volume);
+	void UseLinesOrRespawn();
+	void SelectSlotNow(int32 Slot);
+	void CycleWeaponNow(int32 Dir);
+	/** Server: the weapon and powerup state the owner's HUD draws. */
+	UPROPERTY(ReplicatedUsing = OnRep_View)
+	FDoomPlayerView View;
+	UFUNCTION()
+	void OnRep_View();
+	void PublishView();
+	void AnimateBody();
+	FString BodySeq;
+
 	enum class EWeaponPhase : uint8 { Raising, Ready, Firing, Lowering };
 	void TicWeapon();
 	void StartFire();

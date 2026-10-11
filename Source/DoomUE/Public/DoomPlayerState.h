@@ -27,8 +27,8 @@ struct FDoomInventory
 	int32 Ammo[4] = { 50, 0, 0, 0 };
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
 	bool bBackpack = false;
-	// Weapons and keys are plain bool arrays (reflected properties cannot be bool arrays), so they are
-	// saved through Serialize but not replicated yet; co-op would send them as bit masks.
+	// Weapons and keys are plain bool arrays (reflected properties cannot be bool arrays); the
+	// custom NetSerialize below sends the whole inventory, with these packed into bit masks.
 	/** Owned weapons, indexed by EDoomWeapon. */
 	bool Weapons[(int32)EDoomWeapon::Count] = { true, true, false, false, false, false, false, false, false };
 	EDoomWeapon Ready = EDoomWeapon::Pistol;
@@ -37,6 +37,19 @@ struct FDoomInventory
 
 	void Reset() { *this = FDoomInventory(); }
 	void Serialize(FArchive& Ar);
+
+	/** Replication: everything, weapons and keys as bit masks. */
+	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
+	/** Replication compares whole inventories (the bool arrays are not reflected). */
+	bool operator==(const FDoomInventory& O) const;
+	uint16 WeaponMask() const;
+	uint8 KeyMask() const;
+};
+
+template<>
+struct TStructOpsTypeTraits<FDoomInventory> : public TStructOpsTypeTraitsBase2<FDoomInventory>
+{
+	enum { WithNetSerializer = true, WithIdenticalViaEquality = true };
 };
 
 UCLASS()
@@ -47,6 +60,10 @@ class DOOMUE_API ADoomPlayerState : public APlayerState
 public:
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
 	FDoomInventory Inv;
+
+	/** 0..3: which player start (and status bar colour) this player uses; set when they join. */
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
+	int32 PlayerNumber = 0;
 
 	/** This player's share of the level's counts (the intermission's per-player columns in co-op). */
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Doom")

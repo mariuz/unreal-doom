@@ -1,8 +1,10 @@
 #include "DoomMonster.h"
+#include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomPlayer.h"
 #include "DoomThing.h"
 #include "DoomLevel.h"
+#include "Interfaces/MovementBaseInterface.h"
 #include "DoomSpriteComponent.h"
 #include "DoomUE.h"
 #include "AIController.h"
@@ -65,10 +67,49 @@ ADoomMonster::ADoomMonster(const FObjectInitializer& ObjectInitializer)
 	Sprite->SetupAttachment(Cap);
 }
 
+void ADoomMonster::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ADoomMonster, NetType);
+	DOREPLIFETIME(ADoomMonster, bNetCorpse);
+}
+
+void ADoomMonster::SetBase(FMovementBaseInterfaceData* MovementBaseInterfaceData, const FName BoneName, bool bNotifyActor)
+{
+	const UActorComponent* Base = MovementBaseInterfaceData ? Cast<UActorComponent>(MovementBaseInterfaceData->PhysicsObjectOwner.Get()) : nullptr;
+	if (Base && Base->GetOwner() && Base->GetOwner()->IsA<ADoomLevel>())
+	{
+		MovementBaseInterfaceData = nullptr;
+	}
+	Super::SetBase(MovementBaseInterfaceData, BoneName, bNotifyActor);
+}
+
+void ADoomMonster::OnRep_NetType()
+{
+	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+	const FDoomThingDef* D = DoomInfo::FindThing(NetType);
+	if (W && D && W->EnsureWads())
+	{
+		InitMonster(W, D, Sprite->DoomAngle, false);
+	}
+}
+
+void ADoomMonster::OnRep_NetCorpse()
+{
+	if (bNetCorpse && Def)
+	{
+		MakeCorpse();
+	}
+}
+
 void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, float InDoomAngle, bool bInAmbush)
 {
 	DoomWorld = InWorld;
 	Def = InDef;
+	if (HasAuthority())
+	{
+		NetType = Def->DoomEdNum;
+	}
 	DoomAngle = InDoomAngle;
 	bAmbush = bInAmbush;
 	Health = Def->Health;
@@ -144,7 +185,7 @@ void ADoomMonster::StartState(EMonsterState S)
 void ADoomMonster::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (!Def || IsDead())
+	if (!Def || IsDead() || !HasAuthority())
 	{
 		return;
 	}
@@ -286,8 +327,8 @@ void ADoomMonster::WakeUp(AActor* NewTarget, bool bFromSound)
 
 void ADoomMonster::Look()
 {
-	ADoomPlayer* P = DoomWorld->GetPlayer();
-	if (!P || P->IsDead())
+	// P_LookForPlayers: any living player (all of them in a network game)
+	if (!DoomWorld->NearestPlayer(this, false))
 	{
 		return;
 	}
@@ -302,7 +343,9 @@ void ADoomMonster::Look()
 			return;
 		}
 	}
-	if (!DoomWorld->CheckSight(this, P))
+	// the nearest player in sight
+	ADoomPlayer* P = DoomWorld->NearestPlayer(this, true);
+	if (!P)
 	{
 		return;
 	}
@@ -555,8 +598,8 @@ void ADoomMonster::Chase()
 	if (!bTargetOk)
 	{
 		Target.Reset();
-		ADoomPlayer* P = DoomWorld->GetPlayer();
-		if (P && !P->IsDead() && DoomWorld->CheckSight(this, P))
+		ADoomPlayer* P = DoomWorld->NearestPlayer(this, true);
+		if (P)
 		{
 			Target = P;
 		}
@@ -855,6 +898,10 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 
 void ADoomMonster::MakeCorpse()
 {
+	if (HasAuthority())
+	{
+		bNetCorpse = true;
+	}
 	UCapsuleComponent* Cap = GetCapsuleComponent();
 	// corpses keep resting on the world but stop blocking bodies and bullets
 	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);

@@ -30,8 +30,13 @@ public:
 	FString NextMapName(bool bSecret) const;
 	/** Starts counting tics afresh (new map, loaded game). */
 	void ResetClock() { Accumulator = ScreenAccumulator = 0; }
-	/** The Entry map has no PlayerStart: spawn anywhere, LoadMap moves the marine to thing type 1. */
+	/** Spawns the marine; once a map is loaded, at the player's start (LoadMap places everyone else). */
 	virtual void RestartPlayer(AController* NewPlayer) override;
+	/** Numbers joining players 1 to 4 (their start and status bar colour). */
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+	/** Network games: a dead player is reborn at a start with a pistol while the level carries on. */
+	void RespawnPlayer(AController* Controller);
 
 	/** Console: DoomMap E1M2 */
 	UFUNCTION(Exec)

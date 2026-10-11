@@ -10,13 +10,22 @@
 //  * ADoomPlayerState  each player's inventory and their own kills, items, secrets and frags.
 //  * UDoomWorld      the simulation run once per tic: sectors, movers, lights, specials, monsters.
 //
-// The single-player game keeps one of each; co-op and deathmatch add player states, and the
-// replicated properties here are what clients would read.
+// Networking (listen server or dedicated server, up to 4 players): only the server simulates.
+// Clients build the map named by Flow, take the sectors and switch textures that changed from
+// the fast arrays below, receive monsters, things and missiles as replicated actors, and get
+// sounds and short effects through the multicasts.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "Net/Serialization/FastArraySerializer.h"
 #include "DoomGameState.generated.h"
+
+class ADoomGameState;
+class ADoomPlayerState;
+class FDoomMap;
+struct FDoomSector;
+struct FDoomSide;
 
 UENUM(BlueprintType)
 enum class EDoomGameState : uint8 { Title, Menu, Playing, Intermission, Finale };
@@ -55,6 +64,14 @@ struct FDoomLevelFlow
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
 	int32 IntermissionTic = 0;
 
+	/** Bumped by every map load, so clients rebuild (also on restarting the same map). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
+	int32 LevelSerial = 0;
+
+	/** Deathmatch rules: deathmatch starts, weapons stay, no keys. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
+	bool bDeathmatch = false;
+
 	/** The map the exit leads to (empty: end of the episode), and whether it was the secret exit. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
 	FString PendingMap;
@@ -71,14 +88,117 @@ struct FDoomLevelFlow
 	}
 };
 
+/** A sector whose planes, light, flats or special differ from the WAD's (server to clients). */
+USTRUCT()
+struct FDoomSectorNet : public FFastArraySerializerItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 LevelSerial = 0;
+	UPROPERTY() int32 Sector = -1;
+	UPROPERTY() float Floor = 0;
+	UPROPERTY() float Ceiling = 0;
+	UPROPERTY() int16 Light = 0;
+	UPROPERTY() int16 Special = 0;
+	UPROPERTY() FName FloorPic;
+	UPROPERTY() FName CeilingPic;
+
+	void PostReplicatedAdd(const struct FDoomSectorNetArray& Array);
+	void PostReplicatedChange(const struct FDoomSectorNetArray& Array);
+};
+
+USTRUCT()
+struct FDoomSectorNetArray : public FFastArraySerializer
+{
+	GENERATED_BODY()
+
+	UPROPERTY() TArray<FDoomSectorNet> Items;
+	UPROPERTY(NotReplicated) TObjectPtr<ADoomGameState> Owner;
+
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
+	{
+		return FFastArraySerializer::FastArrayDeltaSerialize<FDoomSectorNet, FDoomSectorNetArray>(Items, DeltaParms, *this);
+	}
+};
+
+template<>
+struct TStructOpsTypeTraits<FDoomSectorNetArray> : public TStructOpsTypeTraitsBase2<FDoomSectorNetArray>
+{
+	enum { WithNetDeltaSerializer = true };
+};
+
+/** A sidedef whose textures changed (switches, texture-changing specials). */
+USTRUCT()
+struct FDoomSideNet : public FFastArraySerializerItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 LevelSerial = 0;
+	UPROPERTY() int32 Side = -1;
+	UPROPERTY() FName Upper;
+	UPROPERTY() FName Middle;
+	UPROPERTY() FName Lower;
+
+	void PostReplicatedAdd(const struct FDoomSideNetArray& Array);
+	void PostReplicatedChange(const struct FDoomSideNetArray& Array);
+};
+
+USTRUCT()
+struct FDoomSideNetArray : public FFastArraySerializer
+{
+	GENERATED_BODY()
+
+	UPROPERTY() TArray<FDoomSideNet> Items;
+	UPROPERTY(NotReplicated) TObjectPtr<ADoomGameState> Owner;
+
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
+	{
+		return FFastArraySerializer::FastArrayDeltaSerialize<FDoomSideNet, FDoomSideNetArray>(Items, DeltaParms, *this);
+	}
+};
+
+template<>
+struct TStructOpsTypeTraits<FDoomSideNetArray> : public TStructOpsTypeTraitsBase2<FDoomSideNetArray>
+{
+	enum { WithNetDeltaSerializer = true };
+};
+
 UCLASS()
 class DOOMUE_API ADoomGameState : public AGameStateBase
 {
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
+	ADoomGameState();
+
+	UPROPERTY(ReplicatedUsing = OnRep_Flow, VisibleAnywhere, BlueprintReadOnly, Category = "Doom")
 	FDoomLevelFlow Flow;
 
+	UPROPERTY(Replicated)
+	FDoomSectorNetArray SectorNet;
+	UPROPERTY(Replicated)
+	FDoomSideNetArray SideNet;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	/** Server: publish the sectors and sides that differ from the level's start (after each tic). */
+	void PublishWorld(const FDoomMap& Map, const TArray<FDoomSector>& Baseline, const TArray<FDoomSide>& BaselineSides);
+	/** Server: forget the previous level's changes. */
+	void ResetWorldNet();
+
+	/** Server to the clients: sounds, sprite effects (puffs, blood, fog) and particle bursts. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastSound(const FString& Name, FVector_NetQuantize Location, bool bLocated, float Volume, APlayerState* Except);
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastEffect(const FString& Sprite, const FString& Frames, uint8 Tics, FVector_NetQuantize Location, bool bFullBright, bool bLoop);
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastParticles(uint8 Kind, FVector_NetQuantize Location, FVector_NetQuantizeNormal Up);
+
+	/** Players in player-number order (player 1 first), for scoreboards. */
+	TArray<ADoomPlayerState*> DoomPlayers() const;
+
+private:
+	UFUNCTION()
+	void OnRep_Flow();
+	TMap<int32, int32> SectorItem, SideItem; // server: sector / side -> item index
 };

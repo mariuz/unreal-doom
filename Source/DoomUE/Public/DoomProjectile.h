@@ -36,6 +36,13 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> Light;
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	/** Networking: the missile type; clients show it and follow the replicated movement. */
+	UPROPERTY(ReplicatedUsing = OnRep_NetType)
+	FString NetType;
+	UFUNCTION()
+	void OnRep_NetType();
+
 	const FDoomProjectileDef* Def = nullptr;
 	TWeakObjectPtr<AActor> Source;
 	TWeakObjectPtr<AActor> Tracer;
