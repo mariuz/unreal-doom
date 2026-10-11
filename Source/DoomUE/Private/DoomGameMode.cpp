@@ -9,6 +9,7 @@
 #include "DoomMusic.h"
 #include "DoomMonster.h"
 #include "DoomLevel.h"
+#include "DoomMapActors.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -56,6 +57,11 @@ void ADoomGameMode::StartPlay()
 		return;
 	}
 	FString Warp = GetDefault<UDoomSettings>()->StartMap;
+	// playing an imported map level starts its map (unless -warp says otherwise)
+	if (const ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld()))
+	{
+		Warp = MapActor->MapName;
+	}
 	FParse::Value(FCommandLine::Get(), TEXT("-warp="), Warp);
 	if (!Warp.IsEmpty())
 	{

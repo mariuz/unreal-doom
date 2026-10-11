@@ -10,6 +10,7 @@
 #include "DoomPlayer.h"
 #include "DoomSettings.h"
 #include "DoomAssets.h"
+#include "DoomMapActors.h"
 #include "DoomMusic.h"
 #include "DoomDehacked.h"
 #include "Misc/FileHelper.h"
@@ -291,6 +292,14 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 		return false;
 	}
 	CurrentMap = Map->Name;
+	// an imported Unreal level for this map brings its sector edits and thing markers
+	if (const ADoomMapActor* Edits = ADoomMapActor::Find(GetWorld()))
+	{
+		if (Edits->MapName.Equals(CurrentMap, ESearchCase::IgnoreCase))
+		{
+			Edits->ApplyEdits(*Map);
+		}
+	}
 	LevelTic = 0;
 	Accumulator = 0;
 	Kills = Items = Secrets = 0;

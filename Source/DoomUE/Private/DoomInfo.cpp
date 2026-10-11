@@ -295,6 +295,11 @@ const FDoomThingDef* DoomInfo::FindThingByName(const FString& Name)
 	return nullptr;
 }
 
+TConstArrayView<FDoomThingDef> DoomInfo::AllThings()
+{
+	return ThingTable();
+}
+
 FDoomProjectileDef* DoomInfo::MutableProjectile(const FString& Name)
 {
 	for (FDoomProjectileDef& D : ProjectileTable())

@@ -130,6 +130,33 @@ Esc opens Doom's menu (F1 help, F2 save, F3 load, F4 sound volume; Y / N answer 
 
 Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 
+## Editing maps in the Unreal editor
+
+Every WAD map can become a normal Unreal level that you edit with the usual tools and play
+with **Play**:
+
+1. **Doom > Open / Import Map** in the level editor's menu bar lists the WAD's maps. Picking
+   one saves it as `/Game/Doom/Maps/<MAP>.umap` the first time (later it just opens). Headless:
+   `-run=DoomContent -importmap=E1M1,E1M2` (or `all`; `-force` replaces existing levels).
+2. The level holds a **DoomMap** actor that draws the WAD geometry in the viewport (Doom's
+   palette lighting, or the lit materials with *Preview Modern*), and one **Doom Thing** marker
+   per thing, drawn with its own sprite and an arrow for its facing. The Outliner sorts them
+   into `Doom/Monsters`, `Doom/Items`, `Doom/Decorations` and `Doom/Starts`.
+3. Move, rotate, duplicate (Alt-drag) or delete markers. Pick a marker's **Thing Type** from
+   the list (or type a **DoomEdNum**) and set its **Skill** flags, **Ambush** or
+   **Multiplayer Only**. Markers snap their feet to the floor of the sector they stand in.
+4. To change a room, use **Add Sector Edit** on the DoomMap actor (it lands in the sector under
+   the viewport camera), or place a **Doom Sector Edit** actor yourself and move it into the room.
+   Tick the values to override: floor and ceiling height, light, floor and ceiling flats (from
+   the WAD's list), special, tag. **Read From Sector** fills in the WAD's values. The
+   preview rebuilds as you edit.
+5. **Play** starts that map. The game loads the WAD map, applies the sector edits and spawns
+   things from the markers (untick *Use Thing Markers* to use the WAD's THINGS lump again).
+   **Import Things** on the DoomMap actor resets the markers to the WAD's.
+
+The geometry itself (vertices, lines, textures) still comes from the WAD, so edit it in a
+Doom map editor; heights, lights, flats and everything placed in the map are editable here.
+
 ## Source layout
 
 ```
@@ -147,8 +174,10 @@ Source/DoomUE/            runtime module
   DoomWorld        UTickableWorldSubsystem: tic loop, movers, specials, lights, flow
   DoomSound        DMX -> procedural sound waves
   DoomHUD          status bar, weapon, automap, menu, intermission, title
+  DoomMapActors    editor-editable levels: DoomMap preview actor, thing markers, sector edits
   DoomPlayerController / DoomGameMode / DoomSettings / DoomAssets
-Source/DoomUEEditor/      editor module: material + MPC generation, -run=DoomContent
+Source/DoomUEEditor/      editor module: material, MPC and Niagara generation, map import,
+                          the Doom menu, -run=DoomContent
 ```
 
 ## Status
@@ -197,6 +226,13 @@ Screen palettes: `-forcepalette=4` (pain) and `-forcepalette=13` (radiation suit
 the world, sky, sprites, weapon and status bar all shifted through the WAD's own palettes. The
 first run after regenerating materials compiles shaders for several minutes; later runs are cached.
 
+Editable levels: `-run=DoomContent -importmap=E1M1` saves E1M1 with 292 thing markers;
+playing it spawns the same 180 things and 29 monsters, at the same positions, as the WAD's own
+lump. `-run=DoomContent -edittest=E1M1` opens the level as the editor does and builds the
+preview. It then raises the start sector's floor by 48 with a sector edit, turns an imp into a
+baron, and saves `/Game/Doom/Tests/E1M1_Edit` (PASS). Playing that level starts on the raised,
+fully lit floor, with the baron's extra health in the monster total.
+
 Modern renderer: E1M1's static chunk bakes into 18 static-mesh tiles in about 0.2 s at load. Their
 distance fields (126 voxels across, 40-65% occupied) build in the background, 5-30 s per tile on
 the first load of a map (the engine shows "Preparing Mesh Distance Fields"); later loads read them
@@ -212,4 +248,12 @@ cases, knockback strength, and HUD offsets.
 Not done yet (roughly in priority order):
 
 1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-2. Packaged (non-editor) builds: baking static meshes and their distance fields at runtime needs the editor's mesh builders, so a packaged game keeps the procedural meshes (no mesh distance fields).
+2. Packaged (non-editor) builds: baking static meshes and their distance fields at runtime needs the editor's mesh builders, so a packaged game keeps the procedural meshes (no mesh distance fields). Imported levels could instead save their baked tiles as assets.
+3. Unreal practices worth adopting next:
+   * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
+   * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.
+   * **Gameplay framework split**: move the player inventory to a `APlayerState` and the level flow (tics, kills, exits) from the world subsystem into `AGameState` / `AGameMode` hooks. That is the groundwork for multiplayer (co-op and deathmatch starts are already imported).
+   * **Asynchronous loading**: build the level geometry and textures on worker threads (`UE::Tasks`) with a loading screen instead of on the game thread at map load.
+   * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
+   * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
+   * **World Partition / level instances** for big PWAD maps, and **Nanite** for baked tiles once they are saved assets.

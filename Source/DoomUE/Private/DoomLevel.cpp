@@ -38,11 +38,13 @@ ADoomLevel::ADoomLevel()
 
 UProceduralMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool bCollision)
 {
-	UProceduralMeshComponent* C = NewObject<UProceduralMeshComponent>(this, FName(*Name));
+	// transient: generated from the WAD every time, never saved into a level asset; unique names
+	// because the editor preview rebuilds while the previous components await garbage collection
+	UProceduralMeshComponent* C = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), FName(*Name)), RF_Transient);
 	C->SetupAttachment(RootComponent);
 	// cooked synchronously while the level loads, so nothing spawns before the floor exists;
-	// moving chunks switch to async cooking afterwards (see Build)
-	C->bUseAsyncCooking = false;
+	// moving chunks switch to async cooking afterwards (see Build); the editor preview never waits
+	C->bUseAsyncCooking = bEditorPreview;
 	C->bUseComplexAsSimpleCollision = true;
 	C->SetCastShadow(bModern);
 	C->bAffectDistanceFieldLighting = true;
@@ -154,6 +156,27 @@ void ADoomLevel::Build(FDoomMap& InMap, FDoomGraphics& InGfx, const TSet<int32>&
 		}
 	}
 	UE_LOG(LogDoom, Log, TEXT("Level geometry: %d chunks, %d materials"), Chunks.Num(), Materials.Num());
+}
+
+void ADoomLevel::ClearGeometry()
+{
+	for (UProceduralMeshComponent* C : MeshComponents)
+	{
+		if (C) C->DestroyComponent();
+	}
+	for (UStaticMeshComponent* C : BakedComponents)
+	{
+		if (C) C->DestroyComponent();
+	}
+	MeshComponents.Reset();
+	BakedComponents.Reset();
+	BakedSignature = 0;
+	Chunks.Reset();
+	SectorChunks.Reset();
+	LineChunk.Reset();
+	Materials.Reset();
+	Map = nullptr;
+	Gfx = nullptr;
 }
 
 FName ADoomLevel::SectionKey(FName Texture, bool bFlat, bool bSky) const
@@ -458,7 +481,7 @@ void ADoomLevel::Flush()
 		Generate(C, Solid, NonSolid);
 		Commit(C, C.Solid, C.SolidSections, C.SolidCounts, Solid, true);
 		Commit(C, C.NonSolid, C.NonSolidSections, C.NonSolidCounts, NonSolid, false);
-		if (i == 0 && bModern)
+		if (i == 0 && bModern && !bEditorPreview)
 		{
 			// The static chunk only changes on rare texture swaps; loading a save marks it dirty
 			// without changing anything, so rebake only when the geometry really differs.
@@ -607,7 +630,7 @@ void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const T
 
 	for (UStaticMesh* Mesh : Meshes)
 	{
-		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(this);
+		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient);
 		C->SetupAttachment(RootComponent);
 		C->SetStaticMesh(Mesh);
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);

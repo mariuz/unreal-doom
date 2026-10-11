@@ -19,6 +19,11 @@
 #include "UObject/SavePackage.h"
 #include "Misc/PackageName.h"
 #include "NiagaraSystem.h"
+#include "DoomMapActors.h"
+#include "DoomWad.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "FileHelpers.h"
 #include "NiagaraEmitterHandle.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDoomContent, Log, All);
@@ -841,8 +846,153 @@ void DoomContent::DumpNiagara(const FString& Path)
 	}
 }
 
+// ---- Map import --------------------------------------------------------------------------------
+
+FString DoomContent::MapPackage(const FString& MapName)
+{
+	return FString(TEXT("/Game/Doom/Maps/")) + MapName.ToUpper();
+}
+
+bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
+{
+	const FString MapName = InMapName.ToUpper();
+	FDoomWad* Wad = DoomEditorData::Wad();
+	if (!Wad || !Wad->MapNames().Contains(MapName))
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Import: no map %s in the WAD"), *MapName);
+		return false;
+	}
+	const FString PkgName = MapPackage(MapName);
+	if (FPackageName::DoesPackageExist(PkgName) && !bOverwrite)
+	{
+		UE_LOG(LogDoomContent, Display, TEXT("Import: %s already exists (use -force to replace it)"), *PkgName);
+		return true;
+	}
+	if (FindPackage(nullptr, *PkgName))
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Import: %s is loaded; close it before replacing it"), *PkgName);
+		return false;
+	}
+	UPackage* Pkg = CreatePackage(*PkgName);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Inactive, false, FName(*MapName), Pkg);
+	World->SetFlags(RF_Public | RF_Standalone);
+
+	FActorSpawnParameters SP;
+	SP.Name = TEXT("DoomMap");
+	ADoomMapActor* MapActor = World->SpawnActor<ADoomMapActor>(ADoomMapActor::StaticClass(), FTransform::Identity, SP);
+	MapActor->MapName = MapName;
+	MapActor->SetActorLabel(FString::Printf(TEXT("DoomMap %s"), *MapName));
+	MapActor->SetFolderPath(TEXT("Doom"));
+	MapActor->ImportThings();
+
+	FAssetRegistryModule::AssetCreated(World);
+	Pkg->MarkPackageDirty();
+	const FString File = FPackageName::LongPackageNameToFilename(PkgName, FPackageName::GetMapPackageExtension());
+	FSavePackageArgs Args;
+	Args.TopLevelFlags = RF_Standalone;
+	Args.Error = GWarn;
+	const bool bOk = UPackage::SavePackage(Pkg, World, *File, Args);
+	int32 Markers = 0;
+	for (TActorIterator<ADoomThingMarker> It(World); It; ++It) ++Markers;
+	UE_LOG(LogDoomContent, Display, TEXT("Import: %s %s (%d thing markers)"), bOk ? TEXT("saved") : TEXT("FAILED to save"), *File, Markers);
+	World->DestroyWorld(false);
+	World->RemoveFromRoot();
+	return bOk;
+}
+
+// Editor round trip: open an imported level as the editor would, build the preview, edit a
+// sector and a marker, and save the result as /Game/Doom/Tests/<MAP>_Edit for -game checks.
+bool DoomContent::EditTest(const FString& InMapName)
+{
+	const FString MapName = InMapName.ToUpper();
+	if (!FPackageName::DoesPackageExist(MapPackage(MapName)) && !ImportMap(MapName, false))
+	{
+		return false;
+	}
+	UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(FPackageName::LongPackageNameToFilename(MapPackage(MapName), FPackageName::GetMapPackageExtension()));
+	ADoomMapActor* MapActor = ADoomMapActor::Find(World);
+	if (!MapActor)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Edittest: no map actor in %s"), *MapPackage(MapName));
+		return false;
+	}
+	MapActor->RebuildPreview();
+	const int32 PreviewComponents = MapActor->NumMeshComponents();
+	const FDoomMap* Map = MapActor->GetPreviewMap();
+	if (!Map || PreviewComponents == 0)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Edittest: the preview did not build"));
+		return false;
+	}
+	// raise the player start's sector by 48 and brighten it; turn the first imp into a baron
+	ADoomThingMarker* Start = nullptr;
+	ADoomThingMarker* Imp = nullptr;
+	int32 Markers = 0;
+	for (TActorIterator<ADoomThingMarker> It(World); It; ++It)
+	{
+		++Markers;
+		if (It->DoomEdNum == 1 && !Start) Start = *It;
+		if (It->DoomEdNum == 3001 && !Imp) Imp = *It;
+	}
+	if (!Start)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Edittest: no player start marker"));
+		return false;
+	}
+	const int32 Sec = MapActor->SectorAtLocation(Start->GetActorLocation());
+	const float OldFloor = Map->Sectors[Sec].Floor;
+	FActorSpawnParameters SP;
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ADoomSectorEdit* Edit = World->SpawnActor<ADoomSectorEdit>(ADoomSectorEdit::StaticClass(), FTransform(Start->GetActorLocation() + FVector(0, 0, 64)), SP);
+	Edit->ReadFromSector();
+	Edit->bFloor = true;
+	Edit->FloorHeight = OldFloor + 48.f;
+	Edit->bLight = true;
+	Edit->Light = 255;
+	Edit->SetActorLabel(TEXT("Raised start"));
+	Edit->SetFolderPath(TEXT("Doom/Sector Edits"));
+	if (Imp)
+	{
+		Imp->DoomEdNum = 3003;
+		Imp->ThingType = TEXT("Baron");
+	}
+	MapActor->RebuildPreview();
+	const float NewFloor = MapActor->GetPreviewMap()->Sectors[Sec].Floor;
+	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
+	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f, saved %s"),
+		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *TestPackage);
+	return bPass;
+}
+
 int32 UDoomContentCommandlet::Main(const FString& Params)
 {
+	FString EditMap;
+	if (FParse::Value(*Params, TEXT("-edittest="), EditMap))
+	{
+		return DoomContent::EditTest(EditMap) ? 0 : 1;
+	}
+	// -importmap=E1M1[,E1M2...] or -importmap=all: save WAD maps as editable levels
+	FString Import;
+	if (FParse::Value(*Params, TEXT("-importmap="), Import, false))
+	{
+		TArray<FString> Names;
+		if (Import.Equals(TEXT("all"), ESearchCase::IgnoreCase))
+		{
+			Names = DoomEditorData::MapNames();
+		}
+		else
+		{
+			Import.ParseIntoArray(Names, TEXT(","));
+		}
+		bool bOk = true;
+		for (const FString& N : Names)
+		{
+			bOk &= DoomContent::ImportMap(N, Params.Contains(TEXT("-force")));
+		}
+		return bOk ? 0 : 1;
+	}
 	FString Dump;
 	if (FParse::Value(*Params, TEXT("-dumpniagara="), Dump))
 	{

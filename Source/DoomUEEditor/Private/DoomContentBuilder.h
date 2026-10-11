@@ -12,7 +12,7 @@
  * particle bursts of the modern renderer (copies of an engine lightweight template).
  *
  * Runs automatically when the editor starts and the assets are missing, or:
- *   UnrealEditor-Cmd DoomUE.uproject -run=DoomContent [-force] [-effects | -materials]
+ *   UnrealEditor-Cmd DoomUE.uproject -run=DoomContent [-force] [-effects | -materials] [-importmap=E1M1,E1M2|all]
  */
 namespace DoomContent
 {
@@ -20,6 +20,11 @@ namespace DoomContent
 	bool Build(bool bForce, bool bMaterials = true, bool bEffects = true);
 	/** Logs a Niagara system's lightweight emitters and their module properties (-dumpniagara=Path). */
 	void DumpNiagara(const FString& Path);
+	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */
+	bool ImportMap(const FString& MapName, bool bOverwrite);
+	FString MapPackage(const FString& MapName);
+	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/<MAP>_Edit (-edittest=MAP). */
+	bool EditTest(const FString& MapName);
 }
 
 UCLASS()
