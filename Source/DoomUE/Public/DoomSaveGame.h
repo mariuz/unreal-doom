@@ -14,7 +14,7 @@ class DOOMUE_API UDoomSaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	static constexpr int32 CurrentVersion = 2; // 2: monster spawn spots for Nightmare respawning
+	static constexpr int32 CurrentVersion = 3; // 2: monster spawn spots for Nightmare respawning, 3: missiles in flight
 
 	UPROPERTY() int32 Version = CurrentVersion;
 	UPROPERTY() FString IWad;

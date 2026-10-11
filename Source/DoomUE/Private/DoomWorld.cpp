@@ -30,6 +30,8 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 // ------------------------------------------------------------------------------------------------
 // Linedef special table (vanilla Doom numbers)
@@ -211,6 +213,7 @@ bool UDoomWorld::InitWads()
 	bModern = Settings->bModernRenderer;
 	if (FParse::Param(FCommandLine::Get(), TEXT("modern"))) bModern = true;
 	if (FParse::Param(FCommandLine::Get(), TEXT("classic"))) bModern = false;
+	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
 	UE_LOG(LogDoom, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
 	return true;
 }
@@ -573,7 +576,31 @@ ADoomThing* UDoomWorld::SpawnEffect(const FString& SpriteName, const FString& Fr
 		T->InitEffect(this, SpriteName, Frames, Tics, bFullBright, bLoop);
 		RegisterThing(T);
 	}
+	// hit effects get particles too, sprayed back towards the viewer (who usually fired the shot);
+	// missile trail puffs ("BCD") stay plain
+	if (bModern && (SpriteName == TEXT("BLUD") || (SpriteName == TEXT("PUFF") && Frames == TEXT("ABCD")) || SpriteName == TEXT("BFE2")))
+	{
+		const ADoomPlayer* P = GetPlayer();
+		const FVector Back = P ? (P->GetActorLocation() - UEPos).GetSafeNormal() : FVector::UpVector;
+		const EDoomParticles Kind = SpriteName == TEXT("BLUD") ? EDoomParticles::Blood : SpriteName == TEXT("BFE2") ? EDoomParticles::BFG : EDoomParticles::Sparks;
+		SpawnParticles(Kind, UEPos, (Back + FVector(0, 0, 0.5f)).GetSafeNormal());
+	}
 	return T;
+}
+
+void UDoomWorld::SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up)
+{
+	if (!bModern || bNoParticles)
+	{
+		return;
+	}
+	if (UNiagaraSystem* Sys = DoomAssets::Particles(Kind))
+	{
+		// the bursts spray along the emitter's +Z
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Sys, UEPos, FRotationMatrix::MakeFromZ(Up).Rotator(), FVector::OneVector,
+			true, true, ENCPoolMethod::AutoRelease);
+		++ParticleBursts;
+	}
 }
 
 ADoomMonster* UDoomWorld::SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle)
@@ -604,7 +631,7 @@ ADoomMonster* UDoomWorld::SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, f
 	return M;
 }
 
-ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer)
+ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer, bool bSilent)
 {
 	const FDoomProjectileDef* Def = DoomInfo::FindProjectile(Type);
 	if (!Def)
@@ -620,7 +647,10 @@ ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source
 	{
 		P->InitProjectile(this, Def, Source, Direction.GetSafeNormal(), Tracer);
 		RegisterProjectile(P);
-		PlaySound(Def->FireSound, &From);
+		if (!bSilent)
+		{
+			PlaySound(Def->FireSound, &From);
+		}
 	}
 	return P;
 }

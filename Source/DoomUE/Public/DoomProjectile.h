@@ -24,6 +24,8 @@ public:
 
 	void InitProjectile(UDoomWorld* InWorld, const FDoomProjectileDef* InDef, AActor* InSource, const FVector& Direction, AActor* InTracer);
 	void DoomTic();
+	/** Save games: age, velocity (Nightmare speed, homing turns) and the sprite's animation. */
+	void DoomSerialize(FArchive& Ar);
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Sphere;

@@ -11,6 +11,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Serialization/MemoryWriter.h"
 #include "Serialization/MemoryReader.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -191,6 +192,55 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 		}
 		ThingList[i]->DoomSerialize(Ar);
 	}
+	// missiles in flight (exploding ones finish in a few tics and are dropped); shooter and
+	// homing target use the monster codes above
+	auto ActorCode = [&](AActor* A)
+	{
+		const int32 Index = MonsterList.IndexOfByKey(Cast<ADoomMonster>(A));
+		return !A ? 0 : A == GetPlayer() ? 1 : Index != INDEX_NONE ? 2 + Index : 0;
+	};
+	auto CodeActor = [&](int32 Code) -> AActor*
+	{
+		return Code == 1 ? Cast<AActor>(GetPlayer()) : (Code >= 2 && MonsterList.IsValidIndex(Code - 2)) ? MonsterList[Code - 2] : nullptr;
+	};
+	TArray<ADoomProjectile*> Missiles;
+	if (Ar.IsSaving())
+	{
+		for (const TWeakObjectPtr<ADoomProjectile>& P : Projectiles)
+		{
+			if (P.IsValid() && P->Def && !P->bExploded && !P->IsActorBeingDestroyed()) Missiles.Add(P.Get());
+		}
+	}
+	N = Missiles.Num();
+	Ar << N;
+	for (int32 i = 0; i < N; ++i)
+	{
+		FString Type;
+		FVector Where = FVector::ZeroVector, Dir = FVector::ForwardVector;
+		int32 SourceCode = 0, TracerCode = 0;
+		if (Ar.IsSaving())
+		{
+			ADoomProjectile* P = Missiles[i];
+			Type = P->Def->Name;
+			Where = P->GetActorLocation();
+			Dir = P->Movement->Velocity.GetSafeNormal(); // the actor reports no velocity before its first tick
+			SourceCode = ActorCode(P->Source.Get());
+			TracerCode = ActorCode(P->Tracer.Get());
+		}
+		Ar << Type << Where << Dir << SourceCode << TracerCode;
+		if (Ar.IsLoading())
+		{
+			ADoomProjectile* P = SpawnProjectile(Type, CodeActor(SourceCode), Where, Dir, CodeActor(TracerCode), true);
+			if (!P)
+			{
+				Ar.SetError();
+				return;
+			}
+			Missiles.Add(P);
+		}
+		Missiles[i]->DoomSerialize(Ar);
+	}
+
 	if (Ar.IsLoading())
 	{
 		TotalKills = SavedTotalKills;
@@ -316,6 +366,15 @@ FString UDoomWorld::StateFingerprint() const
 	{
 		if (T.IsValid() && !T->bEffect) ++NumThings;
 	}
+	int32 NumMissiles = 0;
+	FVector MissileSum = FVector::ZeroVector, MissileVel = FVector::ZeroVector;
+	for (const TWeakObjectPtr<ADoomProjectile>& P : Projectiles)
+	{
+		if (!P.IsValid() || P->bExploded) continue;
+		++NumMissiles;
+		MissileSum += P->GetActorLocation();
+		MissileVel += P->Movement->Velocity;
+	}
 	FString Player = TEXT("none");
 	if (const ADoomPlayer* P = GetPlayer())
 	{
@@ -323,9 +382,9 @@ FString UDoomWorld::StateFingerprint() const
 		Player = FString::Printf(TEXT("(%.0f,%.0f,%.0f) hp%d ar%d am%d/%d/%d/%d w%d"), F.X, F.Y, F.Z, P->Inv.Health, P->Inv.Armor,
 			P->Inv.Ammo[0], P->Inv.Ammo[1], P->Inv.Ammo[2], P->Inv.Ammo[3], (int32)P->Inv.Ready);
 	}
-	return FString::Printf(TEXT("tic%d planes%.1f light%d movers%d monsters%d/%d hp%d at(%.0f,%.0f,%.0f) things%d kills%d/%d items%d/%d player%s"),
+	return FString::Printf(TEXT("tic%d planes%.1f light%d movers%d monsters%d/%d hp%d at(%.0f,%.0f,%.0f) things%d kills%d/%d items%d/%d player%s missiles%d at(%.0f,%.0f,%.0f) v(%.0f,%.0f,%.0f)"),
 		LevelTic, Planes, Light, Movers.Num(), Alive, Dead, Health, MonsterSum.X, MonsterSum.Y, MonsterSum.Z, NumThings,
-		Kills, TotalKills, Items, TotalItems, *Player);
+		Kills, TotalKills, Items, TotalItems, *Player, NumMissiles, MissileSum.X, MissileSum.Y, MissileSum.Z, MissileVel.X, MissileVel.Y, MissileVel.Z);
 }
 
 void UDoomWorld::RunSaveTest()
@@ -354,6 +413,18 @@ void UDoomWorld::RunSaveTest()
 	{
 		P->Inv.Ammo[1] = 7; // make the inventory distinguishable from a fresh start
 		P->Inv.Weapons[(int32)EDoomWeapon::Shotgun] = true;
+		// missiles in flight: a rocket from the player, and a homing tracer from an awake monster
+		const FVector Eye = P->GetActorLocation() + FVector(0, 0, 20.f * Doom::Scale);
+		SpawnProjectile(TEXT("Rocket"), P, Eye, P->GetActorForwardVector(), nullptr, true);
+		for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
+		{
+			if (M.IsValid() && !M->IsDead() && M->Target.IsValid())
+			{
+				SpawnProjectile(TEXT("Tracer"), M.Get(), M->GetActorLocation(), (Eye - M->GetActorLocation()).GetSafeNormal(), P, true);
+				break;
+			}
+		}
+		for (int32 i = 0; i < 3; ++i) RunTic();
 	}
 	int32 Awake = 0;
 	for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)

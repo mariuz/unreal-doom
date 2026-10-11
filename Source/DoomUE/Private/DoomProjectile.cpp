@@ -63,7 +63,7 @@ void ADoomProjectile::InitProjectile(UDoomWorld* InWorld, const FDoomProjectileD
 		Sphere->IgnoreActorWhenMoving(InSource, true);
 	}
 	float Speed = Def->Speed;
-	if (DoomWorld->GetSkill() >= 5 && !InSource->IsA<ADoomPlayer>())
+	if (DoomWorld->GetSkill() >= 5 && InSource && !InSource->IsA<ADoomPlayer>())
 	{
 		Speed *= 1.6f; // nightmare's fast missiles
 	}
@@ -125,6 +125,18 @@ void ADoomProjectile::DoomTic()
 	}
 }
 
+void ADoomProjectile::DoomSerialize(FArchive& Ar)
+{
+	FVector Velocity = Movement->Velocity;
+	Ar << Age << Velocity;
+	if (Ar.IsLoading())
+	{
+		Movement->Velocity = Velocity;
+		Sprite->DoomAngle = FMath::RadiansToDegrees(FMath::Atan2(-Velocity.Y, Velocity.X));
+	}
+	Sprite->DoomSerialize(Ar);
+}
+
 void ADoomProjectile::OnStop(const FHitResult& Hit)
 {
 	if (bExploded)
@@ -148,6 +160,7 @@ void ADoomProjectile::OnStop(const FHitResult& Hit)
 void ADoomProjectile::Explode(AActor* HitActor)
 {
 	bExploded = true;
+	const FVector Incoming = Movement->Velocity;
 	Movement->StopMovementImmediately();
 	Movement->SetUpdatedComponent(nullptr);
 	Sphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -165,6 +178,10 @@ void ADoomProjectile::Explode(AActor* HitActor)
 		DoomWorld->RadiusAttack(this, Credit, L, Def->SplashDamage);
 	}
 	DoomWorld->PlaySound(Def->HitSound, &L);
+	// modern renderer: a particle burst coloured like the missile's light, away from what it hit
+	const FLinearColor& C = Def->Light;
+	const EDoomParticles Burst = (C.G > C.R && C.G > C.B) ? EDoomParticles::BFG : (C.B > C.R) ? EDoomParticles::Plasma : EDoomParticles::Explosion;
+	DoomWorld->SpawnParticles(Burst, L, (-Incoming).GetSafeNormal(1e-4f, FVector::UpVector));
 	Sprite->SetSpritePrefix(ExplosionSprite(Def->Sprite));
 	Sprite->PlaySequence(Def->Explode, FCString::Strcmp(Def->Name, TEXT("BFGBall")) == 0 ? 8 : 6, false, true);
 	if (Light)

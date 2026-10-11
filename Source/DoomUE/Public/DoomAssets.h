@@ -6,6 +6,18 @@
 
 class UMaterialInterface;
 class UMaterialParameterCollection;
+class UNiagaraSystem;
+
+/** Modern-renderer particle bursts (Niagara lightweight emitters, see DoomContentBuilder). */
+enum class EDoomParticles : uint8
+{
+	Sparks,     // bullet puffs
+	Blood,
+	Explosion,  // rockets, barrels, fireballs
+	Plasma,
+	BFG,
+	Count
+};
 
 namespace DoomAssets
 {
@@ -21,4 +33,6 @@ namespace DoomAssets
 	DOOMUE_API UMaterialInterface* SpriteMaterial();
 	DOOMUE_API UMaterialInterface* SpriteFuzzMaterial();
 	DOOMUE_API UMaterialParameterCollection* Collection();
+	DOOMUE_API const TCHAR* ParticlesPath(EDoomParticles Kind);
+	DOOMUE_API UNiagaraSystem* Particles(EDoomParticles Kind);
 }

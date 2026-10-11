@@ -13,6 +13,7 @@
 #include "DoomSound.h"
 #include "DoomMapInfo.h"
 #include "DoomMenu.h"
+#include "DoomAssets.h"
 #include "DoomWorld.generated.h"
 
 class ADoomLevel;
@@ -159,6 +160,8 @@ public:
 	int32 GetTic() const { return LevelTic; }
 	int32 GetSkill() const { return Skill; }
 	bool IsModern() const { return bModern; }
+	/** Niagara bursts spawned so far (tests). */
+	int32 GetParticleBursts() const { return ParticleBursts; }
 	EDoomGameState GetState() const { return State; }
 	void SetState(EDoomGameState S) { State = S; }
 	const FString& GetMapName() const { return CurrentMap; }
@@ -187,7 +190,9 @@ public:
 
 	ADoomThing* SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle, bool bDropped = false);
 	ADoomThing* SpawnEffect(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
-	ADoomProjectile* SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer = nullptr);
+	/** Modern renderer only: a Niagara burst on top of Doom's sprite effect, sprayed around Up. */
+	void SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up = FVector::UpVector);
+	ADoomProjectile* SpawnProjectile(const FString& Type, AActor* Source, const FVector& From, const FVector& Direction, AActor* Tracer = nullptr, bool bSilent = false);
 	ADoomMonster* SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 	void RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage);
 	bool CheckSight(const AActor* From, const AActor* To) const;
@@ -313,6 +318,8 @@ private:
 	FString CurrentMap;
 	int32 Skill = 3;
 	bool bModern = false;
+	bool bNoParticles = false; // -noparticles
+	int32 ParticleBursts = 0;
 	int32 LevelTic = 0;
 	double Accumulator = 0;
 	double ScreenAccumulator = 0;

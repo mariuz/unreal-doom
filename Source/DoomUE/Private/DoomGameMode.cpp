@@ -8,6 +8,7 @@
 #include "DoomUE.h"
 #include "DoomMusic.h"
 #include "DoomMonster.h"
+#include "DoomLevel.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -186,6 +187,28 @@ void ADoomGameMode::StartPlay()
 		}
 	}
 
+	// -fxtest: every particle burst in a row 200 units ahead, four times a second (modern renderer)
+	if (FParse::Param(FCommandLine::Get(), TEXT("fxtest")) && W->GetMap())
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W]()
+		{
+			const ADoomPlayer* P = W->GetPlayer();
+			if (!P)
+			{
+				return;
+			}
+			const FRotator View(0, P->GetControlRotation().Yaw, 0);
+			const FVector Fwd = View.Vector(), Right = FRotationMatrix(View).GetUnitAxis(EAxis::Y);
+			const int32 Kinds = (int32)EDoomParticles::Count;
+			for (int32 k = 0; k < Kinds; ++k)
+			{
+				const FVector Where = P->GetActorLocation() + Fwd * 200.f * Doom::Scale + Right * (k - (Kinds - 1) * 0.5f) * 50.f * Doom::Scale;
+				W->SpawnParticles((EDoomParticles)k, Where, -Fwd + FVector::UpVector * 0.5f);
+			}
+		}, 0.25f, true, 1.f);
+	}
+
 	// -steptest=x,y,angle,seconds[,sector]: place the player at Doom (x, y) facing angle, walk forward,
 	// log position / height (and that sector's floor) every 0.25 s; for movement and step checks
 	FString StepTest;
@@ -308,7 +331,8 @@ void ADoomGameMode::StartPlay()
 			{
 				const FString Name = FString::Printf(TEXT("autotest_%s.png"), W->GetMapName().IsEmpty() ? TEXT("title") : *W->GetMapName());
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / Name, true, false);
-				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d | %s"), *Name, W->Kills, W->TotalKills, W->Items, W->TotalItems, *W->StateFingerprint());
+				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Kills, W->TotalKills, W->Items, W->TotalItems,
+					W->GetLevel() ? W->GetLevel()->NumBakedTiles() : 0, W->GetParticleBursts(), *W->StateFingerprint());
 			});
 		}, Delay, false);
 		GetWorldTimerManager().SetTimer(Quit, []() { FPlatformMisc::RequestExit(false, TEXT("DoomAutotest")); }, Delay + 2.f, false);

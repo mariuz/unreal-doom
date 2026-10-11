@@ -7,15 +7,12 @@ class FDoomUEEditorModule : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
-		// First editor launch: generate the materials the game needs once the engine is up.
+		// First editor launch: generate the materials and effects the game needs once the engine is up.
 		if (GIsEditor && !IsRunningCommandlet())
 		{
-			FCoreDelegates::OnPostEngineInit.AddLambda([]()
+			FCoreDelegates::GetOnPostEngineInit().AddLambda([]()
 			{
-				if (!DoomContent::AssetsExist())
-				{
-					DoomContent::Build(false);
-				}
+				DoomContent::Build(false); // only what is missing: materials, effects
 			});
 		}
 	}
