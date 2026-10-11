@@ -59,9 +59,9 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 {
 	int32 Version = UDoomSaveGame::CurrentVersion;
 	Ar << Version;
-	Ar << LevelTic << Kills << Items << Secrets << TotalKills << TotalItems << TotalSecrets << bFullMap;
+	Ar << Flow().LevelTic << Flow().Kills << Flow().Items << Flow().Secrets << Flow().TotalKills << Flow().TotalItems << Flow().TotalSecrets << bFullMap;
 	// spawning saved monsters and things below counts them again; the saved totals win
-	const int32 SavedTotalKills = TotalKills, SavedTotalItems = TotalItems;
+	const int32 SavedTotalKills = Flow().TotalKills, SavedTotalItems = Flow().TotalItems;
 
 	// sectors, lines, sides
 	int32 NumSectors = Map->Sectors.Num(), NumLines = Map->Lines.Num(), NumSides = Map->Sides.Num();
@@ -243,27 +243,27 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 
 	if (Ar.IsLoading())
 	{
-		TotalKills = SavedTotalKills;
-		TotalItems = SavedTotalItems;
+		Flow().TotalKills = SavedTotalKills;
+		Flow().TotalItems = SavedTotalItems;
 	}
 }
 
 bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 {
 	ADoomPlayer* P = GetPlayer();
-	if (!Map.IsValid() || !P || P->IsDead() || (State != EDoomGameState::Playing && State != EDoomGameState::Menu))
+	if (!Map.IsValid() || !P || P->IsDead() || (Flow().Phase != EDoomGameState::Playing && Flow().Phase != EDoomGameState::Menu))
 	{
 		ShowMessage(TEXT("You can't save now."));
 		return false;
 	}
 	UDoomSaveGame* Save = Cast<UDoomSaveGame>(UGameplayStatics::CreateSaveGameObject(UDoomSaveGame::StaticClass()));
 	Save->IWad = IWadName;
-	Save->Map = CurrentMap;
+	Save->Map = Flow().CurrentMap;
 	Save->Skill = Skill;
 	Save->Saved = FDateTime::Now();
-	const int32 Secs = LevelTic / Doom::TicRate;
+	const int32 Secs = Flow().LevelTic / Doom::TicRate;
 	Save->Description = !Name.TrimStartAndEnd().IsEmpty() ? Name.TrimStartAndEnd()
-		: FString::Printf(TEXT("%s %d:%02d K%d/%d"), *CurrentMap, Secs / 60, Secs % 60, Kills, TotalKills);
+		: FString::Printf(TEXT("%s %d:%02d K%d/%d"), *Flow().CurrentMap, Secs / 60, Secs % 60, Flow().Kills, Flow().TotalKills);
 	FMemoryWriter Writer(Save->State, true);
 	SerializeState(Writer);
 	const bool bOk = !Writer.IsError() && UGameplayStatics::SaveGameToSlot(Save, SlotName(Slot), 0);
@@ -309,8 +309,8 @@ bool UDoomWorld::LoadGame(int32 Slot)
 	{
 		if (T.IsValid()) T->SnapToPlanes();
 	}
-	Accumulator = 0;
-	State = EDoomGameState::Playing;
+	ResetClock();
+	Flow().Phase = EDoomGameState::Playing;
 	ShowMessage(Slot <= 0 ? TEXT("Quickloaded.") : FString::Printf(TEXT("Loaded slot %d."), Slot));
 	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
 	return true;
@@ -379,12 +379,12 @@ FString UDoomWorld::StateFingerprint() const
 	if (const ADoomPlayer* P = GetPlayer())
 	{
 		const FVector F = FeetOf(P);
-		Player = FString::Printf(TEXT("(%.0f,%.0f,%.0f) hp%d ar%d am%d/%d/%d/%d w%d"), F.X, F.Y, F.Z, P->Inv.Health, P->Inv.Armor,
-			P->Inv.Ammo[0], P->Inv.Ammo[1], P->Inv.Ammo[2], P->Inv.Ammo[3], (int32)P->Inv.Ready);
+		Player = FString::Printf(TEXT("(%.0f,%.0f,%.0f) hp%d ar%d am%d/%d/%d/%d w%d"), F.X, F.Y, F.Z, P->Inv().Health, P->Inv().Armor,
+			P->Inv().Ammo[0], P->Inv().Ammo[1], P->Inv().Ammo[2], P->Inv().Ammo[3], (int32)P->Inv().Ready);
 	}
 	return FString::Printf(TEXT("tic%d planes%.1f light%d movers%d monsters%d/%d hp%d at(%.0f,%.0f,%.0f) things%d kills%d/%d items%d/%d player%s missiles%d at(%.0f,%.0f,%.0f) v(%.0f,%.0f,%.0f)"),
-		LevelTic, Planes, Light, Movers.Num(), Alive, Dead, Health, MonsterSum.X, MonsterSum.Y, MonsterSum.Z, NumThings,
-		Kills, TotalKills, Items, TotalItems, *Player, NumMissiles, MissileSum.X, MissileSum.Y, MissileSum.Z, MissileVel.X, MissileVel.Y, MissileVel.Z);
+		Flow().LevelTic, Planes, Light, Movers.Num(), Alive, Dead, Health, MonsterSum.X, MonsterSum.Y, MonsterSum.Z, NumThings,
+		Flow().Kills, Flow().TotalKills, Flow().Items, Flow().TotalItems, *Player, NumMissiles, MissileSum.X, MissileSum.Y, MissileSum.Z, MissileVel.X, MissileVel.Y, MissileVel.Z);
 }
 
 void UDoomWorld::RunSaveTest()
@@ -411,8 +411,8 @@ void UDoomWorld::RunSaveTest()
 	for (int32 i = 0; i < 20; ++i) RunTic();
 	if (ADoomPlayer* P = GetPlayer())
 	{
-		P->Inv.Ammo[1] = 7; // make the inventory distinguishable from a fresh start
-		P->Inv.Weapons[(int32)EDoomWeapon::Shotgun] = true;
+		P->Inv().Ammo[1] = 7; // make the inventory distinguishable from a fresh start
+		P->Inv().Weapons[(int32)EDoomWeapon::Shotgun] = true;
 		// missiles in flight: a rocket from the player, and a homing tracer from an awake monster
 		const FVector Eye = P->GetActorLocation() + FVector(0, 0, 20.f * Doom::Scale);
 		SpawnProjectile(TEXT("Rocket"), P, Eye, P->GetActorForwardVector(), nullptr, true);
@@ -439,7 +439,7 @@ void UDoomWorld::RunSaveTest()
 	if (ADoomPlayer* P = GetPlayer())
 	{
 		P->SetActorLocation(P->GetActorLocation() + FVector(300, 0, 0));
-		P->Inv.Ammo[1] = 0;
+		P->Inv().Ammo[1] = 0;
 	}
 	for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
 	{

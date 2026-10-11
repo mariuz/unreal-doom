@@ -256,7 +256,7 @@ void ADoomHUD::DrawTint(ADoomPlayer* P)
 		const int32 Pal = FMath::Min((P->DamageCount + 7) / 8, 8);
 		DrawRect(FLinearColor(1.f, 0.f, 0.f, Pal * 0.09f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
-	else if (P->bBerserk && P->Inv.Ready == EDoomWeapon::Fist)
+	else if (P->bBerserk && P->Inv().Ready == EDoomWeapon::Fist)
 	{
 		DrawRect(FLinearColor(1.f, 0.f, 0.f, 0.08f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
@@ -279,7 +279,7 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 {
 	UDoomWorld* W = DW();
 	FString Face;
-	const int32 Bracket = FMath::Clamp((100 - FMath::Max(P->Inv.Health, 0)) * 5 / 101, 0, 4);
+	const int32 Bracket = FMath::Clamp((100 - FMath::Max(P->Inv().Health, 0)) * 5 / 101, 0, 4);
 	if (P->IsDead())
 	{
 		Face = TEXT("STFDEAD0");
@@ -300,7 +300,7 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 	{
 		Face = P->FaceDamageDir > 0 ? FString::Printf(TEXT("STFTR%d0"), Bracket) : FString::Printf(TEXT("STFTL%d0"), Bracket);
 	}
-	else if (P->AttackDown > 0 && P->Inv.Ready == EDoomWeapon::Chaingun)
+	else if (P->AttackDown > 0 && P->Inv().Ready == EDoomWeapon::Chaingun)
 	{
 		Face = FString::Printf(TEXT("STFKILL%d"), Bracket);
 	}
@@ -323,23 +323,23 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	DrawRect(FLinearColor(0.06f, 0.06f, 0.06f, 1.f), 0, OY + 168 * SY, Canvas->ClipX, 32 * SY);
 	DrawPatchByName(TEXT("STBAR"), 0, 168, false);
 
-	const FDoomWeaponDef& WD = DoomInfo::Weapon(P->Inv.Ready);
+	const FDoomWeaponDef& WD = DoomInfo::Weapon(P->Inv().Ready);
 	if (WD.Ammo != EDoomAmmo::None)
 	{
-		DrawNumber(P->Inv.Ammo[(int32)WD.Ammo], 44, 171, TEXT("STTNUM"), 3);
+		DrawNumber(P->Inv().Ammo[(int32)WD.Ammo], 44, 171, TEXT("STTNUM"), 3);
 	}
-	DrawNumber(FMath::Max(P->Inv.Health, 0), 90, 171, TEXT("STTNUM"), 3);
+	DrawNumber(FMath::Max(P->Inv().Health, 0), 90, 171, TEXT("STTNUM"), 3);
 	DrawPatchByName(TEXT("STTPRCNT"), 90, 171, false);
-	DrawNumber(P->Inv.Armor, 221, 171, TEXT("STTNUM"), 3);
+	DrawNumber(P->Inv().Armor, 221, 171, TEXT("STTNUM"), 3);
 	DrawPatchByName(TEXT("STTPRCNT"), 221, 171, false);
 
 	// arms
 	DrawPatchByName(TEXT("STARMS"), 104, 168, false);
 	const bool Owned[6] = {
-		P->Inv.Weapons[(int32)EDoomWeapon::Pistol],
-		P->Inv.Weapons[(int32)EDoomWeapon::Shotgun] || P->Inv.Weapons[(int32)EDoomWeapon::SuperShotgun],
-		P->Inv.Weapons[(int32)EDoomWeapon::Chaingun], P->Inv.Weapons[(int32)EDoomWeapon::Rocket],
-		P->Inv.Weapons[(int32)EDoomWeapon::Plasma], P->Inv.Weapons[(int32)EDoomWeapon::BFG] };
+		P->Inv().Weapons[(int32)EDoomWeapon::Pistol],
+		P->Inv().Weapons[(int32)EDoomWeapon::Shotgun] || P->Inv().Weapons[(int32)EDoomWeapon::SuperShotgun],
+		P->Inv().Weapons[(int32)EDoomWeapon::Chaingun], P->Inv().Weapons[(int32)EDoomWeapon::Rocket],
+		P->Inv().Weapons[(int32)EDoomWeapon::Plasma], P->Inv().Weapons[(int32)EDoomWeapon::BFG] };
 	for (int32 i = 0; i < 6; ++i)
 	{
 		DrawPatchByName(FString::Printf(TEXT("%s%d"), Owned[i] ? TEXT("STYSNUM") : TEXT("STGNUM"), i + 2), 111 + (i % 3) * 12, 172 + (i / 3) * 10, false);
@@ -350,7 +350,7 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	// keys: skull keys win over cards in the same slot
 	for (int32 k = 0; k < 3; ++k)
 	{
-		const int32 Patch = P->Inv.Keys[k + 3] ? k + 3 : P->Inv.Keys[k] ? k : -1;
+		const int32 Patch = P->Inv().Keys[k + 3] ? k + 3 : P->Inv().Keys[k] ? k : -1;
 		if (Patch >= 0)
 		{
 			DrawPatchByName(FString::Printf(TEXT("STKEYS%d"), Patch), 239, 171 + k * 10, false);
@@ -361,8 +361,8 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	const EDoomAmmo Order[4] = { EDoomAmmo::Bullets, EDoomAmmo::Shells, EDoomAmmo::Rockets, EDoomAmmo::Cells };
 	for (int32 i = 0; i < 4; ++i)
 	{
-		DrawNumber(P->Inv.Ammo[(int32)Order[i]], 288, 173 + i * 6, TEXT("STYSNUM"), 3);
-		DrawNumber(DoomInfo::MaxAmmo(Order[i], P->Inv.bBackpack), 314, 173 + i * 6, TEXT("STYSNUM"), 3);
+		DrawNumber(P->Inv().Ammo[(int32)Order[i]], 288, 173 + i * 6, TEXT("STYSNUM"), 3);
+		DrawNumber(DoomInfo::MaxAmmo(Order[i], P->Inv().bBackpack), 314, 173 + i * 6, TEXT("STYSNUM"), 3);
 	}
 }
 
@@ -566,7 +566,7 @@ void ADoomHUD::DrawIntermission()
 		const FString& M = W->GetMapName();
 		DrawFullscreenPic(FString::Printf(TEXT("WIMAP%d"), M.Len() > 1 ? FMath::Clamp(M[1] - '1', 0, 2) : 0));
 	}
-	const float T = W->IntermissionTic;
+	const float T = W->Flow().IntermissionTic;
 	auto Count = [&](int32 Got, int32 Total, float Start)
 	{
 		const int32 Pct = Total > 0 ? Got * 100 / Total : 100;
@@ -584,9 +584,9 @@ void ADoomHUD::DrawIntermission()
 		DrawNumber(Value, bPercent ? 270 : 286, Y, TEXT("WINUM"), 4);
 		if (bPercent) DrawPatchByName(TEXT("WIPCNT"), 270, Y, false);
 	};
-	Line(TEXT("KILLS"), TEXT("WIOSTK"), Count(W->Kills, W->TotalKills, 10), 50, true);
-	if (T > 40) Line(TEXT("ITEMS"), TEXT("WIOSTI"), Count(W->Items, W->TotalItems, 40), 70, true);
-	if (T > 70) Line(TEXT("SECRET"), TEXT("WISCRT2"), Count(W->Secrets, W->TotalSecrets, 70), 90, true);
+	Line(TEXT("KILLS"), TEXT("WIOSTK"), Count(W->Flow().Kills, W->Flow().TotalKills, 10), 50, true);
+	if (T > 40) Line(TEXT("ITEMS"), TEXT("WIOSTI"), Count(W->Flow().Items, W->Flow().TotalItems, 40), 70, true);
+	if (T > 70) Line(TEXT("SECRET"), TEXT("WISCRT2"), Count(W->Flow().Secrets, W->Flow().TotalSecrets, 70), 90, true);
 	if (T > 100)
 	{
 		const int32 Secs = W->GetTic() / Doom::TicRate;
@@ -600,14 +600,14 @@ void ADoomHUD::DrawIntermission()
 			DrawText(FString::Printf(TEXT("PAR %d:%02d"), Par / 60, Par % 60), 200, 170, 1.5f);
 		}
 	}
-	if (T > Doom::TicRate * 4 && !W->PendingMap.IsEmpty())
+	if (T > Doom::TicRate * 4 && !W->Flow().PendingMap.IsEmpty())
 	{
-		const FString Next = TEXT("ENTERING ") + W->LevelTitle(W->PendingMap);
+		const FString Next = TEXT("ENTERING ") + W->LevelTitle(W->Flow().PendingMap);
 		DrawText(Next, 160 - TextWidth(Next) / 2, 130, 1.f);
 	}
 	if (T > Doom::TicRate)
 	{
-		DrawText(W->PendingMap.IsEmpty() ? TEXT("EPISODE COMPLETE - PRESS ENTER") : TEXT("PRESS ENTER"), 90, 150, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
+		DrawText(W->Flow().PendingMap.IsEmpty() ? TEXT("EPISODE COMPLETE - PRESS ENTER") : TEXT("PRESS ENTER"), 90, 150, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
 	}
 }
 

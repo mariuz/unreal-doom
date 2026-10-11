@@ -7,29 +7,13 @@
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "DoomInfo.h"
+#include "DoomPlayerState.h"
 #include "DoomPlayer.generated.h"
 
 class UCameraComponent;
 class UPointLightComponent;
 class UDoomWorld;
 class UDoomInputConfig;
-
-USTRUCT()
-struct FDoomInventory
-{
-	GENERATED_BODY()
-
-	int32 Health = 100;
-	int32 Armor = 0;
-	int32 ArmorClass = 0;
-	int32 Ammo[4] = { 50, 0, 0, 0 };
-	bool bBackpack = false;
-	bool Weapons[(int32)EDoomWeapon::Count] = { true, true, false, false, false, false, false, false, false };
-	EDoomWeapon Ready = EDoomWeapon::Pistol;
-	bool Keys[6] = {}; // blue card, yellow card, red card, blue skull, yellow skull, red skull
-
-	void Reset() { *this = FDoomInventory(); }
-};
 
 UCLASS()
 class DOOMUE_API ADoomPlayer : public ACharacter
@@ -55,10 +39,14 @@ public:
 	float DoomZ() const;
 	float DoomAngle() const;
 	FVector EyeLocation() const;
-	bool IsDead() const { return Inv.Health <= 0; }
+	bool IsDead() const { return Inv().Health <= 0; }
 	bool HasKey(int32 KeyColor) const; // 0 blue 1 yellow 2 red: card or skull
 
-	FDoomInventory Inv;
+	/** The inventory lives in the player state (ADoomPlayerState::Inv); before the pawn is possessed
+	    (or without a Doom player state) a local fallback keeps the game working. */
+	FDoomInventory& Inv();
+	const FDoomInventory& Inv() const;
+	ADoomPlayerState* GetDoomPlayerState() const;
 	// powerups, in tics remaining
 	int32 Invulnerability = 0, Invisibility = 0, RadSuit = 0, LightAmp = 0;
 	bool bBerserk = false;
@@ -130,4 +118,6 @@ private:
 	int32 SawIdle = 0;
 	int32 ReactionTime = 0;
 	float LastLandingVelocity = 0;
+private:
+	FDoomInventory LocalInv;
 };

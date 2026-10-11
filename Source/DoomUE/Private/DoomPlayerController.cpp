@@ -263,7 +263,7 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 		W->FinaleInput();
 		break;
 	case EDoomGameState::Intermission:
-		if (W->IntermissionTic > Doom::TicRate)
+		if (W->Flow().IntermissionTic > Doom::TicRate)
 		{
 			W->PlaySound(TEXT("BAREXP"), nullptr);
 			W->FinishIntermission();

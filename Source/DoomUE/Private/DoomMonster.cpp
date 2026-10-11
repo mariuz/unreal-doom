@@ -825,7 +825,7 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 	DoomWorld->PlaySound(bXDeath ? TEXT("SLOP") : Def->DeathSound, &L);
 	if (Def->Flags & EThingFlag::CountKill)
 	{
-		++DoomWorld->Kills;
+		DoomWorld->CreditKill(Killer);
 	}
 	if (Def->DropType)
 	{

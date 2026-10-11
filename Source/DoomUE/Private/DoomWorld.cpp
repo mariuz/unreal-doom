@@ -11,6 +11,9 @@
 #include "DoomSettings.h"
 #include "DoomAssets.h"
 #include "DoomMapActors.h"
+#include "DoomGameMode.h"
+#include "DoomGameState.h"
+#include "DoomPlayerState.h"
 #include "DoomMusic.h"
 #include "DoomDehacked.h"
 #include "Misc/FileHelper.h"
@@ -235,9 +238,9 @@ void UDoomWorld::SetModern(bool b)
 	if (bModern != b)
 	{
 		bModern = b;
-		if (Map.IsValid() && State == EDoomGameState::Playing)
+		if (Map.IsValid() && Flow().Phase == EDoomGameState::Playing)
 		{
-			LoadMap(CurrentMap, false); // rebuild with the other material set
+			LoadMap(Flow().CurrentMap, false); // rebuild with the other material set
 		}
 	}
 }
@@ -291,19 +294,24 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 		Map.Reset();
 		return false;
 	}
-	CurrentMap = Map->Name;
+	// new level: the game state's counters and every player's share start from zero
+	Flow().StartLevel(Map->Name);
+	if (const ADoomGameState* GS = GetDoomGameState())
+	{
+		for (APlayerState* PS : GS->PlayerArray)
+		{
+			if (ADoomPlayerState* DPS = Cast<ADoomPlayerState>(PS)) DPS->StartLevel();
+		}
+	}
 	// an imported Unreal level for this map brings its sector edits and thing markers
 	if (const ADoomMapActor* Edits = ADoomMapActor::Find(GetWorld()))
 	{
-		if (Edits->MapName.Equals(CurrentMap, ESearchCase::IgnoreCase))
+		if (Edits->MapName.Equals(Flow().CurrentMap, ESearchCase::IgnoreCase))
 		{
 			Edits->ApplyEdits(*Map);
 		}
 	}
-	LevelTic = 0;
-	Accumulator = 0;
-	Kills = Items = Secrets = 0;
-	TotalKills = TotalItems = TotalSecrets = 0;
+	ResetClock();
 	bAutomap = false;
 	bFullMap = false;
 
@@ -313,10 +321,10 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	Level = GetWorld()->SpawnActor<ADoomLevel>(ADoomLevel::StaticClass(), FTransform::Identity, SP);
-	const FDoomMapInfo* Info = MapInfo(CurrentMap);
-	const FName Sky = (Info && !Info->Sky.IsEmpty()) ? FName(*Info->Sky) : FDoomGraphics::SkyTextureFor(CurrentMap);
+	const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
+	const FName Sky = (Info && !Info->Sky.IsEmpty()) ? FName(*Info->Sky) : FDoomGraphics::SkyTextureFor(Flow().CurrentMap);
 	Level->Build(*Map, *Gfx, Movable, bModern, Sky);
-	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *CurrentMap, *LevelTitle(CurrentMap), *Sky.ToString());
+	UE_LOG(LogDoom, Log, TEXT("%s: \"%s\", sky %s"), *Flow().CurrentMap, *LevelTitle(Flow().CurrentMap), *Sky.ToString());
 
 	SetupEnvironment();
 	if (!bForSaveGame)
@@ -330,9 +338,9 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	{
 		P->InitForLevel(this, bPistolStart);
 	}
-	State = EDoomGameState::Playing;
-	ShowMessage(LevelTitle(CurrentMap));
-	PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(CurrentMap));
+	Flow().Phase = EDoomGameState::Playing;
+	ShowMessage(LevelTitle(Flow().CurrentMap));
+	PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(Flow().CurrentMap));
 	return true;
 }
 
@@ -569,7 +577,7 @@ ADoomThing* UDoomWorld::SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float
 		RegisterThing(T);
 		if ((Def->Flags & EThingFlag::CountItem) && !bDropped)
 		{
-			++TotalItems;
+			++Flow().TotalItems;
 		}
 	}
 	return T;
@@ -634,7 +642,7 @@ ADoomMonster* UDoomWorld::SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, f
 		RegisterMonster(M);
 		if (Def->Flags & EThingFlag::CountKill)
 		{
-			++TotalKills;
+			++Flow().TotalKills;
 		}
 	}
 	return M;
@@ -730,7 +738,7 @@ bool UDoomWorld::IsPaletteExact() const
 int32 UDoomWorld::ScreenPalette() const
 {
 	const ADoomPlayer* P = GetPlayer();
-	if (!P || !Wad.IsValid() || State != EDoomGameState::Playing)
+	if (!P || !Wad.IsValid() || Flow().Phase != EDoomGameState::Playing)
 	{
 		return 0;
 	}
@@ -778,8 +786,8 @@ void UDoomWorld::ApplyUserSettings()
 	}
 	else if (!MusicComponent && Map.IsValid())
 	{
-		const FDoomMapInfo* Info = MapInfo(CurrentMap);
-		PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(CurrentMap));
+		const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
+		PlayMusic((Info && !Info->Music.IsEmpty()) ? Info->Music : DoomMusic::LumpForMap(Flow().CurrentMap));
 	}
 	if (ADoomPlayer* P = GetPlayer())
 	{
@@ -847,46 +855,13 @@ void UDoomWorld::ShowMessage(const FString& Msg)
 // Tic
 // ------------------------------------------------------------------------------------------------
 
-void UDoomWorld::Tick(float DeltaTime)
+void UDoomWorld::UpdateMaterialGlobals(float SubTic)
 {
-	Super::Tick(DeltaTime);
-	if (State == EDoomGameState::Intermission || State == EDoomGameState::Finale)
-	{
-		// screens between levels count real 35 Hz tics, whatever the frame rate
-		ScreenAccumulator += FMath::Min(DeltaTime, 0.25f);
-		while (ScreenAccumulator >= Doom::TicSeconds)
-		{
-			ScreenAccumulator -= Doom::TicSeconds;
-			if (State == EDoomGameState::Intermission)
-			{
-				++IntermissionTic;
-			}
-			else
-			{
-				TicFinale();
-			}
-		}
-	}
-	if (State != EDoomGameState::Playing || !Map.IsValid())
-	{
-		return;
-	}
-	Accumulator += FMath::Min(DeltaTime, 0.25f);
-	while (Accumulator >= Doom::TicSeconds)
-	{
-		Accumulator -= Doom::TicSeconds;
-		RunTic();
-		if (State != EDoomGameState::Playing || !Map.IsValid())
-		{
-			return;
-		}
-	}
-
 	// per-frame material globals (UMaterialParameterCollection)
 	if (UMaterialParameterCollection* MPC = DoomAssets::Collection())
 	{
 		ADoomPlayer* P = GetPlayer();
-		const float Tic = LevelTic + Accumulator / Doom::TicSeconds;
+		const float Tic = Flow().LevelTic + SubTic;
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Tic"), Tic);
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("ExtraLight"), P ? P->ExtraLight : 0);
 		float Fixed = -1.f;
@@ -906,7 +881,7 @@ void UDoomWorld::Tick(float DeltaTime)
 
 void UDoomWorld::RunTic()
 {
-	++LevelTic;
+	++Flow().LevelTic;
 	if (MessageTics > 0) --MessageTics;
 
 	if (ADoomPlayer* P = GetPlayer())
@@ -928,7 +903,7 @@ void UDoomWorld::RunTic()
 		if (Projectiles[i].IsValid()) Projectiles[i]->DoomTic();
 		else Projectiles.RemoveAtSwap(i);
 	}
-	if (State != EDoomGameState::Playing)
+	if (Flow().Phase != EDoomGameState::Playing)
 	{
 		return;
 	}
@@ -937,7 +912,7 @@ void UDoomWorld::RunTic()
 	TicSectorDamage();
 	TicBrain();
 	TicRespawn();
-	if (State != EDoomGameState::Playing)
+	if (Flow().Phase != EDoomGameState::Playing)
 	{
 		return;
 	}
@@ -958,7 +933,7 @@ void UDoomWorld::RunTic()
 		}
 	}
 
-	Level->AnimateTextures(LevelTic);
+	Level->AnimateTextures(Flow().LevelTic);
 	Level->Flush();
 	if (bLightsDirty)
 	{
@@ -1008,7 +983,7 @@ bool UDoomWorld::ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool
 		if (Ceiling - Floor < Height)
 		{
 			bBlocked = true;
-			if (bCrush && (LevelTic & 3) == 0)
+			if (bCrush && (Flow().LevelTic & 3) == 0)
 			{
 				UGameplayStatics::ApplyDamage(A, 10.f, nullptr, nullptr, nullptr);
 			}
@@ -1089,7 +1064,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M)
 			if (T.IsValid() && !T->bEffect && Map->SectorAt(Doom::ToDoom2D(T->GetActorLocation())) == M.Sector) T->SnapToPlanes();
 		}
 	}
-	if (!M.bSilent && M.Type != FSectorMover::EType::Door && M.Type != FSectorMover::EType::Plat && (LevelTic & 7) == 0)
+	if (!M.bSilent && M.Type != FSectorMover::EType::Door && M.Type != FSectorMover::EType::Plat && (Flow().LevelTic & 7) == 0)
 	{
 		const FVector Pos = Doom::ToUE(S.Center, S.Floor + 32);
 		PlaySound(TEXT("STNMOV"), &Pos, 0.6f);
@@ -1454,7 +1429,7 @@ void UDoomWorld::StartSectorSpecials()
 		case 3: AddLight(FLightEffect::EType::StrobeSlow, 35, false); break;
 		case 4: AddLight(FLightEffect::EType::StrobeFast, 15, false); break;
 		case 8: AddLight(FLightEffect::EType::Glow, 0, false); break;
-		case 9: ++TotalSecrets; break;
+		case 9: ++Flow().TotalSecrets; break;
 		case 10: AddDoor(i, DK_Close30, DoorSpeed, nullptr); Movers.Last().Dir = 0; Movers.Last().Counter = 30 * Doom::TicRate; Movers.Last().CloseThenOpenWait = 0; break;
 		case 12: AddLight(FLightEffect::EType::StrobeSlow, 35, true); break;
 		case 13: AddLight(FLightEffect::EType::StrobeFast, 15, true); break;
@@ -1523,7 +1498,7 @@ void UDoomWorld::TicSectorDamage()
 	{
 		return;
 	}
-	const bool bTic = (LevelTic & 31) == 0;
+	const bool bTic = (Flow().LevelTic & 31) == 0;
 	switch (S.Special)
 	{
 	case 5: if (bTic && !P->RadSuit) UGameplayStatics::ApplyDamage(P, 10, nullptr, nullptr, nullptr); break;
@@ -1531,7 +1506,7 @@ void UDoomWorld::TicSectorDamage()
 	case 4:
 	case 16: if (bTic && (!P->RadSuit || DoomInfo::Random() < 5)) UGameplayStatics::ApplyDamage(P, 20, nullptr, nullptr, nullptr); break;
 	case 9:
-		++Secrets;
+		CreditSecret(P);
 		S.Special = 0;
 		ShowMessage(TEXT("You found a secret area!"));
 		PlaySound(TEXT("GETPOW"), nullptr);
@@ -1539,7 +1514,7 @@ void UDoomWorld::TicSectorDamage()
 	case 11:
 		P->bGodMode = false;
 		if (bTic) UGameplayStatics::ApplyDamage(P, 20, nullptr, nullptr, nullptr);
-		if (P->Inv.Health <= 10) ExitLevel(false);
+		if (P->Inv().Health <= 10) ExitLevel(false);
 		break;
 	default: break;
 	}
@@ -1899,7 +1874,7 @@ void UDoomWorld::CheckCrossings(AActor* Actor, const FVector2f& From, const FVec
 			continue;
 		}
 		ActivateSpecial(Li, Side, Actor, EActivation::Cross);
-		if (State != EDoomGameState::Playing)
+		if (Flow().Phase != EDoomGameState::Playing)
 		{
 			return;
 		}
@@ -2112,7 +2087,7 @@ void UDoomWorld::TicRespawn()
 {
 	// Nightmare (or -respawn): a corpse dead 12 s may rise at its spawn spot, checked every 32 tics
 	static const bool bRespawnParam = FParse::Param(FCommandLine::Get(), TEXT("respawn"));
-	if ((Skill < 5 && !bRespawnParam) || (LevelTic & 31) != 0)
+	if ((Skill < 5 && !bRespawnParam) || (Flow().LevelTic & 31) != 0)
 	{
 		return;
 	}
@@ -2142,7 +2117,7 @@ void UDoomWorld::TicRespawn()
 		PlaySound(TEXT("TELEPT"), &Center);
 		if (ADoomMonster* Risen = SpawnMonster(M->Def->DoomEdNum, M->SpawnFeet, M->SpawnAngle))
 		{
-			--TotalKills; // like Doom, the kill already counted stays counted
+			--Flow().TotalKills; // like Doom, the kill already counted stays counted
 			Risen->SpawnFeet = M->SpawnFeet;
 			Risen->SpawnAngle = M->SpawnAngle;
 			Risen->bCanRespawn = true;
@@ -2159,7 +2134,7 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 		return;
 	}
 	// UMAPINFO boss actions replace the vanilla boss specials for their map
-	if (const FDoomMapInfo* Info = MapInfo(CurrentMap))
+	if (const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap))
 	{
 		if (Info->bClearBossActions)
 		{
@@ -2208,25 +2183,25 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 		PlaySound(TEXT("BOSDTH"), nullptr);
 		return;
 	}
-	if (CurrentMap == TEXT("MAP07"))
+	if (Flow().CurrentMap == TEXT("MAP07"))
 	{
 		if (Type == TEXT("Mancubus") && AllDead(TEXT("Mancubus"))) Tagged(666, [&](int32 S) { AddFloor(S, FK_LowerLowest, 1, -1); });
 		if (Type == TEXT("Arachnotron") && AllDead(TEXT("Arachnotron"))) Tagged(667, [&](int32 S) { AddFloor(S, FK_RaiseShortest, 1, -1); });
 		return;
 	}
-	if (CurrentMap == TEXT("E1M8") && Type == TEXT("BaronOfHell") && AllDead(TEXT("BaronOfHell")))
+	if (Flow().CurrentMap == TEXT("E1M8") && Type == TEXT("BaronOfHell") && AllDead(TEXT("BaronOfHell")))
 	{
 		Tagged(666, [&](int32 S) { AddFloor(S, FK_LowerLowest, 1, -1); });
 	}
-	else if ((CurrentMap == TEXT("E2M8") && Type == TEXT("Cyberdemon")) || (CurrentMap == TEXT("E3M8") && Type == TEXT("SpiderMastermind")))
+	else if ((Flow().CurrentMap == TEXT("E2M8") && Type == TEXT("Cyberdemon")) || (Flow().CurrentMap == TEXT("E3M8") && Type == TEXT("SpiderMastermind")))
 	{
 		if (AllDead(*Type)) ExitLevel(false);
 	}
-	else if (CurrentMap == TEXT("E4M6") && Type == TEXT("Cyberdemon") && AllDead(TEXT("Cyberdemon")))
+	else if (Flow().CurrentMap == TEXT("E4M6") && Type == TEXT("Cyberdemon") && AllDead(TEXT("Cyberdemon")))
 	{
 		Tagged(666, [&](int32 S) { AddDoor(S, DK_Open, DoorSpeed * 4, nullptr); });
 	}
-	else if (CurrentMap == TEXT("E4M8") && Type == TEXT("SpiderMastermind") && AllDead(TEXT("SpiderMastermind")))
+	else if (Flow().CurrentMap == TEXT("E4M8") && Type == TEXT("SpiderMastermind") && AllDead(TEXT("SpiderMastermind")))
 	{
 		Tagged(666, [&](int32 S) { AddFloor(S, FK_LowerLowest, 1, -1); });
 	}
@@ -2236,96 +2211,101 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 // Level flow
 // ------------------------------------------------------------------------------------------------
 
+// The level flow belongs to the game mode (ADoomGameMode::ExitLevel and friends, DoomGameMode.cpp).
 FString UDoomWorld::NextMapName(bool bSecret) const
 {
-	const FString& M = CurrentMap;
-	if (const FDoomMapInfo* Info = MapInfo(M))
-	{
-		if (Info->bEndGame)
-		{
-			return FString();
-		}
-		if (bSecret && !Info->NextSecret.IsEmpty())
-		{
-			return Info->NextSecret;
-		}
-		if (!Info->Next.IsEmpty())
-		{
-			return Info->Next;
-		}
-	}
-	if (M.StartsWith(TEXT("MAP")))
-	{
-		const int32 N = FCString::Atoi(*M.Mid(3));
-		int32 Next = N + 1;
-		if (bSecret && N == 15) Next = 31;
-		else if (bSecret && N == 31) Next = 32;
-		else if (N == 31 || N == 32) Next = 16;
-		else if (N == 30) Next = 0;
-		return Next > 0 ? FString::Printf(TEXT("MAP%02d"), Next) : FString();
-	}
-	if (M.Len() == 4)
-	{
-		const int32 E = M[1] - '0';
-		const int32 N = M[3] - '0';
-		static const int32 SecretFrom[5] = { 0, 3, 5, 6, 2 };
-		if (bSecret) return FString::Printf(TEXT("E%dM9"), E);
-		if (N == 9) return FString::Printf(TEXT("E%dM%d"), E, SecretFrom[FMath::Clamp(E, 1, 4)] + 1);
-		if (N == 8) return FString(); // end of episode
-		return FString::Printf(TEXT("E%dM%d"), E, N + 1);
-	}
-	return FString();
+	const ADoomGameMode* GM = GetWorld()->GetAuthGameMode<ADoomGameMode>();
+	return GM ? GM->NextMapName(bSecret) : FString();
 }
 
 void UDoomWorld::ExitLevel(bool bSecret)
 {
-	if (State != EDoomGameState::Playing)
+	if (ADoomGameMode* GM = GetWorld()->GetAuthGameMode<ADoomGameMode>())
 	{
-		return;
+		GM->ExitLevel(bSecret);
 	}
-	bSecretExit = bSecret;
-	PendingMap = NextMapName(bSecret);
-	if (!PendingMap.IsEmpty() && Wad->FindLump(PendingMap) == INDEX_NONE)
-	{
-		PendingMap.Reset();
-	}
-	IntermissionTic = 0;
-	if (ADoomPlayer* P = GetPlayer())
-	{
-		P->GetCharacterMovement()->StopMovementImmediately();
-	}
-	const FDoomMapInfo* Info = MapInfo(CurrentMap);
-	if (Info && Info->bNoIntermission)
-	{
-		State = EDoomGameState::Intermission; // FinishIntermission expects to leave it
-		FinishIntermission();
-		return;
-	}
-	State = EDoomGameState::Intermission;
-	PlayMusic((Info && !Info->InterMusic.IsEmpty()) ? Info->InterMusic : Wad->IsDoom2() ? TEXT("D_DM2INT") : TEXT("D_INTER"));
 }
 
 void UDoomWorld::FinishIntermission()
 {
-	// UMAPINFO story text between maps, else Doom's own episode / chapter texts
-	const FDoomMapInfo* Info = MapInfo(CurrentMap);
-	if (Info && !Info->bClearInterText)
+	if (ADoomGameMode* GM = GetWorld()->GetAuthGameMode<ADoomGameMode>())
 	{
-		const TArray<FString>& Text = (bSecretExit && Info->InterTextSecret.Num()) ? Info->InterTextSecret : Info->InterText;
-		if (Text.Num())
-		{
-			StartFinaleText(Text, Info->InterBackdrop.IsEmpty() ? FString(Wad->IsDoom2() ? TEXT("SLIME16") : TEXT("FLOOR4_8")) : Info->InterBackdrop);
-			return;
-		}
+		GM->FinishIntermission();
 	}
-	if (!(Info && Info->bClearInterText) && StartVanillaText())
-	{
-		return;
-	}
-	if (PendingMap.IsEmpty())
-	{
-		StartEnding();
-		return;
-	}
-	LoadMap(PendingMap, false);
 }
+
+// ------------------------------------------------------------------------------------------------
+// Gameplay framework glue: flow record, credit, clock
+// ------------------------------------------------------------------------------------------------
+
+ADoomGameState* UDoomWorld::GetDoomGameState() const
+{
+	return GetWorld() ? GetWorld()->GetGameState<ADoomGameState>() : nullptr;
+}
+
+FDoomLevelFlow& UDoomWorld::Flow()
+{
+	ADoomGameState* GS = GetDoomGameState();
+	return GS ? GS->Flow : LocalFlow;
+}
+
+const FDoomLevelFlow& UDoomWorld::Flow() const
+{
+	const ADoomGameState* GS = GetDoomGameState();
+	return GS ? GS->Flow : LocalFlow;
+}
+
+namespace
+{
+	/** The player behind a kill: the shooter of a missile, the player, or their controller
+	    (damage reports a pawn's owner, which for players is the PlayerController). */
+	ADoomPlayerState* CreditedPlayer(AActor* Actor)
+	{
+		if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(Actor))
+		{
+			Actor = Missile->Source.Get();
+		}
+		if (const AController* C = Cast<AController>(Actor))
+		{
+			return C->GetPlayerState<ADoomPlayerState>();
+		}
+		const ADoomPlayer* P = Cast<ADoomPlayer>(Actor);
+		return P ? P->GetDoomPlayerState() : nullptr;
+	}
+}
+
+void UDoomWorld::CreditKill(AActor* Killer)
+{
+	++Flow().Kills;
+	if (ADoomPlayerState* PS = CreditedPlayer(Killer))
+	{
+		++PS->LevelKills;
+	}
+}
+
+void UDoomWorld::CreditItem(ADoomPlayer* Player)
+{
+	++Flow().Items;
+	if (ADoomPlayerState* PS = CreditedPlayer(Player))
+	{
+		++PS->LevelItems;
+	}
+}
+
+void UDoomWorld::CreditSecret(ADoomPlayer* Player)
+{
+	++Flow().Secrets;
+	if (ADoomPlayerState* PS = CreditedPlayer(Player))
+	{
+		++PS->LevelSecrets;
+	}
+}
+
+void UDoomWorld::ResetClock()
+{
+	if (ADoomGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ADoomGameMode>() : nullptr)
+	{
+		GM->ResetClock();
+	}
+}
+

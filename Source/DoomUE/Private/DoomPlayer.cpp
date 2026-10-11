@@ -102,13 +102,13 @@ void ADoomPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 void ADoomPlayer::InitForLevel(UDoomWorld* InWorld, bool bPistolStart)
 {
 	DoomWorld = InWorld;
-	if (bPistolStart || Inv.Health <= 0)
+	if (bPistolStart || Inv().Health <= 0)
 	{
-		Inv.Reset();
-		Inv.Health = DoomInfo::Rules().InitialHealth;
-		Inv.Ammo[0] = DoomInfo::Rules().InitialBullets;
+		Inv().Reset();
+		Inv().Health = DoomInfo::Rules().InitialHealth;
+		Inv().Ammo[0] = DoomInfo::Rules().InitialBullets;
 	}
-	for (bool& K : Inv.Keys) K = false;
+	for (bool& K : Inv().Keys) K = false;
 	Invulnerability = Invisibility = RadSuit = LightAmp = 0;
 	bBerserk = false;
 	DamageCount = BonusCount = ExtraLight = 0;
@@ -142,7 +142,7 @@ FVector ADoomPlayer::EyeLocation() const { return Camera->GetComponentLocation()
 
 bool ADoomPlayer::HasKey(int32 KeyColor) const
 {
-	return Inv.Keys[KeyColor] || Inv.Keys[KeyColor + 3];
+	return Inv().Keys[KeyColor] || Inv().Keys[KeyColor + 3];
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -214,13 +214,13 @@ void ADoomPlayer::SelectSlot(int32 Slot)
 	switch (Slot)
 	{
 	case 1:
-		W = (Inv.Weapons[(int32)EDoomWeapon::Chainsaw] && !(Inv.Ready == EDoomWeapon::Chainsaw && bBerserk)) && Inv.Ready != EDoomWeapon::Chainsaw
+		W = (Inv().Weapons[(int32)EDoomWeapon::Chainsaw] && !(Inv().Ready == EDoomWeapon::Chainsaw && bBerserk)) && Inv().Ready != EDoomWeapon::Chainsaw
 			? EDoomWeapon::Chainsaw : EDoomWeapon::Fist;
 		break;
 	case 2: W = EDoomWeapon::Pistol; break;
 	case 3:
-		W = (Inv.Weapons[(int32)EDoomWeapon::SuperShotgun] && Inv.Ready != EDoomWeapon::SuperShotgun) ? EDoomWeapon::SuperShotgun : EDoomWeapon::Shotgun;
-		if (!Inv.Weapons[(int32)W]) W = EDoomWeapon::SuperShotgun;
+		W = (Inv().Weapons[(int32)EDoomWeapon::SuperShotgun] && Inv().Ready != EDoomWeapon::SuperShotgun) ? EDoomWeapon::SuperShotgun : EDoomWeapon::Shotgun;
+		if (!Inv().Weapons[(int32)W]) W = EDoomWeapon::SuperShotgun;
 		break;
 	case 4: W = EDoomWeapon::Chaingun; break;
 	case 5: W = EDoomWeapon::Rocket; break;
@@ -228,7 +228,7 @@ void ADoomPlayer::SelectSlot(int32 Slot)
 	case 7: W = EDoomWeapon::BFG; break;
 	default: break;
 	}
-	if (W != EDoomWeapon::Count && Inv.Weapons[(int32)W] && W != Inv.Ready)
+	if (W != EDoomWeapon::Count && Inv().Weapons[(int32)W] && W != Inv().Ready)
 	{
 		PendingWeapon = W;
 	}
@@ -237,12 +237,12 @@ void ADoomPlayer::SelectSlot(int32 Slot)
 void ADoomPlayer::CycleWeapon(int32 Dir)
 {
 	int32 Cur = 0;
-	for (int32 i = 0; i < UE_ARRAY_COUNT(CycleOrder); ++i) if (CycleOrder[i] == Inv.Ready) Cur = i;
+	for (int32 i = 0; i < UE_ARRAY_COUNT(CycleOrder); ++i) if (CycleOrder[i] == Inv().Ready) Cur = i;
 	for (int32 k = 1; k < UE_ARRAY_COUNT(CycleOrder); ++k)
 	{
 		const EDoomWeapon W = CycleOrder[(Cur + Dir * k + UE_ARRAY_COUNT(CycleOrder) * 2) % UE_ARRAY_COUNT(CycleOrder)];
 		const FDoomWeaponDef& D = DoomInfo::Weapon(W);
-		if (Inv.Weapons[(int32)W] && (D.Ammo == EDoomAmmo::None || Inv.Ammo[(int32)D.Ammo] >= D.AmmoPerShot))
+		if (Inv().Weapons[(int32)W] && (D.Ammo == EDoomAmmo::None || Inv().Ammo[(int32)D.Ammo] >= D.AmmoPerShot))
 		{
 			PendingWeapon = W;
 			return;
@@ -326,7 +326,7 @@ void ADoomPlayer::TicDeath()
 
 void ADoomPlayer::SetWeaponSprite()
 {
-	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv.Ready);
+	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	WeaponSprite = D.Sprite;
 	FlashSprite = D.FlashSprite;
 	WeaponFrame = D.ReadyFrame;
@@ -334,8 +334,8 @@ void ADoomPlayer::SetWeaponSprite()
 
 bool ADoomPlayer::CheckAmmo()
 {
-	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv.Ready);
-	if (D.Ammo == EDoomAmmo::None || Inv.Ammo[(int32)D.Ammo] >= D.AmmoPerShot)
+	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
+	if (D.Ammo == EDoomAmmo::None || Inv().Ammo[(int32)D.Ammo] >= D.AmmoPerShot)
 	{
 		return true;
 	}
@@ -345,9 +345,9 @@ bool ADoomPlayer::CheckAmmo()
 	for (EDoomWeapon W : Pref)
 	{
 		const FDoomWeaponDef& WD = DoomInfo::Weapon(W);
-		if (Inv.Weapons[(int32)W] && (WD.Ammo == EDoomAmmo::None || Inv.Ammo[(int32)WD.Ammo] >= WD.AmmoPerShot))
+		if (Inv().Weapons[(int32)W] && (WD.Ammo == EDoomAmmo::None || Inv().Ammo[(int32)WD.Ammo] >= WD.AmmoPerShot))
 		{
-			if (W != Inv.Ready) PendingWeapon = W;
+			if (W != Inv().Ready) PendingWeapon = W;
 			break;
 		}
 	}
@@ -356,7 +356,7 @@ bool ADoomPlayer::CheckAmmo()
 
 void ADoomPlayer::TicWeapon()
 {
-	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv.Ready);
+	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	if (FlashTics > 0 && --FlashTics == 0)
 	{
 		FlashFrame = 0;
@@ -384,19 +384,19 @@ void ADoomPlayer::TicWeapon()
 			}
 			if (PendingWeapon != EDoomWeapon::Count)
 			{
-				Inv.Ready = PendingWeapon;
+				Inv().Ready = PendingWeapon;
 				PendingWeapon = EDoomWeapon::Count;
 			}
 			SetWeaponSprite();
 			Phase = EWeaponPhase::Raising;
-			if (Inv.Ready == EDoomWeapon::Chainsaw)
+			if (Inv().Ready == EDoomWeapon::Chainsaw)
 			{
 				DoomWorld->PlaySound(TEXT("SAWUP"), nullptr);
 			}
 		}
 		break;
 	case EWeaponPhase::Ready:
-		if (Inv.Ready == EDoomWeapon::Chainsaw)
+		if (Inv().Ready == EDoomWeapon::Chainsaw)
 		{
 			WeaponFrame = ((DoomWorld->GetTic() / 4) & 1) ? 'D' : 'C';
 			if ((DoomWorld->GetTic() % 16) == 0) DoomWorld->PlaySound(TEXT("SAWIDL"), nullptr, 0.6f);
@@ -450,7 +450,7 @@ void ADoomPlayer::TicWeapon()
 			{
 				FireWeapon(FireIndex);
 			}
-			if (Inv.Ready == EDoomWeapon::SuperShotgun)
+			if (Inv().Ready == EDoomWeapon::SuperShotgun)
 			{
 				if (F.Frame == 'D') DoomWorld->PlaySound(TEXT("DBOPN"), nullptr);
 				if (F.Frame == 'F') DoomWorld->PlaySound(TEXT("DBLOAD"), nullptr);
@@ -467,13 +467,13 @@ void ADoomPlayer::TicWeapon()
 
 void ADoomPlayer::StartFire()
 {
-	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv.Ready);
+	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	Phase = EWeaponPhase::Firing;
 	FireIndex = 0;
 	const FDoomWeaponFrame& F = D.Fire[0];
 	WeaponFrame = F.Frame;
 	FrameTics = FMath::Max(1, F.Tics);
-	if (Inv.Ready == EDoomWeapon::BFG)
+	if (Inv().Ready == EDoomWeapon::BFG)
 	{
 		DoomWorld->PlaySound(TEXT("BFG"), nullptr);
 	}
@@ -490,38 +490,38 @@ void ADoomPlayer::StartFire()
 
 void ADoomPlayer::FireWeapon(int32 FrameIndex)
 {
-	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv.Ready);
+	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	const FDoomWeaponFrame& F = D.Fire[FrameIndex];
 	if (D.Ammo != EDoomAmmo::None)
 	{
-		if (Inv.Ammo[(int32)D.Ammo] < D.AmmoPerShot)
+		if (Inv().Ammo[(int32)D.Ammo] < D.AmmoPerShot)
 		{
 			return;
 		}
-		Inv.Ammo[(int32)D.Ammo] -= D.AmmoPerShot;
+		Inv().Ammo[(int32)D.Ammo] -= D.AmmoPerShot;
 	}
 	if (F.Flash >= 0)
 	{
-		FlashFrame = 'A' + (Inv.Ready == EDoomWeapon::Plasma ? (PlayerRand() & 1) : F.Flash);
-		FlashTics = Inv.Ready == EDoomWeapon::Pistol ? 7 : 5;
-		ExtraLight = (Inv.Ready == EDoomWeapon::Rocket || Inv.Ready == EDoomWeapon::BFG || Inv.Ready == EDoomWeapon::SuperShotgun) ? 2 : 1;
+		FlashFrame = 'A' + (Inv().Ready == EDoomWeapon::Plasma ? (PlayerRand() & 1) : F.Flash);
+		FlashTics = Inv().Ready == EDoomWeapon::Pistol ? 7 : 5;
+		ExtraLight = (Inv().Ready == EDoomWeapon::Rocket || Inv().Ready == EDoomWeapon::BFG || Inv().Ready == EDoomWeapon::SuperShotgun) ? 2 : 1;
 		if (DoomWorld->IsModern())
 		{
-			MuzzleLight->SetIntensity(Inv.Ready == EDoomWeapon::Plasma ? 30000.f : 60000.f);
-			MuzzleLight->SetLightColor(Inv.Ready == EDoomWeapon::Plasma ? FLinearColor(0.4f, 0.6f, 1.f) :
-				Inv.Ready == EDoomWeapon::BFG ? FLinearColor(0.4f, 1.f, 0.4f) : FLinearColor(1.f, 0.75f, 0.45f));
+			MuzzleLight->SetIntensity(Inv().Ready == EDoomWeapon::Plasma ? 30000.f : 60000.f);
+			MuzzleLight->SetLightColor(Inv().Ready == EDoomWeapon::Plasma ? FLinearColor(0.4f, 0.6f, 1.f) :
+				Inv().Ready == EDoomWeapon::BFG ? FLinearColor(0.4f, 1.f, 0.4f) : FLinearColor(1.f, 0.75f, 0.45f));
 		}
 	}
 	AttackDown = 4;
 	DoomWorld->NoiseAlert(this, GetActorLocation());
-	if (*D.Sound && Inv.Ready != EDoomWeapon::Chainsaw && Inv.Ready != EDoomWeapon::Fist && Inv.Ready != EDoomWeapon::BFG)
+	if (*D.Sound && Inv().Ready != EDoomWeapon::Chainsaw && Inv().Ready != EDoomWeapon::Fist && Inv().Ready != EDoomWeapon::BFG)
 	{
 		DoomWorld->PlaySound(D.Sound, nullptr);
 	}
 
 	const FVector Eye = GetActorLocation() + FVector(0, 0, 8.f * Doom::Scale);
 	const FVector Fwd = FRotator(0, GetControlRotation().Yaw, 0).Vector();
-	switch (Inv.Ready)
+	switch (Inv().Ready)
 	{
 	case EDoomWeapon::Fist: MeleeAttack(false); break;
 	case EDoomWeapon::Chainsaw: MeleeAttack(true); break;
@@ -536,7 +536,7 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 		AActor* AimTarget = nullptr;
 		const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget);
 		const FVector Dir = (Fwd + FVector(0, 0, Slope)).GetSafeNormal();
-		const TCHAR* Type = Inv.Ready == EDoomWeapon::Rocket ? TEXT("Rocket") : Inv.Ready == EDoomWeapon::Plasma ? TEXT("Plasma") : TEXT("BFGBall");
+		const TCHAR* Type = Inv().Ready == EDoomWeapon::Rocket ? TEXT("Rocket") : Inv().Ready == EDoomWeapon::Plasma ? TEXT("Plasma") : TEXT("BFGBall");
 		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir);
 		break;
 	}
@@ -711,18 +711,18 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	{
 		D = FMath::Max(1, D / 2);
 	}
-	if (Inv.ArmorClass > 0)
+	if (Inv().ArmorClass > 0)
 	{
-		int32 Saved = Inv.ArmorClass == 1 ? D / 3 : D / 2;
-		if (Inv.Armor <= Saved)
+		int32 Saved = Inv().ArmorClass == 1 ? D / 3 : D / 2;
+		if (Inv().Armor <= Saved)
 		{
-			Saved = Inv.Armor;
-			Inv.ArmorClass = 0;
+			Saved = Inv().Armor;
+			Inv().ArmorClass = 0;
 		}
-		Inv.Armor -= Saved;
+		Inv().Armor -= Saved;
 		D -= Saved;
 	}
-	Inv.Health -= D;
+	Inv().Health -= D;
 	DamageCount = FMath::Min(DamageCount + D, 100);
 
 	AActor* Source = DamageCauser ? (DamageCauser->GetOwner() ? DamageCauser->GetOwner() : DamageCauser) : nullptr;
@@ -740,10 +740,10 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 		FaceDamageDir = 0;
 	}
 
-	if (Inv.Health <= 0)
+	if (Inv().Health <= 0)
 	{
-		Inv.Health = FMath::Max(Inv.Health, -99);
-		DoomWorld->PlaySound(Inv.Health < -50 ? TEXT("PDIEHI") : TEXT("PLDETH"), nullptr);
+		Inv().Health = FMath::Max(Inv().Health, -99);
+		DoomWorld->PlaySound(Inv().Health < -50 ? TEXT("PDIEHI") : TEXT("PLDETH"), nullptr);
 		GetCharacterMovement()->StopMovementImmediately();
 		bFireHeld = false;
 		Phase = EWeaponPhase::Lowering;
@@ -756,22 +756,44 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	return Damage;
 }
 
+FDoomInventory& ADoomPlayer::Inv()
+{
+	ADoomPlayerState* PS = GetDoomPlayerState();
+	return PS ? PS->Inv : LocalInv;
+}
+
+const FDoomInventory& ADoomPlayer::Inv() const
+{
+	const ADoomPlayerState* PS = GetDoomPlayerState();
+	return PS ? PS->Inv : LocalInv;
+}
+
+ADoomPlayerState* ADoomPlayer::GetDoomPlayerState() const
+{
+	return GetPlayerState<ADoomPlayerState>();
+}
+
 void ADoomPlayer::DoomSerialize(FArchive& Ar)
 {
 	FVector Location = GetActorLocation();
 	FRotator View = GetControlRotation();
 	FVector Velocity = GetCharacterMovement()->Velocity;
 	Ar << Location << View << Velocity;
-	Ar << Inv.Health << Inv.Armor << Inv.ArmorClass << Inv.bBackpack;
-	for (int32& A : Inv.Ammo) Ar << A;
-	for (bool& W : Inv.Weapons) Ar << W;
-	for (bool& K : Inv.Keys) Ar << K;
-	uint8 Ready = (uint8)Inv.Ready;
-	Ar << Ready;
+	// the inventory and this player's level credit, from the player state
+	if (ADoomPlayerState* PS = GetDoomPlayerState())
+	{
+		PS->DoomSerialize(Ar);
+	}
+	else
+	{
+		ADoomPlayerState* Defaults = GetMutableDefault<ADoomPlayerState>();
+		LocalInv.Serialize(Ar);
+		int32 Credit[4] = { Defaults->LevelKills, Defaults->LevelItems, Defaults->LevelSecrets, Defaults->Frags };
+		for (int32& C : Credit) Ar << C;
+	}
 	Ar << Invulnerability << Invisibility << RadSuit << LightAmp << bBerserk;
 	if (Ar.IsLoading())
 	{
-		Inv.Ready = (EDoomWeapon)FMath::Min<uint8>(Ready, (uint8)EDoomWeapon::Count - 1);
 		SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
 		if (AController* C = GetController())
 		{
@@ -795,8 +817,8 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	const bool bDoubleAmmo = DoomWorld && (DoomWorld->GetSkill() == 1 || DoomWorld->GetSkill() == 5);
 	auto GiveAmmo = [&](EDoomAmmo A, int32 Amount) -> bool
 	{
-		const int32 Max = DoomInfo::MaxAmmo(A, Inv.bBackpack);
-		int32& Cur = Inv.Ammo[(int32)A];
+		const int32 Max = DoomInfo::MaxAmmo(A, Inv().bBackpack);
+		int32& Cur = Inv().Ammo[(int32)A];
 		if (Cur >= Max)
 		{
 			return false;
@@ -805,14 +827,14 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		const int32 Old = Cur;
 		Cur = FMath::Min(Cur + Amount, Max);
 		// switch away from fist/pistol when ammo for something better arrives
-		if (Old == 0 && (Inv.Ready == EDoomWeapon::Fist || Inv.Ready == EDoomWeapon::Pistol))
+		if (Old == 0 && (Inv().Ready == EDoomWeapon::Fist || Inv().Ready == EDoomWeapon::Pistol))
 		{
 			static const EDoomWeapon ByAmmo[4][2] = {
 				{ EDoomWeapon::Chaingun, EDoomWeapon::Pistol }, { EDoomWeapon::SuperShotgun, EDoomWeapon::Shotgun },
 				{ EDoomWeapon::Rocket, EDoomWeapon::Count }, { EDoomWeapon::Plasma, EDoomWeapon::Count } };
 			for (EDoomWeapon W : ByAmmo[(int32)A])
 			{
-				if (W != EDoomWeapon::Count && Inv.Weapons[(int32)W] && W != Inv.Ready && !(A == EDoomAmmo::Rockets))
+				if (W != EDoomWeapon::Count && Inv().Weapons[(int32)W] && W != Inv().Ready && !(A == EDoomAmmo::Rockets))
 				{
 					PendingWeapon = W;
 					break;
@@ -823,7 +845,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	};
 	auto GiveWeapon = [&](EDoomWeapon W, EDoomAmmo A, int32 Ammo) -> bool
 	{
-		const bool bHad = Inv.Weapons[(int32)W];
+		const bool bHad = Inv().Weapons[(int32)W];
 		bool bGot = false;
 		if (A != EDoomAmmo::None)
 		{
@@ -831,7 +853,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		}
 		if (!bHad)
 		{
-			Inv.Weapons[(int32)W] = true;
+			Inv().Weapons[(int32)W] = true;
 			PendingWeapon = W;
 			FaceEvilGrin = 2 * Doom::TicRate;
 			bGot = true;
@@ -848,34 +870,34 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	case EPickup::Health:
 	{
 		const int32 Amount = Def.DoomEdNum == 2011 ? 10 : 25;
-		if (Inv.Health >= 100) return false;
-		Inv.Health = FMath::Min(Inv.Health + Amount, 100);
+		if (Inv().Health >= 100) return false;
+		Inv().Health = FMath::Min(Inv().Health + Amount, 100);
 		break;
 	}
-	case EPickup::HealthBonus: Inv.Health = FMath::Min(Inv.Health + 1, R.MaxHealth); break;
-	case EPickup::ArmorBonus: Inv.Armor = FMath::Min(Inv.Armor + 1, R.MaxArmor); if (!Inv.ArmorClass) Inv.ArmorClass = 1; break;
-	case EPickup::Soulsphere: Inv.Health = FMath::Min(Inv.Health + R.SoulsphereHealth, R.MaxSoulsphere); Sound = TEXT("GETPOW"); break;
-	case EPickup::Megasphere: Inv.Health = R.MegasphereHealth; Inv.Armor = 100 * R.BlueArmorClass; Inv.ArmorClass = R.BlueArmorClass; Sound = TEXT("GETPOW"); break;
-	case EPickup::GreenArmor: if (Inv.Armor >= 100 * R.GreenArmorClass) return false; Inv.Armor = 100 * R.GreenArmorClass; Inv.ArmorClass = R.GreenArmorClass; break;
-	case EPickup::BlueArmor: if (Inv.Armor >= 100 * R.BlueArmorClass) return false; Inv.Armor = 100 * R.BlueArmorClass; Inv.ArmorClass = R.BlueArmorClass; break;
+	case EPickup::HealthBonus: Inv().Health = FMath::Min(Inv().Health + 1, R.MaxHealth); break;
+	case EPickup::ArmorBonus: Inv().Armor = FMath::Min(Inv().Armor + 1, R.MaxArmor); if (!Inv().ArmorClass) Inv().ArmorClass = 1; break;
+	case EPickup::Soulsphere: Inv().Health = FMath::Min(Inv().Health + R.SoulsphereHealth, R.MaxSoulsphere); Sound = TEXT("GETPOW"); break;
+	case EPickup::Megasphere: Inv().Health = R.MegasphereHealth; Inv().Armor = 100 * R.BlueArmorClass; Inv().ArmorClass = R.BlueArmorClass; Sound = TEXT("GETPOW"); break;
+	case EPickup::GreenArmor: if (Inv().Armor >= 100 * R.GreenArmorClass) return false; Inv().Armor = 100 * R.GreenArmorClass; Inv().ArmorClass = R.GreenArmorClass; break;
+	case EPickup::BlueArmor: if (Inv().Armor >= 100 * R.BlueArmorClass) return false; Inv().Armor = 100 * R.BlueArmorClass; Inv().ArmorClass = R.BlueArmorClass; break;
 	case EPickup::Invulnerability: Invulnerability = 30 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::Berserk:
 		bBerserk = true;
 		BerserkTics = 1;
-		if (Inv.Health < 100) Inv.Health = 100;
-		if (Inv.Ready != EDoomWeapon::Fist) PendingWeapon = EDoomWeapon::Fist;
+		if (Inv().Health < 100) Inv().Health = 100;
+		if (Inv().Ready != EDoomWeapon::Fist) PendingWeapon = EDoomWeapon::Fist;
 		Sound = TEXT("GETPOW");
 		break;
 	case EPickup::Invisibility: Invisibility = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::RadSuit: RadSuit = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::Map: DoomWorld->bFullMap = true; Sound = TEXT("GETPOW"); break;
 	case EPickup::LightAmp: LightAmp = 120 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
-	case EPickup::BlueCard: Inv.Keys[0] = true; break;
-	case EPickup::YellowCard: Inv.Keys[1] = true; break;
-	case EPickup::RedCard: Inv.Keys[2] = true; break;
-	case EPickup::BlueSkull: Inv.Keys[3] = true; break;
-	case EPickup::YellowSkull: Inv.Keys[4] = true; break;
-	case EPickup::RedSkull: Inv.Keys[5] = true; break;
+	case EPickup::BlueCard: Inv().Keys[0] = true; break;
+	case EPickup::YellowCard: Inv().Keys[1] = true; break;
+	case EPickup::RedCard: Inv().Keys[2] = true; break;
+	case EPickup::BlueSkull: Inv().Keys[3] = true; break;
+	case EPickup::YellowSkull: Inv().Keys[4] = true; break;
+	case EPickup::RedSkull: Inv().Keys[5] = true; break;
 	case EPickup::Clip: bTaken = GiveAmmo(EDoomAmmo::Bullets, bDropped ? FMath::Max(1, Clip[0] / 2) : Clip[0]); break;
 	case EPickup::ClipBox: bTaken = GiveAmmo(EDoomAmmo::Bullets, Clip[0] * 5); break;
 	case EPickup::Shells: bTaken = GiveAmmo(EDoomAmmo::Shells, Clip[1]); break;
@@ -885,7 +907,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	case EPickup::Cell: bTaken = GiveAmmo(EDoomAmmo::Cells, Clip[3]); break;
 	case EPickup::CellPack: bTaken = GiveAmmo(EDoomAmmo::Cells, Clip[3] * 5); break;
 	case EPickup::Backpack:
-		Inv.bBackpack = true;
+		Inv().bBackpack = true;
 		GiveAmmo(EDoomAmmo::Bullets, Clip[0]); GiveAmmo(EDoomAmmo::Shells, Clip[1]); GiveAmmo(EDoomAmmo::Rockets, Clip[2]); GiveAmmo(EDoomAmmo::Cells, Clip[3]);
 		break;
 	case EPickup::Chainsaw: bTaken = GiveWeapon(EDoomWeapon::Chainsaw, EDoomAmmo::None, 0); Sound = TEXT("WPNUP"); break;
