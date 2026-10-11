@@ -89,6 +89,8 @@ public:
 	};
 	/** The static chunk's sections as they are now (the editor bakes them into tile assets). */
 	void GetStaticSections(TMap<FName, FSectionData>& Solid, TMap<FName, FSectionData>& NonSolid);
+	/** All chunks' sections merged (static, movers and switch lines): map exporters. */
+	void GetAllSections(TMap<FName, FSectionData>& Solid, TMap<FName, FSectionData>& NonSolid);
 	/** A checksum of a chunk's geometry: saved tiles are used only when it matches. */
 	static uint32 Signature(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
 	/** Splits sections into 1024-unit tiles (by triangle centroid), sharing vertices per tile. */

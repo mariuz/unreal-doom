@@ -26,6 +26,8 @@ namespace DoomContent
 	bool ImportMap(const FString& MapName, bool bOverwrite);
 	/** Saves a level's static geometry as static mesh tiles (/Game/Doom/Maps/<MAP>_Tiles). */
 	bool BakeMapTiles(ADoomMapActor* MapActor);
+	/** Writes a WAD map as a Lyra arena: OBJ tiles, collision ramps and a gameplay JSON (-exportlyra=MAP -out=DIR). */
+	bool ExportLyraLevel(const FString& MapName, const FString& OutDir);
 	FString MapPackage(const FString& MapName);
 	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/<MAP>_Edit (-edittest=MAP). */
 	bool EditTest(const FString& MapName);

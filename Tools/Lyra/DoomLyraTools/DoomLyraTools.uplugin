@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Doom Lyra Tools",
+	"Description": "Helpers for DoomUE's Lyra levels: editor scripting (setting properties scripts cannot reach) and -doomshot / -doomquit test captures.",
+	"Category": "Editor",
+	"CreatedBy": "DoomUE",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "DoomLyraTools",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "DoomLyraToolsRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
