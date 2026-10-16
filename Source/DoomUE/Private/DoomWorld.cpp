@@ -2326,7 +2326,7 @@ void UDoomWorld::TicRespawn()
 			Risen->SpawnFeet = M->SpawnFeet;
 			Risen->SpawnAngle = M->SpawnAngle;
 			Risen->bCanRespawn = true;
-			UE_LOG(LogDoom, Log, TEXT("Nightmare: %s respawned"), Risen->Def->Name);
+			UE_LOG(LogDoom, Log, TEXT("Nightmare: %s respawned"), *Risen->Def->Name);
 		}
 		M->Destroy();
 	}
@@ -2366,7 +2366,7 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 	{
 		for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
 		{
-			if (M.IsValid() && FCString::Strcmp(M->Def->Name, Name) == 0 && !M->IsDead()) return false;
+			if (M.IsValid() && M->Def->Name.Equals(Name, ESearchCase::CaseSensitive) && !M->IsDead()) return false;
 		}
 		return true;
 	};

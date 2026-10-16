@@ -4,6 +4,8 @@
 #include "Engine/DeveloperSettings.h"
 #include "DoomSettings.generated.h"
 
+class UDoomGameData;
+
 /** Project Settings > Game > Doom. Command line overrides: -iwad= -file= -warp= -skill= -modern / -classic */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "Doom"))
 class DOOMUE_API UDoomSettings : public UDeveloperSettings
@@ -24,6 +26,14 @@ public:
 	/** Map to start on; empty shows the title screen. */
 	UPROPERTY(Config, EditAnywhere, Category = "Game")
 	FString StartMap;
+
+	/**
+	 * The editable game tables (things, projectiles, weapons, rules). The game starts from this
+	 * asset when it exists, else from the built-in tables; DeHackEd patches apply on top.
+	 * -run=DoomContent -gamedata writes it from the built-in tables.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Game")
+	TSoftObjectPtr<UDoomGameData> GameData = TSoftObjectPtr<UDoomGameData>(FSoftObjectPath(TEXT("/Game/Doom/Data/DA_DoomGameData.DA_DoomGameData")));
 
 	/** 1 (I'm too young to die) .. 5 (Nightmare!) */
 	UPROPERTY(Config, EditAnywhere, Category = "Game", meta = (ClampMin = 1, ClampMax = 5))

@@ -141,7 +141,7 @@ void ADoomProjectile::DoomTic()
 		{
 			Light->SetIntensity(Light->Intensity * 0.8f);
 		}
-		if (Def && FCString::Strcmp(Def->Name, TEXT("BFGBall")) == 0 && Sprite->FrameIndex() == 2 && Age >= 0)
+		if (Def && Def->Name.Equals(TEXT("BFGBall"), ESearchCase::CaseSensitive) && Sprite->FrameIndex() == 2 && Age >= 0)
 		{
 			Age = -1000;
 			BfgSpray();
@@ -221,7 +221,7 @@ void ADoomProjectile::Explode(AActor* HitActor)
 	const EDoomParticles Burst = (C.G > C.R && C.G > C.B) ? EDoomParticles::BFG : (C.B > C.R) ? EDoomParticles::Plasma : EDoomParticles::Explosion;
 	DoomWorld->SpawnParticles(Burst, L, (-Incoming).GetSafeNormal(1e-4f, FVector::UpVector));
 	Sprite->SetSpritePrefix(ExplosionSprite(Def->Sprite));
-	Sprite->PlaySequence(Def->Explode, FCString::Strcmp(Def->Name, TEXT("BFGBall")) == 0 ? 8 : 6, false, true);
+	Sprite->PlaySequence(Def->Explode, Def->Name.Equals(TEXT("BFGBall"), ESearchCase::CaseSensitive) ? 8 : 6, false, true);
 	if (Light)
 	{
 		Light->SetIntensity(Light->Intensity * 3.f);

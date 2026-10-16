@@ -191,7 +191,7 @@ void UDoomWorld::FinaleInput()
 			CastCall.DeadTics = 0;
 			PlaySound(TEXT("SHOTGN"), nullptr);
 			PlaySound(Def ? Def->DeathSound : TEXT("PLDETH"), nullptr);
-			SetCastSequence(Def ? (*Def->XDeath && DoomInfo::Random() < 64 ? Def->XDeath : Def->Death) : TEXT("HIJKLMN"));
+			SetCastSequence(Def ? (!Def->XDeath.IsEmpty() && DoomInfo::Random() < 64 ? Def->XDeath : Def->Death) : TEXT("HIJKLMN"));
 		}
 		break;
 	}
@@ -229,8 +229,8 @@ void UDoomWorld::StartCastMember(int32 Index)
 	CastCall.Index = Index % CastCount;
 	const int32 Ed = GCast[CastCall.Index].DoomEdNum;
 	const FDoomThingDef* Def = Ed ? DoomInfo::FindThing(Ed) : nullptr;
-	SetCastSequence(Def ? (*Def->Run ? Def->Run : Def->Idle) : TEXT("ABCD"));
-	if (Def && *Def->SeeSound)
+	SetCastSequence(Def ? (!Def->Run.IsEmpty() ? Def->Run : Def->Idle) : TEXT("ABCD"));
+	if (Def && !Def->SeeSound.IsEmpty())
 	{
 		PlaySound(Def->SeeSound, nullptr);
 	}
@@ -277,18 +277,18 @@ void UDoomWorld::TicFinale()
 	if (CastCall.bAttacking)
 	{
 		CastCall.bAttacking = false;
-		SetCastSequence(Def ? (*Def->Run ? Def->Run : Def->Idle) : TEXT("ABCD"));
+		SetCastSequence(Def ? (!Def->Run.IsEmpty() ? Def->Run : Def->Idle) : TEXT("ABCD"));
 		return;
 	}
 	// walked a while: show off an attack
 	if (++CastCall.Walked % 3 == 0)
 	{
-		const FString Attack = Def ? (*Def->Attack ? FString(Def->Attack) : FString(Def->Melee)) : FString(TEXT("EF"));
+		const FString Attack = Def ? (!Def->Attack.IsEmpty() ? FString(Def->Attack) : FString(Def->Melee)) : FString(TEXT("EF"));
 		if (!Attack.IsEmpty())
 		{
 			CastCall.bAttacking = true;
 			SetCastSequence(Attack);
-			PlaySound(Def ? (*Def->AttackSound ? Def->AttackSound : TEXT("FIRSHT")) : TEXT("PISTOL"), nullptr);
+			PlaySound(Def ? (!Def->AttackSound.IsEmpty() ? Def->AttackSound : TEXT("FIRSHT")) : TEXT("PISTOL"), nullptr);
 			return;
 		}
 	}
@@ -308,7 +308,7 @@ void UDoomWorld::TicBrain()
 		{
 			for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
 			{
-				if (M.IsValid() && FCString::Strcmp(M->Def->Name, TEXT("BossBrain")) == 0)
+				if (M.IsValid() && M->Def->Name.Equals(TEXT("BossBrain"), ESearchCase::CaseSensitive))
 				{
 					const FVector Off((DoomInfo::Random() - 128) * 2.f, (DoomInfo::Random() - 128) * 2.f, DoomInfo::Random() * 0.5f);
 					const FVector Pos = M->GetActorLocation() + Off;
@@ -405,7 +405,7 @@ void UDoomWorld::TicBrain()
 		PlaySound(TEXT("TELEPT"), &C.Target);
 		if (ADoomMonster* M = SpawnMonster(BrainSpawnType(DoomInfo::Random()), C.Target, DoomInfo::Random() * 360.f / 256.f))
 		{
-			UE_LOG(LogDoom, Log, TEXT("Spawn cube hatched a %s"), M->Def->Name);
+			UE_LOG(LogDoom, Log, TEXT("Spawn cube hatched a %s"), *M->Def->Name);
 			--Flow().TotalKills; // spawned monsters do not count towards the level's total
 			if (P)
 			{

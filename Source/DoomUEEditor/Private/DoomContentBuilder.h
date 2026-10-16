@@ -13,6 +13,9 @@
  *
  * Runs automatically when the editor starts and the assets are missing, or:
  *   UnrealEditor-Cmd DoomUE.uproject -run=DoomContent [-force] [-effects | -materials] [-importmap=E1M1,E1M2|all]
+ *
+ * It also writes the editable game tables (/Game/Doom/Data/DA_DoomGameData) from the built-in ones
+ * when they are missing; -gamedata -force rewrites them (losing edits made in the editor).
  */
 class ADoomMapActor;
 
@@ -20,6 +23,8 @@ namespace DoomContent
 {
 	bool AssetsExist();
 	bool Build(bool bForce, bool bMaterials = true, bool bEffects = true);
+	/** Writes UDoomGameData from the built-in tables when missing (or always with bOverwrite). */
+	bool BuildGameData(bool bOverwrite);
 	/** Logs a Niagara system's lightweight emitters and their module properties (-dumpniagara=Path). */
 	void DumpNiagara(const FString& Path);
 	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */
