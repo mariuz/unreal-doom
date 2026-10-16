@@ -599,7 +599,7 @@ void ADoomPlayer::SetWeaponSprite()
 	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	WeaponSprite = D.Sprite;
 	FlashSprite = D.FlashSprite;
-	WeaponFrame = D.ReadyFrame;
+	WeaponFrame = D.ReadyLetter();
 }
 
 bool ADoomPlayer::CheckAmmo()
@@ -673,7 +673,7 @@ void ADoomPlayer::TicWeapon()
 		}
 		else
 		{
-			WeaponFrame = D.ReadyFrame;
+			WeaponFrame = D.ReadyLetter();
 		}
 		if (IsDead() || PendingWeapon != EDoomWeapon::Count)
 		{
@@ -708,13 +708,13 @@ void ADoomPlayer::TicWeapon()
 			{
 				bRefire = false;
 				Phase = EWeaponPhase::Ready;
-				WeaponFrame = D.ReadyFrame;
+				WeaponFrame = D.ReadyLetter();
 			}
 			break;
 		}
 		{
 			const FDoomWeaponFrame& F = D.Fire[FireIndex];
-			WeaponFrame = F.Frame;
+			WeaponFrame = F.Letter();
 			FrameTics = FMath::Max(1, F.Tics);
 			if (F.bFire)
 			{
@@ -722,9 +722,9 @@ void ADoomPlayer::TicWeapon()
 			}
 			if (Inv().Ready == EDoomWeapon::SuperShotgun)
 			{
-				if (F.Frame == 'D') PlaySelfSound(TEXT("DBOPN"));
-				if (F.Frame == 'F') PlaySelfSound(TEXT("DBLOAD"));
-				if (F.Frame == 'H') PlaySelfSound(TEXT("DBCLS"));
+				if (F.Letter() == 'D') PlaySelfSound(TEXT("DBOPN"));
+				if (F.Letter() == 'F') PlaySelfSound(TEXT("DBLOAD"));
+				if (F.Letter() == 'H') PlaySelfSound(TEXT("DBCLS"));
 			}
 			if (F.Tics == 0)
 			{
@@ -741,7 +741,7 @@ void ADoomPlayer::StartFire()
 	Phase = EWeaponPhase::Firing;
 	FireIndex = 0;
 	const FDoomWeaponFrame& F = D.Fire[0];
-	WeaponFrame = F.Frame;
+	WeaponFrame = F.Letter();
 	FrameTics = FMath::Max(1, F.Tics);
 	if (Inv().Ready == EDoomWeapon::BFG)
 	{
@@ -784,7 +784,7 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 	}
 	AttackDown = 4;
 	DoomWorld->NoiseAlert(this, GetActorLocation());
-	if (*D.Sound && Inv().Ready != EDoomWeapon::Chainsaw && Inv().Ready != EDoomWeapon::Fist && Inv().Ready != EDoomWeapon::BFG)
+	if (!D.Sound.IsEmpty() && Inv().Ready != EDoomWeapon::Chainsaw && Inv().Ready != EDoomWeapon::Fist && Inv().Ready != EDoomWeapon::BFG)
 	{
 		PlaySelfSound(D.Sound);
 	}

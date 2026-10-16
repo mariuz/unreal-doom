@@ -49,6 +49,7 @@ with `-iwad=` / `-file=`.
 | Game loop (`G_Ticker`, `G_ExitLevel`) | **Gameplay framework** split: `ADoomGameMode` runs the fixed 35 Hz clock and the level flow (exits, intermission, next map); `ADoomGameState` holds the replicated flow record (phase, map, level tic, kill / item / secret totals); `ADoomPlayerState` holds the inventory and each player's own kills, items, secrets and frags, and carries them through travel. See [docs/Architecture.md](docs/Architecture.md) |
 | Network games (`d_net.c`, co-op, deathmatch) | Unreal **replication**, server-authoritative instead of Doom's lockstep. The listen or dedicated server simulates; clients build the map named by the replicated flow record. Changed sectors and switch textures arrive through fast arrays, and monsters, things and missiles are replicated actors with replicated sprite state. Input reaches the server through RPCs, the inventory uses a bit-packed net serializer, and sounds and effects are multicast. Up to 4 players get co-op starts, or deathmatch starts with weapons-stay, frags and respawn. See [docs/Multiplayer.md](docs/Multiplayer.md) |
 | Simulation (`P_Ticker`) | `UTickableWorldSubsystem` (`UDoomWorld`) running one tic when the game mode's clock asks: movers, lights, specials, monsters, things, missiles |
+| Info tables (`info.c`: mobjinfo, weapons, `d_items.c`) | `USTRUCT`s for things, projectiles, weapons and game rules, kept in a **`UPrimaryDataAsset`** (`/Game/Doom/Data/DA_DoomGameData`, `UDoomGameData`) that the editor shows and edits. The game copies it at start, and DeHackEd patches change that copy. Without the asset the built-in tables are used |
 | Settings | `UDeveloperSettings` (Project Settings → Game → Doom) |
 | Authored assets | **None checked in.** The editor module (`DoomUEEditor`) generates the materials, the parameter collection, a default texture and the Niagara effects in code (`UMaterialEditingLibrary`, reflection on Niagara's lightweight emitters) on first editor launch, or `-run=DoomContent` |
 
@@ -192,6 +193,19 @@ with **Play**:
 The geometry itself (vertices, lines, textures) still comes from the WAD, so edit it in a
 Doom map editor; heights, lights, flats and everything placed in the map are editable here.
 
+### Editing the game tables
+
+Open **`Content/Doom/Data/DA_DoomGameData`** to change the game's monsters, pickups, decorations,
+missiles, weapons and rules. Each thing lists its frames, size, health, speed, pain chance, flags
+(as checkboxes), attack kind, missile, drop, pickup, sounds and light. Projectiles list their
+speed, damage, splash and light. Weapons list their sprites, ammo, firing frames, sound and slot.
+The rules cover starting health and bullets, armor classes, soulsphere / megasphere health and
+ammo limits.
+
+The game reads the asset at start (Project Settings > Game > Doom > Game Data picks another one),
+then applies the WAD's and `-deh` DeHackEd patches on top. The asset itself never changes.
+`-run=DoomContent -gamedata -force` rewrites it from the built-in tables, discarding edits.
+
 ## Source layout
 
 ```
@@ -199,7 +213,8 @@ Source/DoomUE/            runtime module
   DoomWad          WAD directory, palettes, colormap, map list
   DoomMap          map lumps, BSP, subsector polygons, neighbour queries, 2D line traces
   DoomGraphics     patches, composite textures, flats, sprites, animations, switches -> UTexture2D
-  DoomInfo         thing / projectile / weapon tables (sizes, frame letters, behaviour)
+  DoomInfo         thing / projectile / weapon tables (sizes, frame letters, behaviour) as USTRUCTs
+  DoomGameData     UPrimaryDataAsset holding the editable copy of those tables
   DoomLevel        geometry chunks, materials, sector light texture, blocking collision
   DoomSpriteComponent  8-rotation billboard sprites with animation
   DoomThing        decorations, pickups, barrels, effects
@@ -313,6 +328,12 @@ threads. `-exittest` now also checks that E1M2 loads in the background behind th
 `-edittest`, the Lyra export and the classic and modern captures give the same results as before.
 A `-steptest` from E1M1's start walks the floors, steps down into the next room and stops at a wall.
 
+Game tables: `DA_DoomGameData` holds 115 things, 9 projectiles and 9 weapons. With `test.deh`,
+`-patchtest` logs the same patched values as before (imp health 1, initial health 50 and bullets
+20, imp fireball speed 20 and damage 1), now applied on top of the asset. Setting the imp's health
+to 777 and the starting bullets to 77 in the asset (an editor Python script) showed up in the
+game unchanged. `-savetest`, `-exittest`, `-edittest` and MAP30's `-endtest` pass with the asset.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -325,7 +346,6 @@ Not done yet (roughly in priority order):
 2. Packaged builds of maps played straight from the WAD (`-warp`, not imported) have no static mesh tiles; importing every map of a WAD (`-importmap=all`) covers them.
 3. Unreal practices worth adopting next:
    * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
-   * **Data assets for the game tables**: thing, weapon and projectile definitions as `UPrimaryDataAsset`s (or a `UDataTable`) that the editor can show and DeHackEd patches can override, instead of C++ arrays.
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.

@@ -1,4 +1,7 @@
 #include "DoomInfo.h"
+#include "DoomGameData.h"
+#include "DoomSettings.h"
+#include "DoomUE.h"
 
 namespace
 {
@@ -251,12 +254,24 @@ namespace
 	FRandomStream GRandom(0x0D00);
 }
 
-// The tables are patchable (DeHackEd): ResetTables restores the defaults before patches apply.
+// The tables are patchable (DeHackEd): ResetTables restores the base tables (the UDoomGameData
+// asset, else the built-in ones) before patches apply.
 namespace
 {
 	TArray<FDoomThingDef>& ThingTable() { static TArray<FDoomThingDef> T = BuildThings(); return T; }
 	TArray<FDoomProjectileDef>& ProjectileTable() { static TArray<FDoomProjectileDef> T = BuildProjectiles(); return T; }
 	TArray<FDoomWeaponDef>& WeaponTable() { static TArray<FDoomWeaponDef> T = BuildWeapons(); return T; }
+	TMap<int32, int32>& ThingIndex()
+	{
+		static TMap<int32, int32> M = []()
+		{
+			TMap<int32, int32> Index;
+			for (int32 i = 0; i < ThingTable().Num(); ++i) Index.Add(ThingTable()[i].DoomEdNum, i);
+			return Index;
+		}();
+		return M;
+	}
+	FString GTablesSource = TEXT("built-in");
 	FDoomRules GRules;
 	TMap<FString, FString> GStrings;
 	TMap<FString, int32> GPars;
@@ -265,13 +280,7 @@ namespace
 
 FDoomThingDef* DoomInfo::MutableThing(int32 DoomEdNum)
 {
-	static const TMap<int32, int32> Index = []()
-	{
-		TMap<int32, int32> M;
-		for (int32 i = 0; i < ThingTable().Num(); ++i) M.Add(ThingTable()[i].DoomEdNum, i);
-		return M;
-	}();
-	const int32* I = Index.Find(DoomEdNum);
+	const int32* I = ThingIndex().Find(DoomEdNum);
 	return I ? &ThingTable()[*I] : nullptr;
 }
 
@@ -335,12 +344,55 @@ int32 DoomInfo::MaxAmmo(EDoomAmmo A, bool bBackpack)
 	return A == EDoomAmmo::None ? 0 : GRules.MaxAmmo[(int32)A] * (bBackpack ? 2 : 1);
 }
 
+void DoomInfo::BuiltInTables(TArray<FDoomThingDef>& Things, TArray<FDoomProjectileDef>& Projectiles, TArray<FDoomWeaponDef>& Weapons)
+{
+	Things = BuildThings();
+	Projectiles = BuildProjectiles();
+	Weapons = BuildWeapons();
+}
+
+FString DoomInfo::TablesSource()
+{
+	return GTablesSource;
+}
+
 void DoomInfo::ResetTables()
 {
 	ThingTable() = BuildThings();
 	ProjectileTable() = BuildProjectiles();
 	WeaponTable() = BuildWeapons();
 	GRules = FDoomRules();
+	GTablesSource = TEXT("built-in");
+	// the editable copy, when the project has one
+	const TSoftObjectPtr<UDoomGameData>& Path = GetDefault<UDoomSettings>()->GameData;
+	if (const UDoomGameData* Data = Path.IsNull() ? nullptr : Path.LoadSynchronous())
+	{
+		if (Data->Things.Num())
+		{
+			ThingTable() = Data->Things;
+		}
+		if (Data->Projectiles.Num())
+		{
+			ProjectileTable() = Data->Projectiles;
+		}
+		// one entry per weapon, in EDoomWeapon order (Weapon() indexes by it); missing ones stay built in
+		for (const FDoomWeaponDef& W : Data->Weapons)
+		{
+			if ((int32)W.Weapon < WeaponTable().Num())
+			{
+				WeaponTable()[(int32)W.Weapon] = W;
+			}
+		}
+		GRules = Data->Rules;
+		GTablesSource = Data->GetPathName();
+	}
+	ThingIndex().Reset();
+	for (int32 i = 0; i < ThingTable().Num(); ++i)
+	{
+		ThingIndex().Add(ThingTable()[i].DoomEdNum, i);
+	}
+	UE_LOG(LogDoom, Log, TEXT("Game tables: %d things, %d projectiles, %d weapons (%s)"),
+		ThingTable().Num(), ProjectileTable().Num(), WeaponTable().Num(), *GTablesSource);
 	GStrings.Reset();
 	GPars.Reset();
 	GSpriteRenames.Reset();

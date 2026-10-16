@@ -417,7 +417,7 @@ void ADoomThingMarker::UpdateVisual()
 	if (G)
 	{
 		const FString Prefix = D ? DoomInfo::SpriteName(D->Sprite) : TEXT("PLAY");
-		const TCHAR Frame = (D && D->Idle && D->Idle[0]) ? D->Idle[0] : TEXT('A');
+		const TCHAR Frame = (D && !D->Idle.IsEmpty()) ? D->Idle[0] : TEXT('A');
 		for (int32 Rot : { 1, 0 })
 		{
 			const FDoomSpriteFrame F = G->SpriteFrame(Prefix, Frame, Rot);

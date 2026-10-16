@@ -67,6 +67,24 @@ In short:
 * See the [README](../README.md#two-renderers) for the classic (palette-exact) and modern
   (Lumen) renderers.
 
+### Game tables
+
+Doom's info tables (`mobjinfo`, `weaponinfo`, the misc rules) are `USTRUCT`s in `DoomInfo.h`:
+`FDoomThingDef`, `FDoomProjectileDef`, `FDoomWeaponDef` (with `FDoomWeaponFrame`s) and
+`FDoomRules`. `UDoomGameData` (a `UPrimaryDataAsset`, `/Game/Doom/Data/DA_DoomGameData`) holds all of
+them and is the version you edit. Game code goes through `DoomInfo::FindThing`, `Weapon`,
+`FindProjectile` and `Rules`, which read the runtime copy:
+
+1. `DoomInfo::ResetTables` (when the WADs load) starts from the built-in tables in `DoomInfo.cpp`.
+   It then takes the asset's tables when `UDoomSettings::GameData` points at one. Weapons are
+   matched by kind, so the asset can list only some.
+2. DeHackEd and BEX patches (`DoomDehacked.cpp`) change that copy through `MutableThing`,
+   `MutableProjectile`, `MutableWeapon` and `Rules`; the asset is never modified.
+
+The editor module writes the asset from the built-in tables when it is missing, or with
+`-run=DoomContent -gamedata -force`. Flags edit as checkboxes (`EDoomThingFlagBits`); frames are
+sprite frame letters as text.
+
 ### Loading a map
 
 `UDoomWorld` loads a map in steps (`BeginLoad`, then `StepLoad` until done):

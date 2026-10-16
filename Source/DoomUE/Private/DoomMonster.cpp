@@ -27,7 +27,7 @@ namespace
 
 	int32 MonsterRand() { return DoomInfo::Random(); }
 
-	bool Is(const FDoomThingDef* D, const TCHAR* Name) { return D && FCString::Strcmp(D->Name, Name) == 0; }
+	bool Is(const FDoomThingDef* D, const TCHAR* Name) { return D && D->Name.Equals(Name, ESearchCase::CaseSensitive); }
 }
 
 ADoomMonster::ADoomMonster(const FObjectInitializer& ObjectInitializer)
@@ -164,7 +164,7 @@ void ADoomMonster::StartState(EMonsterState S)
 	switch (S)
 	{
 	case EMonsterState::Idle: Sprite->PlaySequence(Def->Idle, Def->IdleTics, true, bBright); break;
-	case EMonsterState::Chase: Sprite->PlaySequence(*Def->Run ? Def->Run : Def->Idle, Def->RunTics, true, bBright); StepStart = DoomPos(); break;
+	case EMonsterState::Chase: Sprite->PlaySequence(!Def->Run.IsEmpty() ? Def->Run : Def->Idle, Def->RunTics, true, bBright); StepStart = DoomPos(); break;
 	case EMonsterState::Melee: Sprite->PlaySequence(Def->Melee, 6, false, bBright); FaceTarget(); break;
 	case EMonsterState::Missile:
 		Sprite->PlaySequence(Def->Attack, Is(Def, TEXT("ArchVile")) ? 5 : Is(Def, TEXT("Chaingunner")) || Is(Def, TEXT("SpiderMastermind")) ? 4 : 8, false, true);
@@ -316,7 +316,7 @@ void ADoomMonster::WakeUp(AActor* NewTarget, bool bFromSound)
 		return;
 	}
 	Target = NewTarget;
-	if (*Def->SeeSound)
+	if (!Def->SeeSound.IsEmpty())
 	{
 		const bool bBoss = Is(Def, TEXT("Cyberdemon")) || Is(Def, TEXT("SpiderMastermind"));
 		const FVector L = GetActorLocation();
@@ -404,7 +404,7 @@ bool ADoomMonster::CheckMissileRange()
 		return false;
 	}
 	float Dist = FVector2f::Distance(Doom::ToDoom2D(Target->GetActorLocation()), DoomPos()) - 64.f;
-	if (!*Def->Melee)
+	if (Def->Melee.IsEmpty())
 	{
 		Dist -= 128.f;
 	}
@@ -625,9 +625,9 @@ void ADoomMonster::Chase()
 	{
 		return;
 	}
-	if (*Def->Melee && CheckMeleeRange())
+	if (!Def->Melee.IsEmpty() && CheckMeleeRange())
 	{
-		if (*Def->AttackSound && !Is(Def, TEXT("Revenant")))
+		if (!Def->AttackSound.IsEmpty() && !Is(Def, TEXT("Revenant")))
 		{
 			const FVector L = GetActorLocation();
 			DoomWorld->PlaySound(Def->AttackSound, &L);
@@ -635,7 +635,7 @@ void ADoomMonster::Chase()
 		StartState(EMonsterState::Melee);
 		return;
 	}
-	if (*Def->Attack && (DoomWorld->GetSkill() >= 5 || MoveCount <= 0) && CheckMissileRange())
+	if (!Def->Attack.IsEmpty() && (DoomWorld->GetSkill() >= 5 || MoveCount <= 0) && CheckMissileRange())
 	{
 		StartState(EMonsterState::Missile);
 		bJustAttacked = true;
@@ -647,7 +647,7 @@ void ADoomMonster::Chase()
 		NewChaseDir();
 	}
 
-	if (*Def->ActiveSound && MonsterRand() < 3)
+	if (!Def->ActiveSound.IsEmpty() && MonsterRand() < 3)
 	{
 		const FVector L = GetActorLocation();
 		DoomWorld->PlaySound(Def->ActiveSound, &L);
@@ -665,7 +665,7 @@ void ADoomMonster::HitscanAttack(int32 Pellets, float SpreadDeg, int32 DamageMul
 	const FVector Base = (Aim - From).GetSafeNormal();
 	const float Range = 2048.f * Doom::Scale;
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMonsterShot), false, this);
-	if (*Def->AttackSound)
+	if (!Def->AttackSound.IsEmpty())
 	{
 		DoomWorld->PlaySound(Def->AttackSound, &From);
 	}
@@ -735,10 +735,10 @@ void ADoomMonster::DoAttack(bool bMelee)
 		}
 		else
 		{
-			Missile(Def->Projectile, 0);
+			Missile(*Def->Projectile, 0);
 		}
 		break;
-	case EDoomAttack::Missile: Missile(Def->Projectile, 0); break;
+	case EDoomAttack::Missile: Missile(*Def->Projectile, 0); break;
 	case EDoomAttack::Cyber: Missile(TEXT("Rocket"), 0); break;
 	case EDoomAttack::Revenant:
 		if (bMelee) MeleeHit(10);
@@ -829,7 +829,7 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 		Die(Source, Health < -Def->Health);
 		return Damage;
 	}
-	if (MonsterRand() < Def->PainChance && *Def->Pain && State != EMonsterState::Charging)
+	if (MonsterRand() < Def->PainChance && !Def->Pain.IsEmpty() && State != EMonsterState::Charging)
 	{
 		bJustHit = true;
 		StartState(EMonsterState::Pain);
@@ -861,7 +861,7 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 	ChargeVelocity = FVector::ZeroVector;
 	MakeCorpse();
 	UCapsuleComponent* Cap = GetCapsuleComponent();
-	const bool bXDeath = bGib && *Def->XDeath;
+	const bool bXDeath = bGib && !Def->XDeath.IsEmpty();
 	Sprite->PlaySequence(bXDeath ? Def->XDeath : Def->Death, 5, false, (Def->Flags & EThingFlag::FullBright) != 0);
 	Sprite->SetFuzz((Def->Flags & EThingFlag::Shadow) != 0);
 	const FVector L = GetActorLocation();

@@ -1,4 +1,5 @@
 #include "DoomContentBuilder.h"
+#include "DoomGameData.h"
 #include "DoomAssets.h"
 #include "DoomUE.h"
 #include "MaterialEditingLibrary.h"
@@ -772,8 +773,26 @@ bool DoomContent::AssetsExist()
 		&& LoadObject<UMaterialInterface>(nullptr, DoomAssets::SpriteFuzzPath) != nullptr;
 }
 
+bool DoomContent::BuildGameData(bool bOverwrite)
+{
+	const TCHAR* DataFolder = TEXT("/Game/Doom/Data/");
+	const FString Name = TEXT("DA_DoomGameData");
+	if (!bOverwrite && FPackageName::DoesPackageExist(FString(DataFolder) + Name))
+	{
+		return true;
+	}
+	UPackage* Pkg = MakePackage(Name, DataFolder);
+	UDoomGameData* Data = NewObject<UDoomGameData>(Pkg, *Name, RF_Public | RF_Standalone);
+	DoomInfo::BuiltInTables(Data->Things, Data->Projectiles, Data->Weapons);
+	Data->Rules = FDoomRules();
+	UE_LOG(LogDoomContent, Display, TEXT("Game data: %d things, %d projectiles, %d weapons -> %s%s"),
+		Data->Things.Num(), Data->Projectiles.Num(), Data->Weapons.Num(), DataFolder, *Name);
+	return Save(Data);
+}
+
 bool DoomContent::Build(bool bForce, bool bMaterials, bool bEffects)
 {
+	BuildGameData(false);
 	bool bEffectsOk = true;
 	if (bEffects && (bForce || !EffectsExist()))
 	{
@@ -1414,6 +1433,11 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 			bOk &= DoomContent::ImportMap(N, Params.Contains(TEXT("-force")));
 		}
 		return bOk ? 0 : 1;
+	}
+	// -gamedata [-force]: the editable game tables, from the built-in ones
+	if (Params.Contains(TEXT("-gamedata")))
+	{
+		return DoomContent::BuildGameData(Params.Contains(TEXT("-force"))) ? 0 : 1;
 	}
 	FString Dump;
 	if (FParse::Value(*Params, TEXT("-dumpniagara="), Dump))
