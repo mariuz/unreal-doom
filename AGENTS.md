@@ -45,8 +45,9 @@ Tools/run_tests.bat DoomUE -NullRHI
       either): drive the game through `UDoomWorld` / the HUD instead.
     * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
   * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
-  * `E1M1Modern` compares Lumen lighting, which differs between GPUs: on another machine than the
-    owner's it can fail with the same picture; compare against a run without your changes.
+  * `E1M1Modern` compares Lumen lighting: on a GTX 950 with UE 5.8.2 it fails (brighter, 13.8%)
+    with the same picture, with or without any changes, so compare against a run without yours. Not
+    a settling problem (600 frames change nothing); suspected engine patch (approved on 5.8.1) or GPU.
   * Make steps wait for conditions, not fixed times: background work such as distance-field builds
     can slow the editor a lot.
 * **Screenshots** land in `Saved/Screenshots/WindowsEditor/`.
