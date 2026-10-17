@@ -156,6 +156,7 @@ without saved tiles are baked when they load.
 | `-nettest` | on a listen server and a client: the scripted two-process network test (logs `NetFingerprint`, screenshots) |
 | `-exittest` | with `-warp`: kill two monsters as the player, exit, wait in the intermission, continue; checks the level totals, the player state's credit and the inventory carried into the next map, which loads in the background (PASS/FAIL, then quits) |
 | `-savetest` | with `-warp`: kill and wake some monsters, open a door, save, scramble the world, load, and log PASS/FAIL comparing the state |
+| `-playtest` | with `-warp`: the scripted play-through of doors, lifts, teleporters, splash damage, walking, fire rates, monsters, the automap, prompts, the renderer switch and the intermission, PASS/FAIL per step (see [docs/Testing.md](docs/Testing.md)) |
 | `-dumpmusic=D_E1M1[,seconds]` | render a song to `Saved/music_<lump>.wav` and log notes / RMS / peak |
 
 ### Controls
@@ -362,16 +363,44 @@ The classic screenshot matches its approved image exactly, and the modern one di
 Writing them found a crash: reloading the WADs while a map was loaded left the level pointing at
 freed graphics. `InitWads` now unloads the map first.
 
-Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
-lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
-secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
-menu and the intermission. Expect tuning issues: movement feel, monster step and dropoff edge
-cases, knockback strength, and HUD offsets.
+Play-testing (`-playtest`, [docs/Testing.md](docs/Testing.md)): nobody has played the
+interactive features by hand yet, so the gameplay code was audited against vanilla 1.9 and each
+fix checked with a scripted play-through. On the code before it, 8 of the first 11 steps failed on
+E1M1: doors never closed and lifts never came back up (a closing door or rising lift took itself for
+blocked on every tic), rocket splash did a flat 128 damage, the plasma gun fired 4 times in 2 s
+instead of 24, a cacodemon fell to the floor for good after a hit, and 6 of E1M1's 29 monsters froze
+(the walk test was taller than the monster). Also fixed: teleporters ran line crossings from the old
+spot and never telefragged; knockback came from the shooter instead of the missile and was capped;
+hitscan damage was credited to the controller (no retaliation or infighting); impassable lines
+blocked monster sight; same-species missiles hurt; the arch-vile rule was inverted; walking used
+Unreal's braking (a 23-unit stop instead of Doom's 160-unit slide), turning with keys depended on
+the frame rate; there was no view bob; the automap only learned lines while open; a stray click
+confirmed the quit prompt; the renderer switch reloaded the level from scratch; the IWADs had no par
+times. Now all 17 steps pass or skip on Freedoom's E1M1, E1M2 and E1M4 and Freedoom 2's MAP01 and
+MAP05, and the 12 automation tests pass except `E1M1Modern` on a GTX 950 machine, which fails the
+same way without these changes (Lumen lighting differs by GPU; the approved image is from the owner's machine).
+
+Still not played by a human: expect tuning issues in feel (mouse, gamepad), HUD offsets, and in what
+the audit listed but didn't fix (roadmap item 1).
 
 Not done yet (roughly in priority order):
 
-1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-2. Unreal practices worth adopting next:
+1. **A hand play-through**, then the vanilla differences the play-test audit found but left:
+   * specials: raise-and-change floors and plats change their texture on arrival instead of at the
+     start; a blocked sector-10 door stays open; crusher and ceiling stop sounds; doors usable from
+     their back side; monsters can't trigger GR switches; shooting switches at exact wall hits may
+     miss (uncertain);
+   * player: BFG tracers have no vertical autoaim and fan from the current view, and the BFG flash
+     frame doesn't show; missiles ignore the autoaim angle, barrels and deathmatch players aren't
+     autoaimed; ammo auto-switch rules; gibbing at -50 instead of -100; fist spread, chainsaw turning;
+   * monsters: floating monsters can't rise over steps (no floatok adjustment); Nightmare / `-fast`
+     demon frames; the arch-vile's fire sprite and timing; the pain elemental's death souls ignore the
+     20-soul limit; lost souls skip their death frames; knockback can push monsters off ledges;
+   * UI: automap zoom, pan, follow, marks and grid; Ultimate Doom's episode 4 intermission picture;
+     the animated intermission backgrounds and the WILV / WIF patches; the bunny scroll runs backwards;
+     the rampage face; Esc backs out one menu level instead of closing the menu.
+2. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
+3. Unreal practices worth adopting next:
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.

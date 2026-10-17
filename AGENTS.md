@@ -38,6 +38,12 @@ Tools/run_tests.bat DoomUE -NullRHI
   * Run them before merging.
   * Run without `-NullRHI` when rendering changes: that also compares the screenshots.
   * The `-savetest`, `-exittest`, `-patchtest` and similar switches still work in `-game` runs.
+  * `-playtest` (with `-warp`) is the scripted play-through of the interactive features: run it on
+    E1M1 (and Freedoom 2's MAP01) after gameplay changes; every step should PASS or SKIP. Its steps
+    are in `DoomPlayTest.cpp`, listed in [docs/Testing.md](docs/Testing.md).
+  * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
+  * `E1M1Modern` compares Lumen lighting, which differs between GPUs: on another machine than the
+    owner's it can fail with the same picture; compare against a run without your changes.
   * Make steps wait for conditions, not fixed times: background work such as distance-field builds
     can slow the editor a lot.
 * **Screenshots** land in `Saved/Screenshots/WindowsEditor/`.
@@ -66,7 +72,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 * **Privacy:** don't take screenshots of the desktop (it shows the owner's browser and other apps).
   Use in-engine screenshots only.
 * Decisions waiting on the owner:
-  * Roadmap item 1, DeHackEd frame and code-pointer edits, needs Doom's GPL state table. Bringing
+  * Roadmap item 2, DeHackEd frame and code-pointer edits, needs Doom's GPL state table. Bringing
     it in is the owner's licensing call.
   * Ask before adding third-party content.
 
@@ -135,6 +141,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * play-test fixes from an audit against vanilla 1.9, with `-playtest` (doors, lifts, teleports,
+    splash damage, refire, monster walking, movement feel, automap, prompts, par times);
   * tile sets for maps played straight from the WAD;
   * automation tests;
   * game tables as an editable data asset;
@@ -147,5 +155,5 @@ Tools/run_tests.bat DoomUE -NullRHI
   * editable maps in the editor;
   * Niagara effects and static-mesh tiles;
   * palette-exact rendering.
-* **Not done:** see the README's roadmap. Interactive features (doors, lifts, weapons, monster AI,
-  menus) are implemented but have never been play-tested by hand, so expect tuning issues there.
+* **Not done:** see the README's roadmap. The interactive features pass the scripted play-test but
+  have still never been played by a human, so expect tuning issues in feel and HUD offsets.

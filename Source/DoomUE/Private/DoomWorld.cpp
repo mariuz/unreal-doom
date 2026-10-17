@@ -1,5 +1,6 @@
 #include "DoomWorld.h"
 #include "Engine/DamageEvents.h"
+#include "Misc/ScopeExit.h"
 #include "Serialization/MemoryWriter.h"
 #include "Serialization/MemoryReader.h"
 #include "DoomUE.h"
@@ -1380,7 +1381,10 @@ void UDoomWorld::TicMovers()
 {
 	for (int32 i = 0; i < Movers.Num(); ++i)
 	{
-		FSectorMover& M = Movers[i];
+		// a copy, written back at the end: a crusher can kill the last boss, whose special starts new
+		// movers, and the array may grow (reallocate) under a reference
+		FSectorMover M = Movers[i];
+		ON_SCOPE_EXIT { Movers[i] = M; };
 		if (M.bDone || M.bStasis)
 		{
 			continue;
