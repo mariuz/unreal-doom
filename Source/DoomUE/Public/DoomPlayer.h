@@ -50,6 +50,8 @@ UCLASS()
 class DOOMUE_API ADoomPlayer : public ACharacter
 {
 	GENERATED_BODY()
+	friend class UDoomWorld;    // teleports, telefrags
+	friend class ADoomGameMode; // the scripted test runs (-playtest)
 
 public:
 	ADoomPlayer(const FObjectInitializer& ObjectInitializer);

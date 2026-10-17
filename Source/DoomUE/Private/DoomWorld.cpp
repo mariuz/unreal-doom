@@ -1,4 +1,5 @@
 #include "DoomWorld.h"
+#include "Engine/DamageEvents.h"
 #include "DoomUE.h"
 #include "DoomWad.h"
 #include "DoomGraphics.h"
@@ -883,12 +884,69 @@ void UDoomWorld::RegisterThing(ADoomThing* T) { Things.Add(T); }
 void UDoomWorld::RegisterMonster(ADoomMonster* M) { Monsters.Add(M); }
 void UDoomWorld::RegisterProjectile(ADoomProjectile* P) { Projectiles.Add(P); }
 
+AActor* UDoomWorld::DamageSource(AActor* DamageCauser)
+{
+	if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(DamageCauser))
+	{
+		return Missile->Source.IsValid() ? Missile->Source.Get() : DamageCauser;
+	}
+	if (const ADoomThing* Barrel = Cast<ADoomThing>(DamageCauser))
+	{
+		return Barrel->LastAttacker.IsValid() ? Barrel->LastAttacker.Get() : DamageCauser;
+	}
+	if (const AController* C = Cast<AController>(DamageCauser))
+	{
+		return C->GetPawn();
+	}
+	return DamageCauser;
+}
+
 void UDoomWorld::RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage)
 {
-	// Doom's P_RadiusAttack: damage falls off linearly to 0 at Damage units; needs line of sight.
-	TArray<AActor*> Ignore;
-	UGameplayStatics::ApplyRadialDamageWithFalloff(GetWorld(), Damage, 1.f, Where, 0.f, Damage * Doom::Scale, 1.f,
-		nullptr, Ignore, Source, Instigator ? Instigator->GetInstigatorController() : nullptr, ECC_Visibility);
+	// Doom's P_RadiusAttack: Damage - distance, where distance is the larger of |dx| and |dy| minus the
+	// victim's radius (heights ignored, as in vanilla); needs a clear line from the blast. Unreal's radial
+	// damage passes the full base damage to TakeDamage overrides, so the falloff is done here.
+	FCollisionObjectQueryParams Walls;
+	Walls.AddObjectTypesToQuery(ECC_WorldStatic);
+	const FVector2f Spot = Doom::ToDoom2D(Where);
+	AController* InstigatorController = Instigator ? Instigator->GetInstigatorController() : nullptr;
+	auto Hit = [&](AActor* Victim, float Radius)
+	{
+		const FVector2f D = Doom::ToDoom2D(Victim->GetActorLocation()) - Spot;
+		const float Dist = FMath::Max(0.f, FMath::Max(FMath::Abs(D.X), FMath::Abs(D.Y)) - Radius);
+		if (Dist >= Damage)
+		{
+			return;
+		}
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomBlast), false, Source);
+		Q.AddIgnoredActor(Victim);
+		FHitResult Block;
+		if (GetWorld()->LineTraceSingleByObjectType(Block, Where, Victim->GetActorLocation(), Walls, Q))
+		{
+			return;
+		}
+		FRadialDamageEvent Event;
+		Event.Origin = Where;
+		Event.Params = FRadialDamageParams(Damage, Damage * Doom::Scale);
+		Victim->TakeDamage(FMath::FloorToFloat(Damage - Dist), Event, InstigatorController, Source);
+	};
+	TArray<TPair<AActor*, float>> Victims;
+	for (ADoomPlayer* P : GetPlayers())
+	{
+		if (!P->IsDead()) Victims.Add({ P, 16.f });
+	}
+	for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
+	{
+		if (M.IsValid() && !M->IsDead()) Victims.Add({ M.Get(), M->Def->Radius });
+	}
+	for (const TWeakObjectPtr<ADoomThing>& T : Things)
+	{
+		if (T.IsValid() && T.Get() != Source && T->Def && (T->Def->Flags & EThingFlag::Shootable) && !T->bDead) Victims.Add({ T.Get(), T->Def->Radius });
+	}
+	for (const TPair<AActor*, float>& V : Victims)
+	{
+		if (IsValid(V.Key)) Hit(V.Key, V.Value);
+	}
 }
 
 bool UDoomWorld::CheckSight(const AActor* From, const AActor* To) const
@@ -1208,7 +1266,7 @@ bool UDoomWorld::ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool
 			}
 		}
 	};
-	if (ADoomPlayer* P = GetPlayer())
+	for (ADoomPlayer* P : GetPlayers())
 	{
 		Check(P, P->IsDead() ? 0.f : 56.f, 16.f, true);
 	}
@@ -1223,9 +1281,11 @@ bool UDoomWorld::ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool
 	return bBlocked;
 }
 
-bool UDoomWorld::MovePlane(FSectorMover& M)
+bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 {
-	// Returns true when the destination was reached.
+	// Returns true when the destination was reached; bBlocked when a non-crushing plane could not move
+	// because something is in the way (vanilla P_MovePlane's "crushed").
+	bBlocked = false;
 	FDoomSector& S = Map->Sectors[M.Sector];
 	float& H = M.bCeiling ? S.Ceiling : S.Floor;
 	const float Old = H;
@@ -1246,6 +1306,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M)
 		{
 			if (!M.bCrush)
 			{
+				bBlocked = true;
 				return false; // caller decides (doors reverse)
 			}
 			if (M.Speed <= 1.f && M.Type == FSectorMover::EType::Crusher)
@@ -1335,10 +1396,8 @@ void UDoomWorld::TicMovers()
 			continue;
 		}
 
-		const bool bArrived = MovePlane(M);
-		const float Cur = M.bCeiling ? S.Ceiling : S.Floor;
-		const bool bBlocked = !bArrived && FMath::IsNearlyEqual(Cur, M.bCeiling ? S.Ceiling : S.Floor) &&
-			((M.bCeiling && M.Dir < 0) || (!M.bCeiling && M.Dir > 0)) && !M.bCrush;
+		bool bBlocked = false;
+		const bool bArrived = MovePlane(M, bBlocked);
 
 		switch (M.Type)
 		{
@@ -1357,9 +1416,9 @@ void UDoomWorld::TicMovers()
 					else M.bDone = true;
 				}
 			}
-			else if (M.Dir < 0 && bBlocked)
+			else if (M.Dir < 0 && bBlocked && (M.bReturn || M.CloseThenOpenWait))
 			{
-				// something is in the way: go back up
+				// something is in the way: go back up (plain close doors wait instead, as in vanilla)
 				M.Dir = 1; M.Dest = M.High;
 				PlaySound(M.bBlaze ? TEXT("BDOPN") : TEXT("DOROPN"), &SoundPos);
 			}
@@ -1451,7 +1510,8 @@ void UDoomWorld::AddDoor(int32 Sector, int32 Kind, float Speed, AActor* Activato
 		PlaySound(TEXT("DORCLS"), &Pos);
 		break;
 	case DK_RaiseIn5Min:
-		M.Dir = 0; M.Counter = 5 * 60 * Doom::TicRate; M.CloseThenOpenWait = 1; M.Dest = M.High;
+		// opens after 5 minutes, then behaves as a normal door (waits, closes)
+		M.Dir = 0; M.Counter = 5 * 60 * Doom::TicRate; M.CloseThenOpenWait = 1; M.Dest = M.High; M.bReturn = true;
 		break;
 	}
 	Movers.Add(M);
@@ -1633,7 +1693,8 @@ void UDoomWorld::StartSectorSpecials()
 			E.Sector = i;
 			E.Max = S.Light;
 			E.Min = Map->MinSurroundingLight(i, S.Light);
-			if (E.Min == E.Max && Type != FLightEffect::EType::Flicker) E.Min = 0;
+			// strobes with no darker neighbour go to black; flicker and glow stay steady (vanilla)
+			if (E.Min == E.Max && Type != FLightEffect::EType::Flicker && Type != FLightEffect::EType::Glow) E.Min = 0;
 			E.DarkTime = Dark;
 			E.BrightTime = 5;
 			E.Count = bSync ? 1 : (DoomInfo::Random() & 7) + 1;
@@ -1791,6 +1852,11 @@ void UDoomWorld::FlipSwitch(int32 LineIndex, int32 SideIdx, bool bRepeat)
 		PlaySound(L.Special == 11 ? TEXT("SWTCHX") : TEXT("SWTCHN"), &Pos);
 		if (bRepeat)
 		{
+			// a switch already pushed in keeps its one timer (vanilla P_StartButton)
+			if (Buttons.ContainsByPredicate([LineIndex](const FSwitchButton& B) { return B.Line == LineIndex; }))
+			{
+				return;
+			}
 			Buttons.Add({ LineIndex, SideIdx, p, *Parts[p], Doom::TicRate });
 		}
 		*Parts[p] = Partner;
@@ -1892,7 +1958,7 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 		{
 			if (M.bPerpetual && M.bStasis && Targets.Contains(M.Sector)) { M.bStasis = false; bDid = true; }
 		}
-		ForFree([&](int32 S) { AddPlat(S, PK_Perpetual, 4, 0); });
+		ForFree([&](int32 S) { AddPlat(S, PK_Perpetual, 1, 0); }); // PLATSPEED
 		break;
 	case EAct::PlatStop:
 		for (FSectorMover& M : Movers)
@@ -2008,6 +2074,11 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 
 	if (!bDid && Spec->Trig != 'D')
 	{
+		// vanilla P_CrossSpecialLine uses up a W1 line even when its sectors were busy
+		if (Spec->Trig == 'W' && !Spec->bRepeat)
+		{
+			L.Special = 0;
+		}
 		return false;
 	}
 	if (Spec->Trig == 'S' || Spec->Trig == 'G')
@@ -2103,6 +2174,10 @@ void UDoomWorld::CheckCrossings(AActor* Actor, const FVector2f& From, const FVec
 		{
 			return;
 		}
+		if (!IsValid(Actor) || FVector2f::Distance(Doom::ToDoom2D(Actor->GetActorLocation()), To) > 1.f)
+		{
+			return; // teleported: the rest of this move's lines no longer apply
+		}
 	}
 }
 
@@ -2151,7 +2226,38 @@ void UDoomWorld::Teleport(AActor* Actor, int32 LineIndex, int32 Side)
 		const FVector OldPos = Actor->GetActorLocation();
 		const float Half = Doom::HalfHeight(Actor);
 		const FVector NewPos = Doom::ToUE(T.P, Map->Sectors[Sec].Floor) + FVector(0, 0, Half + 1);
+		// P_TeleportMove: a player telefrags whatever stands on the spot; a monster can't teleport onto
+		// someone (except on MAP30, where the boss shooter's cubes telefrag)
+		ADoomMonster* Self = Cast<ADoomMonster>(Actor);
+		const float MyRadius = Self ? Self->Def->Radius : 16.f;
+		const bool bCanFrag = !Self || GetMapName() == TEXT("MAP30");
+		TArray<AActor*> Victims;
+		auto Overlaps = [&](const AActor* Other, float Radius)
+		{
+			const FVector2f D = Doom::ToDoom2D(Other->GetActorLocation()) - T.P;
+			return FMath::Abs(D.X) < Radius + MyRadius && FMath::Abs(D.Y) < Radius + MyRadius;
+		};
+		for (ADoomPlayer* P : GetPlayers())
+		{
+			if (P != Actor && !P->IsDead() && Overlaps(P, 16.f)) Victims.Add(P);
+		}
+		for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
+		{
+			if (M.IsValid() && M.Get() != Actor && !M->IsDead() && Overlaps(M.Get(), M->Def->Radius)) Victims.Add(M.Get());
+		}
+		if (Victims.Num() && !bCanFrag)
+		{
+			return;
+		}
+		for (AActor* V : Victims)
+		{
+			UGameplayStatics::ApplyDamage(V, 10000.f, nullptr, Actor, nullptr);
+		}
 		Actor->SetActorLocation(NewPos, false, nullptr, ETeleportType::TeleportPhysics);
+		if (ADoomPlayer* TP = Cast<ADoomPlayer>(Actor))
+		{
+			TP->ReactionTime = 18; // a short freeze after teleporting
+		}
 		if (ACharacter* C = Cast<ACharacter>(Actor))
 		{
 			C->GetCharacterMovement()->StopMovementImmediately();
@@ -2165,6 +2271,7 @@ void UDoomWorld::Teleport(AActor* Actor, int32 LineIndex, int32 Side)
 			M->DoomAngle = T.Angle;
 		}
 		SpawnEffect(TEXT("TFOG"), TEXT("ABABCDEFGHIJ"), 6, OldPos);
+		PlaySound(TEXT("TELEPT"), &OldPos);
 		const float Rad = FMath::DegreesToRadians(T.Angle);
 		const FVector Fwd = Doom::ToUE(FMath::Cos(Rad), FMath::Sin(Rad), 0).GetSafeNormal() * 20.f * Doom::Scale;
 		SpawnEffect(TEXT("TFOG"), TEXT("ABABCDEFGHIJ"), 6, NewPos + Fwd);

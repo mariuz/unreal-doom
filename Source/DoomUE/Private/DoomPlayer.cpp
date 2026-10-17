@@ -543,7 +543,7 @@ void ADoomPlayer::DoomTic()
 	{
 		DoomWorld->CheckCrossings(this, LastDoomPos, Pos, false);
 	}
-	LastDoomPos = Pos;
+	LastDoomPos = DoomPos(); // re-read: a teleport line moves the player
 	if (DoomWorld->GetState() != EDoomGameState::Playing)
 	{
 		return;
@@ -696,6 +696,15 @@ void ADoomPlayer::TicWeapon()
 			break;
 		}
 		++FireIndex;
+		// A_ReFire runs on entering the last frame (when that frame doesn't fire itself), so with the
+		// trigger held its tics are skipped: plasma refires every 3 tics, the pistol every 14
+		if (FireIndex == D.Fire.Num() - 1 && !D.Fire[FireIndex].bFire &&
+			bFireHeld && !IsDead() && PendingWeapon == EDoomWeapon::Count && CheckAmmo())
+		{
+			bRefire = true;
+			StartFire();
+			break;
+		}
 		if (FireIndex >= D.Fire.Num())
 		{
 			// A_ReFire
@@ -807,7 +816,8 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 		const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget);
 		const FVector Dir = (Fwd + FVector(0, 0, Slope)).GetSafeNormal();
 		const TCHAR* Type = Inv().Ready == EDoomWeapon::Rocket ? TEXT("Rocket") : Inv().Ready == EDoomWeapon::Plasma ? TEXT("Plasma") : TEXT("BFGBall");
-		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir);
+		// the BFG's sound already played when the trigger was pulled
+		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir, nullptr, Inv().Ready == EDoomWeapon::BFG);
 		break;
 	}
 	default: break;
@@ -972,7 +982,22 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	{
 		return 0.f;
 	}
-	if (bGodMode || Invulnerability > 0)
+	// knockback (P_DamageMobj thrust): away from the inflictor (the missile, the blast or the shooter),
+	// damage * 12.5 / mass units per tic, mass 100; also with god mode and from your own rockets
+	if (DamageCauser && DamageCauser != this)
+	{
+		const FVector From = DamageEvent.IsOfType(FRadialDamageEvent::ClassID)
+			? static_cast<const FRadialDamageEvent&>(DamageEvent).Origin : DamageCauser->GetActorLocation();
+		const ADoomPlayer* Shooter = Cast<ADoomPlayer>(UDoomWorld::DamageSource(DamageCauser));
+		const bool bSaw = Shooter && Shooter->Inv().Ready == EDoomWeapon::Chainsaw;
+		if (!bSaw)
+		{
+			const float Thrust = Damage * 12.5f / 100.f * Doom::TicRate * Doom::Scale;
+			LaunchCharacter((GetActorLocation() - From).GetSafeNormal2D() * Thrust, false, false);
+		}
+	}
+	// god mode and invulnerability stop everything but a telefrag
+	if ((bGodMode || Invulnerability > 0) && Damage < 1000.f)
 	{
 		return 0.f;
 	}
@@ -995,15 +1020,12 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	Inv().Health -= D;
 	DamageCount = FMath::Min(DamageCount + D, 100);
 
-	AActor* Source = DamageCauser ? (DamageCauser->GetOwner() ? DamageCauser->GetOwner() : DamageCauser) : nullptr;
+	AActor* Source = UDoomWorld::DamageSource(DamageCauser);
 	if (Source && Source != this)
 	{
 		const FVector To = Source->GetActorLocation() - GetActorLocation();
 		const float Rel = FMath::FindDeltaAngleDegrees(GetControlRotation().Yaw, To.Rotation().Yaw);
-		FaceDamageDir = Rel > 30.f ? 1 : Rel < -30.f ? -1 : 0;
-		// knockback
-		const float Thrust = FMath::Min(Damage * 12.5f, 400.f) * Doom::Scale;
-		LaunchCharacter(-To.GetSafeNormal2D() * Thrust, false, false);
+		FaceDamageDir = Rel > 45.f ? 1 : Rel < -45.f ? -1 : 0;
 	}
 	else
 	{
