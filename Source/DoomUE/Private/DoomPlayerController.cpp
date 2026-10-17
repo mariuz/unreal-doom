@@ -41,6 +41,13 @@ void ADoomPlayerController::CreateInput()
 	UseAction = NewAction(this, TEXT("IA_Use"), EInputActionValueType::Boolean);
 	RunAction = NewAction(this, TEXT("IA_Run"), EInputActionValueType::Boolean);
 	AutomapAction = NewAction(this, TEXT("IA_Automap"), EInputActionValueType::Boolean);
+	AutomapZoomAction = NewAction(this, TEXT("IA_AutomapZoom"), EInputActionValueType::Axis1D);
+	AutomapPanAction = NewAction(this, TEXT("IA_AutomapPan"), EInputActionValueType::Axis2D);
+	AutomapFollowAction = NewAction(this, TEXT("IA_AutomapFollow"), EInputActionValueType::Boolean);
+	AutomapBigAction = NewAction(this, TEXT("IA_AutomapBig"), EInputActionValueType::Boolean);
+	AutomapMarkAction = NewAction(this, TEXT("IA_AutomapMark"), EInputActionValueType::Boolean);
+	AutomapClearAction = NewAction(this, TEXT("IA_AutomapClearMarks"), EInputActionValueType::Boolean);
+	AutomapGridAction = NewAction(this, TEXT("IA_AutomapGrid"), EInputActionValueType::Boolean);
 	NextWeaponAction = NewAction(this, TEXT("IA_NextWeapon"), EInputActionValueType::Boolean);
 	PrevWeaponAction = NewAction(this, TEXT("IA_PrevWeapon"), EInputActionValueType::Boolean);
 	for (int32 i = 0; i < 7; ++i)
@@ -53,6 +60,7 @@ void ADoomPlayerController::CreateInput()
 	MenuRightAction = NewAction(this, TEXT("IA_MenuRight"), EInputActionValueType::Boolean);
 	MenuSelectAction = NewAction(this, TEXT("IA_MenuSelect"), EInputActionValueType::Boolean);
 	MenuBackAction = NewAction(this, TEXT("IA_MenuBack"), EInputActionValueType::Boolean);
+	MenuCloseAction = NewAction(this, TEXT("IA_MenuClose"), EInputActionValueType::Boolean);
 	QuickSaveAction = NewAction(this, TEXT("IA_QuickSave"), EInputActionValueType::Boolean);
 	QuickLoadAction = NewAction(this, TEXT("IA_QuickLoad"), EInputActionValueType::Boolean);
 	for (int32 i = 0; i < 4; ++i)
@@ -122,6 +130,26 @@ void ADoomPlayerController::CreateInput()
 	GameplayContext->MapKey(RunAction, EKeys::LeftShift);
 	GameplayContext->MapKey(AutomapAction, EKeys::Tab);
 	GameplayContext->MapKey(AutomapAction, EKeys::Gamepad_Special_Left);
+	// the automap's keys (they do nothing while it is closed): = and - zoom, F follow, 0 the whole map,
+	// M mark, C clear the marks, G grid; the arrows pan when follow mode is off (AutomapPanContext)
+	GameplayContext->MapKey(AutomapZoomAction, EKeys::Equals);
+	GameplayContext->MapKey(AutomapZoomAction, EKeys::Add);
+	GameplayContext->MapKey(AutomapZoomAction, EKeys::Hyphen).Modifiers.Add(NewObject<UInputModifierNegate>(GameplayContext));
+	GameplayContext->MapKey(AutomapZoomAction, EKeys::Subtract).Modifiers.Add(NewObject<UInputModifierNegate>(GameplayContext));
+	GameplayContext->MapKey(AutomapFollowAction, EKeys::F);
+	GameplayContext->MapKey(AutomapBigAction, EKeys::Zero);
+	GameplayContext->MapKey(AutomapMarkAction, EKeys::M);
+	GameplayContext->MapKey(AutomapClearAction, EKeys::C);
+	GameplayContext->MapKey(AutomapGridAction, EKeys::G);
+	AutomapPanContext = NewObject<UInputMappingContext>(this, TEXT("IMC_DoomAutomapPan"));
+	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Right);
+	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Left).Modifiers.Add(NewObject<UInputModifierNegate>(AutomapPanContext));
+	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Up).Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(AutomapPanContext));
+	{
+		FEnhancedActionKeyMapping& Down = AutomapPanContext->MapKey(AutomapPanAction, EKeys::Down);
+		Down.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(AutomapPanContext));
+		Down.Modifiers.Add(NewObject<UInputModifierNegate>(AutomapPanContext));
+	}
 	GameplayContext->MapKey(NextWeaponAction, EKeys::MouseScrollDown);
 	GameplayContext->MapKey(NextWeaponAction, EKeys::Gamepad_RightShoulder);
 	GameplayContext->MapKey(PrevWeaponAction, EKeys::MouseScrollUp);
@@ -161,8 +189,10 @@ void ADoomPlayerController::CreateInput()
 	MenuContext->MapKey(MenuSelectAction, EKeys::LeftMouseButton);
 	MenuContext->MapKey(MenuSelectAction, EKeys::Gamepad_FaceButton_Bottom);
 	MenuContext->MapKey(QuickLoadAction, EKeys::F9);
-	MenuContext->MapKey(MenuBackAction, EKeys::Escape);
-	MenuContext->MapKey(MenuBackAction, EKeys::Gamepad_Special_Right);
+	// Esc (and Start) close the whole menu, as in Doom; Backspace, N and the gamepad's B go back one page
+	MenuContext->MapKey(MenuCloseAction, EKeys::Escape);
+	MenuContext->MapKey(MenuCloseAction, EKeys::Gamepad_Special_Right);
+	MenuContext->MapKey(MenuBackAction, EKeys::Gamepad_FaceButton_Right);
 }
 
 void ADoomPlayerController::BeginPlay()
@@ -193,6 +223,38 @@ void ADoomPlayerController::SetupInputComponent()
 	EIC->BindAction(MenuRightAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuRight);
 	EIC->BindAction(MenuSelectAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuSelect);
 	EIC->BindAction(MenuBackAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuBack);
+	EIC->BindActionValueLambda(MenuCloseAction, ETriggerEvent::Started, [this](const FInputActionValue& V)
+	{
+		UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+		if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
+		{
+			W->PlaySound(TEXT("SWTCHX"), nullptr);
+			W->Menu.Close(*W); // M_ClearMenus
+		}
+		else
+		{
+			MenuBack(V); // the title screen and the finale: as before
+		}
+	});
+	// the automap
+	auto Map = [this]() -> ADoomHUD*
+	{
+		UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+		return W && !W->bInputLocked && W->bAutomap && W->GetState() == EDoomGameState::Playing ? Cast<ADoomHUD>(GetHUD()) : nullptr;
+	};
+	EIC->BindActionValueLambda(AutomapZoomAction, ETriggerEvent::Triggered, [this, Map](const FInputActionValue& V)
+	{
+		if (ADoomHUD* H = Map()) H->AutomapZoom(V.Get<float>(), GetWorld()->GetDeltaSeconds());
+	});
+	EIC->BindActionValueLambda(AutomapPanAction, ETriggerEvent::Triggered, [this, Map](const FInputActionValue& V)
+	{
+		if (ADoomHUD* H = Map()) H->AutomapPan(V.Get<FVector2D>(), GetWorld()->GetDeltaSeconds());
+	});
+	EIC->BindActionValueLambda(AutomapFollowAction, ETriggerEvent::Started, [Map](const FInputActionValue&) { if (ADoomHUD* H = Map()) H->AutomapToggleFollow(); });
+	EIC->BindActionValueLambda(AutomapBigAction, ETriggerEvent::Started, [Map](const FInputActionValue&) { if (ADoomHUD* H = Map()) H->AutomapToggleBig(); });
+	EIC->BindActionValueLambda(AutomapMarkAction, ETriggerEvent::Started, [Map](const FInputActionValue&) { if (ADoomHUD* H = Map()) H->AutomapMark(); });
+	EIC->BindActionValueLambda(AutomapClearAction, ETriggerEvent::Started, [Map](const FInputActionValue&) { if (ADoomHUD* H = Map()) H->AutomapClearMarks(); });
+	EIC->BindActionValueLambda(AutomapGridAction, ETriggerEvent::Started, [Map](const FInputActionValue&) { if (ADoomHUD* H = Map()) H->AutomapToggleGrid(); });
 	// F1 Read This!, F2 save, F3 load, F4 sound volume
 	const EMenuPage FPages[4] = { EMenuPage::ReadThis, EMenuPage::Save, EMenuPage::Load, EMenuPage::Sound };
 	for (int32 i = 0; i < PageActions.Num(); ++i)
@@ -219,14 +281,22 @@ void ADoomPlayerController::ApplyContexts()
 		return;
 	}
 	const bool bMenu = W->GetState() != EDoomGameState::Playing;
-	if (bContextsInitialized && bMenu == bMenuContextActive)
+	// the automap with follow mode off takes the arrow keys for panning, ahead of moving and turning
+	const ADoomHUD* H = Cast<ADoomHUD>(GetHUD());
+	const bool bPan = !bMenu && W->bAutomap && H && !H->AutomapFollowing();
+	if (bContextsInitialized && bMenu == bMenuContextActive && bPan == bPanContextActive)
 	{
 		return;
 	}
 	bContextsInitialized = true;
 	bMenuContextActive = bMenu;
+	bPanContextActive = bPan;
 	Sub->ClearAllMappings();
 	Sub->AddMappingContext(bMenu ? MenuContext : GameplayContext, 0);
+	if (bPan)
+	{
+		Sub->AddMappingContext(AutomapPanContext, 1);
+	}
 }
 
 void ADoomPlayerController::Tick(float DeltaSeconds)

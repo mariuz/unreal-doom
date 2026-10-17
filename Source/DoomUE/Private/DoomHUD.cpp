@@ -178,6 +178,11 @@ void ADoomHUD::DrawHUD()
 	}
 	OY = Canvas->ClipY - 200.f * SY; // in play the status bar sits at the bottom, whatever the shape
 	MarkSeenLines(P);
+	if (Automap.Map != W->GetMapName())
+	{
+		Automap = FAutomapView(); // a new map: following, default zoom, no marks
+		Automap.Map = W->GetMapName();
+	}
 	if (W->bAutomap)
 	{
 		DrawAutomap(P);
@@ -518,11 +523,32 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 		return;
 	}
 	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY * 168.f / 200.f);
-
-	const FVector2f Center = P->DoomPos();
-	const float Zoom = Canvas->ClipY / 1600.f;
+	const FVector2f Center = Automap.bFollow ? P->DoomPos() : Automap.Center;
+	const float Zoom = Canvas->ClipY / 1600.f * Automap.Scale;
+	// Doom draws the map in its 320x200 frame too, so it is stretched 1.2 times vertically
+	const float ZoomY = Zoom * 1.2f;
 	const float CX = Canvas->ClipX * 0.5f, CY = Canvas->ClipY * 84.f / 200.f;
-	auto ToScreen = [&](const FVector2f& V) { return FVector2D(CX + (V.X - Center.X) * Zoom, CY - (V.Y - Center.Y) * Zoom); };
+	auto ToScreen = [&](const FVector2f& V) { return FVector2D(CX + (V.X - Center.X) * Zoom, CY - (V.Y - Center.Y) * ZoomY); };
+	Automap.PixelsPerUnit = Zoom;
+	Automap.ViewSize = FVector2f(Canvas->ClipX / Zoom, Canvas->ClipY * 168.f / 200.f / ZoomY);
+
+	if (Automap.bGrid)
+	{
+		// the blockmap's 128-unit grid, from the map's corner
+		const float Step = 128.f;
+		const FVector2f Lo = Center - Automap.ViewSize * 0.5f, Hi = Center + Automap.ViewSize * 0.5f;
+		const FLinearColor Grid(0.05f, 0.05f, 0.05f); // GRIDCOLORS: a dark grey (linear colour)
+		for (float X = Map->Bounds.Min.X + FMath::FloorToFloat((Lo.X - Map->Bounds.Min.X) / Step) * Step; X <= Hi.X; X += Step)
+		{
+			const FVector2D A = ToScreen(FVector2f(X, Lo.Y)), B = ToScreen(FVector2f(X, Hi.Y));
+			DrawLine(A.X, A.Y, B.X, B.Y, Grid, 1.f);
+		}
+		for (float Y = Map->Bounds.Min.Y + FMath::FloorToFloat((Lo.Y - Map->Bounds.Min.Y) / Step) * Step; Y <= Hi.Y; Y += Step)
+		{
+			const FVector2D A = ToScreen(FVector2f(Lo.X, Y)), B = ToScreen(FVector2f(Hi.X, Y));
+			DrawLine(A.X, A.Y, B.X, B.Y, Grid, 1.f);
+		}
+	}
 
 	for (const FDoomLine& L : Map->Lines)
 	{
@@ -536,9 +562,17 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 			continue;
 		}
 		FLinearColor C;
-		if (L.BackSector == INDEX_NONE || (L.Flags & DoomLineFlags::Secret))
+		if (!bKnown)
+		{
+			C = FLinearColor(0.45f, 0.45f, 0.45f); // computer map: unseen lines in grey
+		}
+		else if (L.BackSector == INDEX_NONE || (L.Flags & DoomLineFlags::Secret))
 		{
 			C = FLinearColor(0.9f, 0.f, 0.f);
+		}
+		else if (L.Special == 39)
+		{
+			C = FLinearColor(0.95f, 0.45f, 0.45f); // teleporters: a lighter red
 		}
 		else if (Map->Sectors[L.FrontSector].Floor != Map->Sectors[L.BackSector].Floor)
 		{
@@ -548,31 +582,141 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 		{
 			C = FLinearColor(0.95f, 0.9f, 0.3f);
 		}
-		else if (W->bFullMap)
-		{
-			C = FLinearColor(0.4f, 0.4f, 0.4f);
-		}
 		else
 		{
 			continue;
 		}
-		if (!bKnown)
-		{
-			C = FLinearColor(0.45f, 0.45f, 0.45f); // computer map: unseen lines in grey
-		}
 		const FVector2D A = ToScreen(Map->V(L.V1)), B = ToScreen(Map->V(L.V2));
 		DrawLine(A.X, A.Y, B.X, B.Y, C, 1.5f);
 	}
-	// player arrow
-	const float Ang = FMath::DegreesToRadians(P->DoomAngle());
-	auto Rot = [&](float X, float Y) { return FVector2f(Center.X + X * FMath::Cos(Ang) - Y * FMath::Sin(Ang), Center.Y + X * FMath::Sin(Ang) + Y * FMath::Cos(Ang)); };
-	const FVector2f Arrow[] = { Rot(26, 0), Rot(-20, 0), Rot(26, 0), Rot(10, 10), Rot(26, 0), Rot(10, -10) };
-	for (int32 i = 0; i < 6; i += 2)
+	// the players' arrows: yours in white, the others in their colours (green, grey, brown, red)
+	static const FLinearColor PlayerColors[4] = { FLinearColor(0.3f, 0.8f, 0.3f), FLinearColor(0.6f, 0.6f, 0.6f), FLinearColor(0.65f, 0.45f, 0.25f), FLinearColor(0.85f, 0.15f, 0.15f) };
+	for (ADoomPlayer* Other : W->GetPlayers())
 	{
-		const FVector2D A = ToScreen(Arrow[i]), B = ToScreen(Arrow[i + 1]);
-		DrawLine(A.X, A.Y, B.X, B.Y, FLinearColor::White, 2.f);
+		if (Other->IsDead() && Other != P)
+		{
+			continue;
+		}
+		const FVector2f Pos = Other->DoomPos();
+		const float Ang = FMath::DegreesToRadians(Other->DoomAngle());
+		auto Rot = [&](float X, float Y) { return FVector2f(Pos.X + X * FMath::Cos(Ang) - Y * FMath::Sin(Ang), Pos.Y + X * FMath::Sin(Ang) + Y * FMath::Cos(Ang)); };
+		const FVector2f Arrow[] = { Rot(26, 0), Rot(-20, 0), Rot(26, 0), Rot(10, 10), Rot(26, 0), Rot(10, -10) };
+		const ADoomPlayerState* PS = Other->GetDoomPlayerState();
+		const FLinearColor C = Other == P ? FLinearColor::White : PlayerColors[(PS ? PS->PlayerNumber : 0) & 3];
+		for (int32 i = 0; i < 6; i += 2)
+		{
+			const FVector2D A = ToScreen(Arrow[i]), B = ToScreen(Arrow[i + 1]);
+			DrawLine(A.X, A.Y, B.X, B.Y, C, 2.f);
+		}
+	}
+	// marks, numbered with the map font
+	for (int32 i = 0; i < Automap.Marks.Num(); ++i)
+	{
+		const FVector2D S = ToScreen(Automap.Marks[i]);
+		if (S.X < 0 || S.Y < 0 || S.X > Canvas->ClipX || S.Y > Canvas->ClipY * 168.f / 200.f)
+		{
+			continue;
+		}
+		const FString Num = FString::Printf(TEXT("AMMNUM%d"), i);
+		if (W->GetGraphics()->Patch(Num))
+		{
+			DrawPatchByName(Num, (S.X - OX) / SX - 2.f, (S.Y - OY) / SY - 3.f, false);
+		}
+		else
+		{
+			DrawText(FString::FromInt(i), (S.X - OX) / SX - 2.f, (S.Y - OY) / SY - 3.f);
+		}
 	}
 	DrawText(W->LevelTitle(W->GetMapName()), 2, 160);
+}
+
+void ADoomHUD::AutomapZoom(float Dir, float DeltaSeconds)
+{
+	if (Automap.bBig)
+	{
+		return; // vanilla: no zooming on the big map
+	}
+	Automap.Scale = FMath::Clamp(Automap.Scale * FMath::Pow(2.f, Dir * DeltaSeconds), 0.125f, 8.f);
+}
+
+void ADoomHUD::AutomapPan(const FVector2D& Dir, float DeltaSeconds)
+{
+	if (Automap.bFollow)
+	{
+		return;
+	}
+	Automap.Center += FVector2f(Dir.X, Dir.Y) * Automap.ViewSize.X * 0.5f * DeltaSeconds;
+}
+
+void ADoomHUD::AutomapToggleFollow()
+{
+	Automap.bFollow = !Automap.bFollow;
+	if (!Automap.bFollow)
+	{
+		if (const ADoomPlayer* P = Cast<ADoomPlayer>(GetOwningPawn()))
+		{
+			Automap.Center = P->DoomPos(); // panning starts from where you are
+		}
+	}
+	DW()->ShowMessage(Automap.bFollow ? TEXT("FOLLOW MODE ON") : TEXT("FOLLOW MODE OFF"));
+}
+
+void ADoomHUD::AutomapToggleBig()
+{
+	const FDoomMap* Map = DW()->GetMap();
+	if (!Map)
+	{
+		return;
+	}
+	Automap.bBig = !Automap.bBig;
+	if (Automap.bBig)
+	{
+		Automap.SavedScale = Automap.Scale;
+		Automap.bSavedFollow = Automap.bFollow;
+		Automap.SavedCenter = Automap.Center;
+		// fit the whole map into the view (Scale is relative to the default ClipY / 1600 pixels per unit)
+		const FVector2f Size = Map->Bounds.GetSize();
+		const float Base = Automap.PixelsPerUnit / Automap.Scale;
+		const float ViewW = Automap.ViewSize.X * Automap.PixelsPerUnit, ViewH = Automap.ViewSize.Y * Automap.PixelsPerUnit * 1.2f;
+		Automap.Scale = 0.95f * FMath::Min(ViewW / FMath::Max(Size.X, 1.f), ViewH / FMath::Max(Size.Y * 1.2f, 1.f)) / Base;
+		Automap.bFollow = false;
+		Automap.Center = Map->Bounds.GetCenter();
+	}
+	else
+	{
+		Automap.Scale = Automap.SavedScale;
+		Automap.bFollow = Automap.bSavedFollow;
+		Automap.Center = Automap.SavedCenter;
+	}
+}
+
+void ADoomHUD::AutomapMark()
+{
+	const ADoomPlayer* P = Cast<ADoomPlayer>(GetOwningPawn());
+	const FVector2f Where = Automap.bFollow && P ? P->DoomPos() : Automap.Center;
+	if (Automap.Marks.Num() < 10)
+	{
+		Automap.Marks.Add(Where);
+	}
+	else
+	{
+		Automap.Marks[Automap.NextMark % 10] = Where;
+	}
+	Automap.NextMark = (Automap.NextMark + 1) % 10;
+	DW()->ShowMessage(FString::Printf(TEXT("MARKED SPOT %d"), (Automap.NextMark + 9) % 10));
+}
+
+void ADoomHUD::AutomapClearMarks()
+{
+	Automap.Marks.Reset();
+	Automap.NextMark = 0;
+	DW()->ShowMessage(TEXT("ALL MARKS CLEARED"));
+}
+
+void ADoomHUD::AutomapToggleGrid()
+{
+	Automap.bGrid = !Automap.bGrid;
+	DW()->ShowMessage(Automap.bGrid ? TEXT("GRID ON") : TEXT("GRID OFF"));
 }
 
 void ADoomHUD::DrawThermo(float X, float Y, int32 Width, int32 Value)
@@ -684,16 +828,8 @@ void ADoomHUD::DrawLoading()
 {
 	// the intermission's "entering" screen, with a progress bar while the map loads
 	UDoomWorld* W = DW();
-	const bool bDoom2 = W->GetWad() && W->GetWad()->IsDoom2();
 	const FString& M = W->GetMapName();
-	if (W->GetGraphics()->Patch(TEXT("INTERPIC")) && (bDoom2 || !W->GetGraphics()->Patch(TEXT("WIMAP0"))))
-	{
-		DrawFullscreenPic(TEXT("INTERPIC"));
-	}
-	else
-	{
-		DrawFullscreenPic(FString::Printf(TEXT("WIMAP%d"), M.Len() > 1 ? FMath::Clamp(M[1] - '1', 0, 2) : 0));
-	}
+	DrawFullscreenPic(IntermissionBackground());
 	if (const FDoomPicture* Entering = W->GetGraphics()->Patch(TEXT("WIENTER")))
 	{
 		DrawPatch(Entering, 160 - Entering->Width / 2, 4, false);
@@ -709,19 +845,25 @@ void ADoomHUD::DrawLoading()
 	Rect(81, 185, 158 * Progress, 4, FLinearColor(0.75f, 0.08f, 0.05f, 1.f));
 }
 
+FString ADoomHUD::IntermissionBackground() const
+{
+	// WI_loadData: Doom 2 and Ultimate Doom's episode 4 use INTERPIC; episodes 1-3 their WIMAP0-2
+	UDoomWorld* W = DW();
+	const FString& M = W->GetMapName();
+	const bool bExMy = M.Len() >= 4 && M[0] == 'E' && FChar::IsDigit(M[1]) && M[2] == 'M';
+	const int32 Episode = bExMy ? M[1] - '1' : -1;
+	const bool bInterpic = W->GetGraphics()->Patch(TEXT("INTERPIC")) != nullptr;
+	if (bInterpic && ((W->GetWad() && W->GetWad()->IsDoom2()) || Episode < 0 || Episode >= 3 || !W->GetGraphics()->Patch(TEXT("WIMAP0"))))
+	{
+		return TEXT("INTERPIC");
+	}
+	return FString::Printf(TEXT("WIMAP%d"), FMath::Clamp(Episode, 0, 2));
+}
+
 void ADoomHUD::DrawIntermission()
 {
 	UDoomWorld* W = DW();
-	const bool bDoom2 = W->GetWad() && W->GetWad()->IsDoom2();
-	if (W->GetGraphics()->Patch(TEXT("INTERPIC")) && (bDoom2 || !W->GetGraphics()->Patch(TEXT("WIMAP0"))))
-	{
-		DrawFullscreenPic(TEXT("INTERPIC"));
-	}
-	else
-	{
-		const FString& M = W->GetMapName();
-		DrawFullscreenPic(FString::Printf(TEXT("WIMAP%d"), M.Len() > 1 ? FMath::Clamp(M[1] - '1', 0, 2) : 0));
-	}
+	DrawFullscreenPic(IntermissionBackground());
 	const float T = W->Flow().IntermissionTic;
 	auto Count = [&](int32 Got, int32 Total, float Start)
 	{
@@ -789,8 +931,9 @@ void ADoomHUD::DrawFinale()
 	}
 	if (W->FinaleStage == EStage::Bunny)
 	{
-		// PFUB2 slides left to reveal PFUB1, then THE END is spelled out
-		const float Scrolled = FMath::Clamp((W->FinaleTic - 230) / 2.f, 0.f, 320.f);
+		// F_BunnyScroll: PFUB1 first, sliding right as PFUB2 comes in from the left, then THE END is
+		// spelled out; Scrolled counts down from 320 (all PFUB1) to 0 (all PFUB2)
+		const float Scrolled = 320.f - FMath::Clamp((W->FinaleTic - 230) / 2.f, 0.f, 320.f);
 		const FDoomPicture* P2 = W->GetGraphics()->Patch(TEXT("PFUB2"));
 		const FDoomPicture* P1 = W->GetGraphics()->Patch(TEXT("PFUB1"));
 		if (P2 && P2->Texture && Scrolled < 320.f)

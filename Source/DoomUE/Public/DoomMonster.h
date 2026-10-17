@@ -95,6 +95,13 @@ private:
 	bool CheckMissileRange();
 	bool TryWalk(int32 Dir);
 	bool TestMove(int32 Dir) const;
+	/** A_PainShootSkull: a lost soul at that angle, after SoulTarget (the 20-soul limit, a clear spot). */
+	void ShootSkull(float DoomAngleDeg, AActor* SoulTarget);
+	/** Flyers: the height of an opening TestMove found ahead (P_Move's floatok), for a few tics. */
+	mutable float FloatGoalZ = 0;
+	mutable int32 FloatGoalTics = 0;
+	/** The target when it died (a pain elemental's souls go after it). */
+	TWeakObjectPtr<AActor> LastTarget;
 	void NewChaseDir();
 	void StartState(EMonsterState S);
 	void DoAttack(bool bMelee);

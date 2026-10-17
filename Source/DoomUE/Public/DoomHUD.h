@@ -20,8 +20,38 @@ class DOOMUE_API ADoomHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
+	// --- the automap's controls (am_map.c): the controller calls these while the map is open -------
+	/** Zoom in (+1) or out (-1) while the key is held: twice as close per second. */
+	void AutomapZoom(float Dir, float DeltaSeconds);
+	/** Arrow keys with follow mode off: half a screen per second. */
+	void AutomapPan(const FVector2D& Dir, float DeltaSeconds);
+	void AutomapToggleFollow();
+	/** 0: the whole map at once, and back. */
+	void AutomapToggleBig();
+	void AutomapMark();
+	void AutomapClearMarks();
+	void AutomapToggleGrid();
+	bool AutomapFollowing() const { return Automap.bFollow; }
+
 
 private:
+	struct FAutomapView
+	{
+		FString Map;               // the view resets on a new map
+		bool bFollow = true;
+		bool bGrid = false;
+		bool bBig = false;
+		float Scale = 1.f;         // on top of the default zoom
+		FVector2f Center = FVector2f::ZeroVector; // when not following the player
+		float SavedScale = 1.f;    // before the big map
+		bool bSavedFollow = true;
+		FVector2f SavedCenter = FVector2f::ZeroVector;
+		TArray<FVector2f> Marks;   // up to 10, numbered 0..9
+		int32 NextMark = 0;
+		float PixelsPerUnit = 1.f; // as last drawn
+		FVector2f ViewSize = FVector2f(1, 1);
+	};
+	FAutomapView Automap;
 	/** Automap: lines the player can see become known, whether or not the map is open. */
 	void MarkSeenLines(class ADoomPlayer* P);
 	double NextSeenScan = 0;
@@ -43,6 +73,8 @@ private:
 	void DrawIntermission();
 	/** While a map loads in the background (UDoomWorld::LoadMapAsync). */
 	void DrawLoading();
+	/** The intermission's background: WIMAP0-2 for Doom 1's first three episodes, else INTERPIC. */
+	FString IntermissionBackground() const;
 	void DrawFinale();
 	void Rect(float X, float Y, float W, float H, FLinearColor C);
 

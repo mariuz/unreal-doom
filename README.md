@@ -163,7 +163,10 @@ without saved tiles are baked when they load.
 
 WASD / arrows move, mouse looks, LMB / Ctrl fires, E / Space / RMB uses, 1-7 / mouse wheel
 switches weapons, F6 / F9 quick save / load, Tab opens the automap, Shift toggles run (always-run is on by default), and
-Esc opens Doom's menu (F1 help, F2 save, F3 load, F4 sound volume; Y / N answer prompts). Options also switch the renderer, field of view and warp to any map. Gamepad works too.
+Esc opens Doom's menu (F1 help, F2 save, F3 load, F4 sound volume; Y / N answer prompts; Esc closes it, Backspace goes back a page). Options also switch the renderer, field of view and warp to any map. Gamepad works too.
+
+On the automap: = and - zoom, F toggles follow mode (with it off the arrows pan), 0 shows the whole
+map, M marks a spot, C clears the marks, G toggles the grid.
 
 Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 
@@ -380,25 +383,35 @@ times. Now all 17 steps pass or skip on Freedoom's E1M1, E1M2 and E1M4 and Freed
 MAP05, and the 12 automation tests pass except `E1M1Modern` on a GTX 950 machine, which fails the
 same way without these changes (Lumen lighting differs by GPU; the approved image is from the owner's machine).
 
-Still not played by a human: expect tuning issues in feel (mouse, gamepad), HUD offsets, and in what
-the audit listed but didn't fix (roadmap item 1).
+A second pass (`feature/vanilla-differences`) fixed most of what the audit had left:
+* specials: raise-and-change floors and plats take the new texture as they start; a sector-10 door
+  closes after 30 s like a normal door, silently at load; doors and switches can't be used from their
+  back side; monsters' bullets open GR door 46; shooting switches no longer depends on rounding;
+  vanilla stop sounds for doors, crushers and ceilings;
+* player: missiles take the autoaim angle and fly from 32 units up; autoaim takes barrels and other
+  players; BFG tracers aim like vanilla from the ball's flight, and the BFG flash shows; P_GiveAmmo's
+  weapon switches; gibs below -100; the fist spreads, the saw turns you 4.5 degrees a hit; strafing
+  at 0.8 of forward speed; a second computer map is left; IDDQD heals;
+* monsters: flyers rise or sink into openings they fit (floatok); knockback can't push monsters off
+  ledges; the pain elemental's death souls follow its attack's rules (20-soul limit, clear spot);
+  lost souls play their death frames;
+* UI: automap zoom, pan, follow, big map, marks, grid, other players' arrows, the 1.2 stretch, and
+  vanilla's computer-map lines; INTERPIC for episode 4; the bunny scroll the right way round; Esc
+  closes the whole menu (Backspace / B go back one page).
+
+The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
+skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
+tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
 
 Not done yet (roughly in priority order):
 
-1. **A hand play-through**, then the vanilla differences the play-test audit found but left:
-   * specials: raise-and-change floors and plats change their texture on arrival instead of at the
-     start; a blocked sector-10 door stays open; crusher and ceiling stop sounds; doors usable from
-     their back side; monsters can't trigger GR switches; shooting switches at exact wall hits may
-     miss (uncertain);
-   * player: BFG tracers have no vertical autoaim and fan from the current view, and the BFG flash
-     frame doesn't show; missiles ignore the autoaim angle, barrels and deathmatch players aren't
-     autoaimed; ammo auto-switch rules; gibbing at -50 instead of -100; fist spread, chainsaw turning;
-   * monsters: floating monsters can't rise over steps (no floatok adjustment); Nightmare / `-fast`
-     demon frames; the arch-vile's fire sprite and timing; the pain elemental's death souls ignore the
-     20-soul limit; lost souls skip their death frames; knockback can push monsters off ledges;
-   * UI: automap zoom, pan, follow, marks and grid; Ultimate Doom's episode 4 intermission picture;
-     the animated intermission backgrounds and the WILV / WIF patches; the bunny scroll runs backwards;
-     the rampage face; Esc backs out one menu level instead of closing the menu.
+1. **A hand play-through**: the scripted play-test can't press keys through Enhanced Input in its
+   unfocused window, so Esc closing the menu and the automap keys (= - F 0 M C G, arrows to pan) are
+   checked by reading the code only. Then the vanilla differences still left from the audit:
+   Nightmare / `-fast` demon frames; the arch-vile's fire sprite that follows its victim, and its
+   attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
+   Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
+   rampage face after holding fire 2 s with any weapon.
 2. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 3. Unreal practices worth adopting next:
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.

@@ -47,6 +47,8 @@ public:
 	TWeakObjectPtr<AActor> Source;
 	TWeakObjectPtr<AActor> Tracer;
 	bool bExploded = false;
+	/** The BFG ball's flight direction when it burst: its tracers fan out around it. */
+	TOptional<float> SprayYaw;
 
 private:
 	UFUNCTION()

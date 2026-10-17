@@ -41,6 +41,9 @@ Tools/run_tests.bat DoomUE -NullRHI
   * `-playtest` (with `-warp`) is the scripted play-through of the interactive features: run it on
     E1M1 (and Freedoom 2's MAP01) after gameplay changes; every step should PASS or SKIP. Its steps
     are in `DoomPlayTest.cpp`, listed in [docs/Testing.md](docs/Testing.md).
+    * It can't press keys through Enhanced Input (unfocused window; injected actions don't arrive
+      either): drive the game through `UDoomWorld` / the HUD instead.
+    * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
   * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
   * `E1M1Modern` compares Lumen lighting, which differs between GPUs: on another machine than the
     owner's it can fail with the same picture; compare against a run without your changes.
@@ -141,6 +144,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * the audit's remaining vanilla differences: specials' timing and sounds, autoaim and the BFG,
+    floatok, pain elemental and lost soul deaths, automap controls, INTERPIC for episode 4, Esc;
   * play-test fixes from an audit against vanilla 1.9, with `-playtest` (doors, lifts, teleports,
     splash damage, refire, monster walking, movement feel, automap, prompts, par times);
   * tile sets for maps played straight from the WAD;

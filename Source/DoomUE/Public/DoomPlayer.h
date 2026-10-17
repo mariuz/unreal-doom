@@ -77,6 +77,9 @@ public:
 
 	/** Returns true when the item was taken. */
 	bool TryPickup(const FDoomThingDef& Def, bool bDropped);
+	/** P_AimLineAttack: the slope to the nearest shootable thing within Range along the angle, or 5.6
+	 *  degrees either side (OutAngle: the one used); else the view pitch. Also the BFG's tracers. */
+	float AimSlope(float DoomAngleDeg, float Range, AActor*& OutTarget, float* OutAngle = nullptr) const;
 
 	/** Save games: position, view, velocity, inventory and powerups. */
 	void DoomSerialize(FArchive& Ar);
@@ -182,7 +185,6 @@ private:
 	void SetWeaponSprite();
 	void HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitch, int32 DamageMul, int32 DamageDie, bool bAccurate);
 	void MeleeAttack(bool bSaw);
-	float AimSlope(float DoomAngleDeg, float Range, AActor*& OutTarget) const;
 	void TicPowerups();
 	void TicDeath();
 

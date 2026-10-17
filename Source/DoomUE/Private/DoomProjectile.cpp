@@ -200,6 +200,7 @@ void ADoomProjectile::Explode(AActor* HitActor)
 {
 	bExploded = true;
 	const FVector Incoming = Movement->Velocity;
+	SprayYaw = Incoming.IsNearlyZero() ? TOptional<float>() : TOptional<float>(Incoming.Rotation().Yaw); // the BFG fans out along its flight
 	Movement->StopMovementImmediately();
 	Movement->SetUpdatedComponent(nullptr);
 	Sphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -241,30 +242,48 @@ void ADoomProjectile::Explode(AActor* HitActor)
 
 void ADoomProjectile::BfgSpray()
 {
-	// 40 invisible tracers fanned over 90 degrees from the shooter's facing
+	// A_BFGSpray: 40 tracers fanned over 90 degrees around the ball's flight, each aimed from the shooter
+	// with P_AimLineAttack (1024 units, the vertical autoaim window); whatever each one finds is hit
 	AActor* Shooter = Source.Get();
 	if (!Shooter)
 	{
 		return;
 	}
+	const ADoomPlayer* Player = Cast<ADoomPlayer>(Shooter);
+	const float Yaw0 = SprayYaw.IsSet() ? SprayYaw.GetValue() : Player ? Player->GetControlRotation().Yaw : Shooter->GetActorRotation().Yaw;
 	const FVector From = Shooter->GetActorLocation();
-	const float Yaw0 = Shooter->IsA<ADoomPlayer>() ? Cast<ADoomPlayer>(Shooter)->GetControlRotation().Yaw : Shooter->GetActorRotation().Yaw;
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomBfg), false, Shooter);
 	for (int32 i = 0; i < 40; ++i)
 	{
 		const float Yaw = Yaw0 - 45.f + 90.f / 40.f * i;
 		const FVector Dir = FRotator(0, Yaw, 0).Vector();
-		FHitResult Hit;
-		if (!GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * 1024.f * Doom::Scale, ECC_Visibility, Q))
+		AActor* Victim = nullptr;
+		if (Player)
 		{
-			continue;
+			// only the line itself: the 5.6-degree side looks belong to P_BulletSlope / missiles
+			float Used = Doom::YawToAngle(Yaw);
+			Player->AimSlope(Doom::YawToAngle(Yaw), 1024.f, Victim, &Used);
+			if (Victim && !FMath::IsNearlyEqual(Used, Doom::YawToAngle(Yaw)))
+			{
+				Victim = nullptr;
+			}
 		}
-		if (Hit.GetActor() && Hit.GetActor()->IsA<ADoomMonster>())
+		if (!Victim)
+		{
+			// monsters' balls, or autoaim turned off: a flat trace along the tracer
+			FHitResult Hit;
+			if (GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * 1024.f * Doom::Scale, ECC_Visibility, Q))
+			{
+				Victim = Hit.GetActor();
+			}
+		}
+		if (Victim && (Victim->IsA<ADoomMonster>() || Victim->IsA<ADoomPlayer>()))
 		{
 			int32 Damage = 0;
 			for (int32 k = 0; k < 15; ++k) Damage += (DoomInfo::Random() & 7) + 1;
-			DoomWorld->SpawnEffect(TEXT("BFE2"), TEXT("ABCD"), 8, Hit.GetActor()->GetActorLocation(), true);
-			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, Dir, Hit, nullptr, Shooter, nullptr);
+			DoomWorld->SpawnEffect(TEXT("BFE2"), TEXT("ABCD"), 8, Victim->GetActorLocation(), true);
+			FHitResult Hit;
+			UGameplayStatics::ApplyPointDamage(Victim, Damage, Dir, Hit, nullptr, Shooter, nullptr);
 		}
 	}
 }
