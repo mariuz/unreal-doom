@@ -47,9 +47,18 @@ Because the info tables are global, each test resets them afterwards.
 
 Doom's 35 Hz clock is stopped (`ADoomGameMode::bClockStopped`) and the test runs exactly 35 tics,
 so monsters, animations and flickering lights are in the same state every run. The engine keeps
-rendering: pausing the game instead would freeze the camera too. The comparison uses Unreal's
-*Low* tolerance. The classic renderer matches its approved image exactly, and the modern one
-differs by about 0.07% (Lumen's noise).
+rendering: pausing the game instead would freeze the camera too. The modern capture then waits for
+the distance fields and shaders, and for 600 rendered frames (Lumen gathers its lighting frame by
+frame, so a fixed time would let a fast GPU settle further than a slow one); the log says how long
+they took. The comparison uses Unreal's *Low* tolerance. The classic renderer matches its approved
+image exactly, and the modern one differs by about 0.07% (Lumen's noise) on the owner's machine.
+
+On a GTX 950 with UE 5.8.2 the modern capture is brighter (13.8% global difference) with the same
+geometry, and it is the same without any of the play-test changes and whether it waits 6 s or 600
+frames (the card renders 75 fps there). Exposure is manual and software Lumen is used everywhere, so
+the suspects are the engine patch (the approved image was made with 5.8.1) and the GPU itself. Until
+it is re-approved on one engine version, treat an `E1M1Modern` failure elsewhere by comparing against
+a run without your changes.
 
 When a change alters the picture on purpose, the test fails and the Session Frontend's
 **Screenshot Comparison** tab shows the old and new images side by side; **Replace** approves the

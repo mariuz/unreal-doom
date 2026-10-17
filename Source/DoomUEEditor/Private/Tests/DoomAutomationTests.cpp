@@ -104,6 +104,29 @@ namespace DoomTest
 		};
 	}
 
+	/** Waits until Count more frames have been rendered (Lumen settles per frame, not per second, so a
+	 *  fixed time lets a fast GPU settle further than a slow one); logs how long they took. */
+	TFunction<bool()> Frames(FAutomationTestBase* Test, uint64 Count)
+	{
+		TSharedRef<uint64> Until = MakeShared<uint64>(0);
+		TSharedRef<double> Started = MakeShared<double>(0);
+		return [Test, Count, Until, Started]()
+		{
+			if (*Until == 0)
+			{
+				*Until = GFrameCounter + Count;
+				*Started = FPlatformTime::Seconds();
+			}
+			if (GFrameCounter < *Until)
+			{
+				return false;
+			}
+			const double Secs = FPlatformTime::Seconds() - *Started;
+			Test->AddInfo(FString::Printf(TEXT("%llu frames in %.1f s (%.0f fps)"), Count, Secs, Count / FMath::Max(Secs, 0.001)));
+			return true;
+		};
+	}
+
 	/** Opens the empty entry map and plays it: the Doom game mode loads the WADs and parks the player.
 	 *  In the editor AutomationOpenMap queues both the map load and the PIE start. */
 	void StartGame(FAutomationTestBase* Test)
@@ -429,6 +452,10 @@ bool FDoomWadTilesTest::RunTest(const FString& Parameters)
 
 namespace DoomTest
 {
+	/** Rendered frames the modern renderer gets before its screenshot: 600 frames is 10 s at 60 fps,
+	 *  well past the 6 s the test used to wait on the owner's machine. */
+	constexpr uint64 ModernSettleFrames = 600;
+
 	/** E1M1's start in one renderer, compared against the approved image (needs a real RHI). */
 	void Screenshot(FAutomationTestBase* Test, const FString& Name, bool bModern)
 	{
@@ -459,7 +486,9 @@ namespace DoomTest
 			UAutomationBlueprintFunctionLibrary::FinishLoadingBeforeScreenshot();
 			return true;
 		}, 600.f));
-		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("lighting settles"), Wait(bModern ? 6.f : 1.f)));
+		// Lumen gathers its lighting over frames: the same number of frames on every GPU, so a slow card
+		// captures as settled a picture as a fast one (the classic renderer only needs a frame or two)
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("lighting settles"), bModern ? Frames(Test, ModernSettleFrames) : Wait(1.f), 600.f));
 		TSharedRef<bool> bCompared = MakeShared<bool>(false);
 		TSharedRef<FDelegateHandle> Handle = MakeShared<FDelegateHandle>();
 		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("take ") + Name, [Test, Name, bCompared, Handle]()
