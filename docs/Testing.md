@@ -86,10 +86,16 @@ first 11 steps failed on E1M1.
 | `flyer` | A cacodemon hit by the player is still flying a second later |
 | `target` | 3 s of plasma at a baron in the open (aim kept on it) takes over 100 health |
 | `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units in 5 s (the rest are shut in closets) |
-| `automap` | With the map closed, the walls in view become known, beyond the player's own sector |
+| `automap` | With the map closed, the walls in view become known, beyond the player's own sector; then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |
 | `quitprompt` | A left click on the quit prompt cancels it |
 | `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses |
+| `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
+| `lostsoul` | A killed lost soul plays its death frames, then vanishes |
 | `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
+
+Keys pressed from the test (`InputKey`) reach the controller's own key handling (the prompts) but
+not Enhanced Input in the unfocused test window, and injected actions don't arrive either, so the
+menu's Esc and the automap keys aren't covered.
 
 Steps that need something the map lacks (a lift, a teleporter, room in front of the start) are
 skipped. Checked maps: Freedoom 1 E1M1, E1M2 and E1M4; Freedoom 2 MAP01 and MAP05 (add

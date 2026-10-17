@@ -239,7 +239,7 @@ void ADoomPlayer::Move(const FInputActionValue& V)
 	const bool bRun = GetDefault<UDoomSettings>()->bAlwaysRun != bRunHeld;
 	const float Scale = bRun ? 1.f : 0.5f;
 	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::X), In.Y * Scale);
-	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), In.X * Scale);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), In.X * Scale * (bRun ? 0.8f : 0.96f));
 }
 
 void ADoomPlayer::Look(const FInputActionValue& V)
@@ -437,7 +437,7 @@ void ADoomPlayer::AnimateBody()
 	bool bLoop = true;
 	if (IsDead())
 	{
-		Seq = Inv().Health < -50 ? TEXT("OPQRSTUVW") : TEXT("HIJKLMN");
+		Seq = Inv().Health < -100 ? TEXT("OPQRSTUVW") : TEXT("HIJKLMN"); // P_KillMobj: below -spawnhealth
 		Tics = 5;
 		bLoop = false;
 	}
@@ -659,7 +659,7 @@ void ADoomPlayer::TicDeath()
 	++DeathTics;
 	// the view sinks to the floor
 	const FVector Rel = Camera->GetRelativeLocation();
-	const float Target = (8.f - 28.f) * Doom::Scale;
+	const float Target = (6.f - 28.f) * Doom::Scale;
 	if (Rel.Z > Target)
 	{
 		Camera->SetRelativeLocation(FVector(Rel.X, Rel.Y, FMath::Max(Target, Rel.Z - 1.f * Doom::Scale)));
@@ -741,7 +741,7 @@ void ADoomPlayer::TicWeapon()
 		if (Inv().Ready == EDoomWeapon::Chainsaw)
 		{
 			WeaponFrame = ((DoomWorld->GetTic() / 4) & 1) ? 'D' : 'C';
-			if ((DoomWorld->GetTic() % 16) == 0) PlaySelfSound(TEXT("SAWIDL"), 0.6f);
+			if ((DoomWorld->GetTic() % 8) == 0) PlaySelfSound(TEXT("SAWIDL"), 0.6f);
 		}
 		else
 		{
@@ -800,6 +800,11 @@ void ADoomPlayer::TicWeapon()
 			if (F.bFire)
 			{
 				FireWeapon(FireIndex);
+			}
+			else if (F.Flash >= 0)
+			{
+				FlashFrame = 'A' + F.Flash; // A_GunFlash on a frame of its own (the BFG's charge-up)
+				FlashTics = FMath::Max(4, F.Tics);
 			}
 			if (Inv().Ready == EDoomWeapon::SuperShotgun)
 			{
@@ -884,19 +889,24 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 	case EDoomWeapon::Plasma:
 	case EDoomWeapon::BFG:
 	{
+		// P_SpawnPlayerMissile: straight ahead, or 5.6 degrees either side if that is where a target is;
+		// launched 32 units above the feet
 		AActor* AimTarget = nullptr;
-		const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget);
-		const FVector Dir = (Fwd + FVector(0, 0, Slope)).GetSafeNormal();
+		float AimAngle = DoomAngle();
+		const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget, &AimAngle);
+		const FVector Flat = FRotator(0, Doom::AngleToYaw(AimAngle), 0).Vector();
+		const FVector Dir = (Flat + FVector(0, 0, Slope)).GetSafeNormal();
+		const FVector Launch = GetActorLocation() + FVector(0, 0, 4.f * Doom::Scale);
 		const TCHAR* Type = Inv().Ready == EDoomWeapon::Rocket ? TEXT("Rocket") : Inv().Ready == EDoomWeapon::Plasma ? TEXT("Plasma") : TEXT("BFGBall");
 		// the BFG's sound already played when the trigger was pulled
-		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir, nullptr, Inv().Ready == EDoomWeapon::BFG);
+		DoomWorld->SpawnProjectile(Type, this, Launch + Flat * 20.f * Doom::Scale, Dir, nullptr, Inv().Ready == EDoomWeapon::BFG);
 		break;
 	}
 	default: break;
 	}
 }
 
-float ADoomPlayer::AimSlope(float AngleDeg, float Range, AActor*& OutTarget) const
+float ADoomPlayer::AimSlope(float AngleDeg, float Range, AActor*& OutTarget, float* OutAngle) const
 {
 	// P_AimLineAttack: the nearest shootable thing the horizontal aim line passes through,
 	// within Doom's vertical aiming window (100/160 up and down); else the view pitch.
@@ -909,41 +919,53 @@ float ADoomPlayer::AimSlope(float AngleDeg, float Range, AActor*& OutTarget) con
 	{
 		return ViewSlope;
 	}
+	// whatever can be shot: monsters, barrels, and the other players (P_AimLineAttack takes any
+	// MF_SHOOTABLE thing)
+	TArray<TPair<AActor*, float>> Candidates;
+	for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
+	{
+		if (M.IsValid() && !M->IsDead()) Candidates.Add({ M.Get(), M->Def->Radius });
+	}
+	for (const TWeakObjectPtr<ADoomThing>& T : DoomWorld->GetThings())
+	{
+		if (T.IsValid() && !T->bDead && T->Def && (T->Def->Flags & EThingFlag::Shootable)) Candidates.Add({ T.Get(), T->Def->Radius });
+	}
+	for (ADoomPlayer* P : DoomWorld->GetPlayers())
+	{
+		if (P != this && !P->IsDead()) Candidates.Add({ P, 16.f });
+	}
 	for (float Offset : { 0.f, 5.6f, -5.6f })
 	{
 		const float A = FMath::DegreesToRadians(AngleDeg + Offset);
 		const FVector2f Dir(FMath::Cos(A), FMath::Sin(A));
 		float Best = Range;
 		float BestSlope = 0;
-		for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
+		for (const TPair<AActor*, float>& C : Candidates)
 		{
-			if (!M.IsValid() || M->IsDead())
-			{
-				continue;
-			}
-			const FVector2f To = M->DoomPos() - Origin;
+			const FVector2f To = Doom::ToDoom2D(C.Key->GetActorLocation()) - Origin;
 			const float Along = FVector2f::DotProduct(To, Dir);
 			if (Along <= 0 || Along > Best)
 			{
 				continue;
 			}
 			const float Side = FMath::Abs(To.X * Dir.Y - To.Y * Dir.X);
-			if (Side > M->Def->Radius)
+			if (Side > C.Value)
 			{
 				continue;
 			}
-			const float Dz = (M->GetActorLocation().Z - Eye.Z) / Doom::Scale;
+			const float Dz = (C.Key->GetActorLocation().Z - Eye.Z) / Doom::Scale;
 			const float Slope = Dz / FMath::Max(Along, 1.f);
-			if (FMath::Abs(Slope) > 100.f / 160.f || !DoomWorld->CheckSight(this, M.Get()))
+			if (FMath::Abs(Slope) > 100.f / 160.f || !DoomWorld->CheckSight(this, C.Key))
 			{
 				continue;
 			}
 			Best = Along;
 			BestSlope = Slope;
-			OutTarget = M.Get();
+			OutTarget = C.Key;
 		}
 		if (OutTarget)
 		{
+			if (OutAngle) *OutAngle = AngleDeg + Offset;
 			return BestSlope;
 		}
 	}
@@ -953,7 +975,7 @@ float ADoomPlayer::AimSlope(float AngleDeg, float Range, AActor*& OutTarget) con
 void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitch, int32 DamageMul, int32 DamageDie, bool bAccurate)
 {
 	AActor* AimTarget = nullptr;
-	const float Slope = AimSlope(DoomAngle(), 2048.f, AimTarget);
+	const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget); // P_BulletSlope's range
 	const FVector Eye = GetActorLocation() + FVector(0, 0, 8.f * Doom::Scale);
 	const float Range = 2048.f * Doom::Scale;
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPlayerShot), false, this);
@@ -965,14 +987,16 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 		FHitResult Hit;
 		const FVector End = Eye + Dir * Range;
 		const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, Eye, End, ECC_Visibility, Q);
-		DoomWorld->CheckShootLines(this, Doom::ToDoom2D(Eye), Doom::ToDoom2D(bHit ? Hit.ImpactPoint : End));
+		// a few units past the hit: the hit point lies on the wall's line, and the crossing test needs
+		// the ends on opposite sides (else shooting G1/GR switches came down to rounding)
+		DoomWorld->CheckShootLines(this, Doom::ToDoom2D(Eye), Doom::ToDoom2D(bHit ? Hit.ImpactPoint + Dir * 4.f * Doom::Scale : End));
 		if (!bHit)
 		{
 			continue;
 		}
 		const int32 Damage = DamageMul * ((PlayerRand() % DamageDie) + 1);
 		AActor* A = Hit.GetActor();
-		if (A && (A->IsA<ADoomMonster>() || A->IsA<ADoomThing>()))
+		if (A && (A->IsA<ADoomMonster>() || A->IsA<ADoomThing>() || A->IsA<ADoomPlayer>()))
 		{
 			UGameplayStatics::ApplyPointDamage(A, Damage, Dir, Hit, GetController(), this, nullptr);
 			const ADoomMonster* M = Cast<ADoomMonster>(A);
@@ -1011,7 +1035,7 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 	AActor* AimTarget = nullptr;
 	const float Range = bSaw ? 65.f : 64.f;
 	const float Slope = AimSlope(DoomAngle(), Range, AimTarget);
-	const float Yaw = GetControlRotation().Yaw + (bSaw ? (PlayerRand() - PlayerRand()) / 255.f * 5.6f : 0.f);
+	const float Yaw = GetControlRotation().Yaw + (PlayerRand() - PlayerRand()) / 255.f * 5.6f; // A_Punch and A_Saw both spread
 	const FVector Eye = GetActorLocation() + FVector(0, 0, 8.f * Doom::Scale);
 	const FVector Dir = (FRotator(0, Yaw, 0).Vector() + FVector(0, 0, Slope)).GetSafeNormal();
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMelee), false, this);
@@ -1029,11 +1053,12 @@ void ADoomPlayer::MeleeAttack(bool bSaw)
 		UGameplayStatics::ApplyPointDamage(A, Damage, Dir, Hit, GetController(), this, nullptr);
 		DoomWorld->SpawnEffect(TEXT("BLUD"), TEXT("BC"), 8, Hit.ImpactPoint, false);
 		PlaySelfSound(bSaw ? TEXT("SAWHIT") : TEXT("PUNCH"));
-		// punches and the saw turn you towards what they hit
+		// a punch turns you to face what it hit; the saw pulls you round 4.5 degrees per hit (ANG90/20)
 		if (AController* C = GetController())
 		{
 			FRotator R = C->GetControlRotation();
-			R.Yaw = (A->GetActorLocation() - GetActorLocation()).Rotation().Yaw;
+			const float Want = (A->GetActorLocation() - GetActorLocation()).Rotation().Yaw;
+			R.Yaw = bSaw ? R.Yaw + FMath::Clamp(FMath::FindDeltaAngleDegrees(R.Yaw, Want), -4.5f, 4.5f) : Want;
 			C->SetControlRotation(R);
 		}
 	}
@@ -1106,7 +1131,7 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 
 	if (Inv().Health <= 0)
 	{
-		Inv().Health = FMath::Max(Inv().Health, -99);
+		Inv().Health = FMath::Max(Inv().Health, -999); // the status bar shows 0; gibs need the real value
 		if (DoomWorld->IsNetGame())
 		{
 			// frags (P_KillMobj): another player's kill counts for them; your own rocket, or a death with
@@ -1199,19 +1224,25 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		if (bDoubleAmmo) Amount *= 2;
 		const int32 Old = Cur;
 		Cur = FMath::Min(Cur + Amount, Max);
-		// switch away from fist/pistol when ammo for something better arrives
-		if (Old == 0 && (Inv().Ready == EDoomWeapon::Fist || Inv().Ready == EDoomWeapon::Pistol))
+		// P_GiveAmmo: when you had none of it, bullets take you off the fist (chaingun, else pistol),
+		// shells and cells off the fist or pistol (shotgun, plasma), rockets off the fist (launcher)
+		if (Old == 0)
 		{
-			static const EDoomWeapon ByAmmo[4][2] = {
-				{ EDoomWeapon::Chaingun, EDoomWeapon::Pistol }, { EDoomWeapon::SuperShotgun, EDoomWeapon::Shotgun },
-				{ EDoomWeapon::Rocket, EDoomWeapon::Count }, { EDoomWeapon::Plasma, EDoomWeapon::Count } };
-			for (EDoomWeapon W : ByAmmo[(int32)A])
+			const EDoomWeapon Ready = Inv().Ready;
+			const bool bFist = Ready == EDoomWeapon::Fist;
+			const bool bWeak = bFist || Ready == EDoomWeapon::Pistol;
+			EDoomWeapon Want = EDoomWeapon::Count;
+			switch (A)
 			{
-				if (W != EDoomWeapon::Count && Inv().Weapons[(int32)W] && W != Inv().Ready && !(A == EDoomAmmo::Rockets))
-				{
-					PendingWeapon = W;
-					break;
-				}
+			case EDoomAmmo::Bullets: if (bFist) Want = Inv().Weapons[(int32)EDoomWeapon::Chaingun] ? EDoomWeapon::Chaingun : EDoomWeapon::Pistol; break;
+			case EDoomAmmo::Shells: if (bWeak && Inv().Weapons[(int32)EDoomWeapon::Shotgun]) Want = EDoomWeapon::Shotgun; break;
+			case EDoomAmmo::Cells: if (bWeak && Inv().Weapons[(int32)EDoomWeapon::Plasma]) Want = EDoomWeapon::Plasma; break;
+			case EDoomAmmo::Rockets: if (bFist && Inv().Weapons[(int32)EDoomWeapon::Rocket]) Want = EDoomWeapon::Rocket; break;
+			default: break;
+			}
+			if (Want != EDoomWeapon::Count && Want != Ready)
+			{
+				PendingWeapon = Want;
 			}
 		}
 		return true;
@@ -1263,7 +1294,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		break;
 	case EPickup::Invisibility: Invisibility = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::RadSuit: RadSuit = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
-	case EPickup::Map: DoomWorld->bFullMap = true; Sound = TEXT("GETPOW"); break;
+	case EPickup::Map: if (DoomWorld->bFullMap) return false; DoomWorld->bFullMap = true; Sound = TEXT("GETPOW"); break;
 	case EPickup::LightAmp: LightAmp = 120 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::BlueCard: Inv().Keys[0] = true; break;
 	case EPickup::YellowCard: Inv().Keys[1] = true; break;

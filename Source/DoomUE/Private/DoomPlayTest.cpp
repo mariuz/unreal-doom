@@ -8,6 +8,7 @@
 #include "DoomPlayer.h"
 #include "DoomPlayerController.h"
 #include "DoomMenu.h"
+#include "DoomHUD.h"
 #include "InputKeyEventArgs.h"
 #include "DoomMonster.h"
 #include "DoomUE.h"
@@ -479,9 +480,27 @@ void ADoomGameMode::StartPlayTest()
 			for (FDoomLine& L : Map->Lines) L.bSeen = false;
 			return true;
 		},
-		[W, Map, Player](int32 Tics, FString& Msg)
+		[W, Map, Player, Shot](int32 Tics, FString& Msg)
 		{
 			if (Tics < 20) return EStep::Running;
+			// then a look at the map itself: open, zoomed out, with the grid and a mark (playtest_automap.png)
+			ADoomHUD* HUD = Cast<ADoomHUD>(Cast<APlayerController>(Player()->GetController())->GetHUD());
+			if (Tics == 20 && HUD)
+			{
+				W->bAutomap = true;
+				HUD->AutomapZoom(-1.f, 1.f);
+				HUD->AutomapToggleGrid();
+				HUD->AutomapMark();
+			}
+			if (Tics == 24) Shot(TEXT("automap"));
+			if (Tics < 27) return EStep::Running;
+			if (HUD)
+			{
+				HUD->AutomapToggleGrid();
+				HUD->AutomapClearMarks();
+				HUD->AutomapZoom(1.f, 1.f);
+			}
+			W->bAutomap = false;
 			const int32 Here = Map->SectorAt(Player()->DoomPos());
 			int32 Seen = 0, Away = 0;
 			for (int32 i = 0; i < Map->Lines.Num(); ++i)
@@ -556,7 +575,71 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
-	// --- 13 (last: it leaves the map). the intermission shows the vanilla par time ----------------
+	// --- 13. P_GiveAmmo's weapon switches: shells take the pistol to the shotgun, bullets don't take it
+	// to the chaingun, rockets don't take it to the launcher -----------------------------------------
+	TSharedRef<FString> AmmoResult = MakeShared<FString>();
+	Run->Steps.Add({ TEXT("ammoswitch"),
+		[W, GoHome, Player, AmmoResult](FString& Msg)
+		{
+			GoHome();
+			ADoomPlayer* P = Player();
+			const FDoomThingDef* Shells = DoomInfo::FindThing(2008);
+			const FDoomThingDef* Clip = DoomInfo::FindThing(2007);
+			const FDoomThingDef* Rocket = DoomInfo::FindThing(2010);
+			if (!Shells || !Clip || !Rocket) { Msg = TEXT("no ammo things in the tables"); return false; }
+			FString Got;
+			auto Try = [&](const FDoomThingDef* Def, EDoomAmmo A, EDoomWeapon Expect, const TCHAR* Label)
+			{
+				P->Inv().Ready = EDoomWeapon::Pistol;
+				P->PendingWeapon = EDoomWeapon::Count;
+				for (bool& B : P->Inv().Weapons) B = true;
+				P->Inv().Ammo[(int32)A] = 0;
+				P->TryPickup(*Def, false);
+				const bool bOk = P->PendingWeapon == Expect;
+				Got += FString::Printf(TEXT("%s -> %s%s; "), Label, P->PendingWeapon == EDoomWeapon::Count ? TEXT("stay") : *UEnum::GetDisplayValueAsText(P->PendingWeapon).ToString(), bOk ? TEXT("") : TEXT(" (wrong)"));
+				return bOk;
+			};
+			bool bAll = Try(Shells, EDoomAmmo::Shells, EDoomWeapon::Shotgun, TEXT("shells"));
+			bAll &= Try(Clip, EDoomAmmo::Bullets, EDoomWeapon::Count, TEXT("clip"));
+			bAll &= Try(Rocket, EDoomAmmo::Rockets, EDoomWeapon::Count, TEXT("rocket"));
+			P->PendingWeapon = EDoomWeapon::Count;
+			*AmmoResult = Got + (bAll ? TEXT("as vanilla") : TEXT("not vanilla"));
+			return true;
+		},
+		[AmmoResult](int32 Tics, FString& Msg)
+		{
+			Msg = *AmmoResult;
+			return AmmoResult->Contains(TEXT("not vanilla")) ? EStep::Fail : EStep::Pass;
+		} });
+
+	// --- 14. a lost soul plays its death frames before it vanishes --------------------------------
+	{
+		struct FSoul { TWeakObjectPtr<ADoomMonster> M; bool bSeenDying = false; };
+		TSharedRef<FSoul> L = MakeShared<FSoul>();
+		Run->Steps.Add({ TEXT("lostsoul"),
+			[W, L, GoHome, Player, ClearestYaw](FString& Msg)
+			{
+				GoHome();
+				ADoomPlayer* P = Player();
+				float Clear = 0;
+				const float Yaw = ClearestYaw(P, Clear);
+				if (Clear < 120.f) { Msg = TEXT("no room at the start"); return false; }
+				const FVector Feet = P->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(P)) + FRotator(0, Yaw, 0).Vector() * 96.f * Doom::Scale;
+				L->M = W->SpawnMonster(3006, Feet, Doom::YawToAngle(Yaw) + 180.f);
+				if (!L->M.IsValid()) { Msg = TEXT("could not spawn a lost soul"); return false; }
+				UGameplayStatics::ApplyDamage(L->M.Get(), 1000.f, P->GetController(), P, nullptr);
+				return true;
+			},
+			[L](int32 Tics, FString& Msg)
+			{
+				if (L->M.IsValid() && L->M->State == EMonsterState::Dying) L->bSeenDying = true;
+				Msg = FString::Printf(TEXT("dying frames seen %d, gone after %d tics %d"), L->bSeenDying, Tics, !L->M.IsValid());
+				if (L->M.IsValid() && Tics < 105) return EStep::Running;
+				return L->bSeenDying && !L->M.IsValid() ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+	// --- 15 (last: it leaves the map). the intermission shows the vanilla par time ----------------
 	Run->Steps.Add({ TEXT("intermission"),
 		[this, W](FString& Msg)
 		{

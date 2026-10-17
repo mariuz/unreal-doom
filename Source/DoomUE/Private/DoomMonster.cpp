@@ -228,7 +228,15 @@ void ADoomMonster::Tick(float DeltaSeconds)
 	{
 		const FVector2f D = DirVector(MoveDir);
 		FVector Input(D.X, -D.Y, 0);
-		if ((Def->Flags & EThingFlag::Float) && Target.IsValid())
+		if ((Def->Flags & EThingFlag::Float) && FloatGoalTics > 0)
+		{
+			const float Dz = FloatGoalZ - GetActorLocation().Z;
+			if (FMath::Abs(Dz) > 1.f * Doom::Scale)
+			{
+				Input.Z = FMath::Sign(Dz); // FLOATSPEED: up or down into the opening
+			}
+		}
+		else if ((Def->Flags & EThingFlag::Float) && Target.IsValid())
 		{
 			// rise and sink towards the target like P_ZMovement's float logic
 			const float Dz = Target->GetActorLocation().Z - GetActorLocation().Z;
@@ -261,6 +269,10 @@ void ADoomMonster::DoomTic()
 		DoomWorld->CheckCrossings(this, LastPos, Pos, true);
 	}
 	LastPos = DoomPos(); // re-read: a teleport line moves the monster
+	if (FloatGoalTics > 0)
+	{
+		--FloatGoalTics;
+	}
 
 	switch (State)
 	{
@@ -334,6 +346,11 @@ void ADoomMonster::DoomTic()
 		if (Sprite->IsSequenceDone())
 		{
 			State = EMonsterState::Dead;
+			if (Is(Def, TEXT("LostSoul")))
+			{
+				Destroy(); // burnt out: lost souls leave no corpse
+				return;
+			}
 		}
 		break;
 	case EMonsterState::Dead:
@@ -485,12 +502,36 @@ bool ADoomMonster::TestMove(int32 Dir) const
 	// a box, like Doom's: as wide as the walking capsule (a capsule that short would have to be thinner
 	// than the body, and then promised paths the body couldn't take), slightly inset for corners
 	const FCollisionShape Shape = FCollisionShape::MakeBox(FVector(Radius * 0.9f, Radius * 0.9f, BodyHalf));
+	// P_Move's floatok: a flyer blocked at its height may still fit the opening ahead higher up or lower
+	// down; then it rises or sinks towards it (FloatGoalZ) and counts the move as made
+	auto FloatOk = [&]() -> bool
+	{
+		if (!(Def->Flags & EThingFlag::Float))
+		{
+			return false;
+		}
+		for (int32 k = 1; k <= 12; ++k)
+		{
+			for (float Sign : { 1.f, -1.f })
+			{
+				const FVector Off(0, 0, Sign * k * 8.f * S);
+				if (!GetWorld()->SweepTestByChannel(From, From + Off, FQuat::Identity, ECC_DoomMonster, Shape, Q)
+					&& !GetWorld()->SweepTestByChannel(From + Off, To + Off, FQuat::Identity, ECC_DoomMonster, Shape, Q))
+				{
+					FloatGoalZ = GetActorLocation().Z + Off.Z;
+					FloatGoalTics = 8;
+					return true;
+				}
+			}
+		}
+		return false;
+	};
 	FHitResult Block;
 	if (GetWorld()->SweepSingleByChannel(Block, From, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
 	{
 		if (!Block.bStartPenetrating)
 		{
-			return false;
+			return FloatOk();
 		}
 		// the box's corner already touches something (a wall we lean on, a neighbour): moving away from
 		// it is fine; test again from just outside it
@@ -502,7 +543,7 @@ bool ADoomMonster::TestMove(int32 Dir) const
 		const FVector Free = From + Out * (Block.PenetrationDepth + 1.f);
 		if (GetWorld()->SweepTestByChannel(Free, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
 		{
-			return false;
+			return FloatOk();
 		}
 	}
 	if (Def->Flags & EThingFlag::Float)
@@ -766,7 +807,10 @@ void ADoomMonster::HitscanAttack(int32 Pellets, float SpreadDeg, int32 DamageMul
 		const float Yaw = (MonsterRand() - MonsterRand()) / 255.f * SpreadDeg;
 		const FVector Dir = Base.RotateAngleAxis(Yaw, FVector::UpVector);
 		FHitResult Hit;
-		if (!GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * Range, ECC_Visibility, Q))
+		const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * Range, ECC_Visibility, Q);
+		// a monster's bullet can open the GR door 46 (P_ShootSpecialLine); ActivateSpecial filters the rest
+		DoomWorld->CheckShootLines(this, Doom::ToDoom2D(From), Doom::ToDoom2D(bHit ? Hit.ImpactPoint + Dir * 4.f * Doom::Scale : From + Dir * Range));
+		if (!bHit)
 		{
 			continue;
 		}
@@ -858,25 +902,7 @@ void ADoomMonster::DoAttack(bool bMelee)
 	}
 	case EDoomAttack::PainSpawn:
 	{
-		int32 Souls = 0;
-		for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
-		{
-			if (M.IsValid() && Is(M->Def, TEXT("LostSoul")) && !M->IsDead()) ++Souls;
-		}
-		if (Souls < 21)
-		{
-			const FVector Spawn = GetActorLocation() + FVector(ToTarget.X, ToTarget.Y, 0).GetSafeNormal() * (Def->Radius + 24.f) * Doom::Scale
-				- FVector(0, 0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-			FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPainSpawn), false, this);
-			if (!GetWorld()->SweepTestByChannel(GetActorLocation(), Spawn + FVector(0, 0, 28 * Doom::Scale), FQuat::Identity, ECC_DoomMonster, FCollisionShape::MakeSphere(16 * Doom::Scale), Q))
-			{
-				if (ADoomMonster* Soul = DoomWorld->SpawnMonster(3006, Spawn, DoomAngle))
-				{
-					Soul->Target = Target;
-					Soul->StartState(EMonsterState::Missile);
-				}
-			}
-		}
+		ShootSkull(Doom::YawToAngle(FVector(ToTarget.X, ToTarget.Y, 0).Rotation().Yaw), Target.Get());
 		break;
 	}
 	case EDoomAttack::Vile:
@@ -918,14 +944,9 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 		const FVector From = DamageEvent.IsOfType(FRadialDamageEvent::ClassID)
 			? static_cast<const FRadialDamageEvent&>(DamageEvent).Origin : DamageCauser->GetActorLocation();
 		const FVector Push = (GetActorLocation() - From).GetSafeNormal2D() * (Damage * 12.5f / MonsterMass(Def) * Doom::TicRate * Doom::Scale);
-		if (Def->Flags & EThingFlag::Float)
-		{
-			GetCharacterMovement()->Velocity += Push; // launching would switch flyers to falling
-		}
-		else
-		{
-			LaunchCharacter(Push, false, false);
-		}
+		// added to the velocity rather than launched: launching switches to falling, which drops flyers and
+		// throws walkers off ledges, where Doom's dropoff rule (P_TryMove) stops a pushed monster at the edge
+		GetCharacterMovement()->Velocity += Push;
 	}
 
 	if (Health <= 0)
@@ -965,6 +986,7 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 void ADoomMonster::Die(AActor* Killer, bool bGib)
 {
 	State = EMonsterState::Dying;
+	LastTarget = Target; // a dying pain elemental's souls go after whoever it was fighting
 	Target.Reset();
 	MoveDir = DirNone;
 	ChargeVelocity = FVector::ZeroVector;
@@ -988,21 +1010,52 @@ void ADoomMonster::Die(AActor* Killer, bool bGib)
 	{
 		Light->SetVisibility(false);
 	}
-	if (Is(Def, TEXT("LostSoul")))
-	{
-		Destroy();
-		return;
-	}
 	if (Is(Def, TEXT("PainElemental")))
 	{
+		// A_PainDie: three souls at 90, 180 and 270 degrees, by the same rules as its attack
 		for (int32 i = 0; i < 3; ++i)
 		{
-			const float A = DoomAngle + 90.f * (i + 1);
-			const FVector Off = Doom::ToUE(FMath::Cos(FMath::DegreesToRadians(A)), FMath::Sin(FMath::DegreesToRadians(A)), 0) * 40.f;
-			DoomWorld->SpawnMonster(3006, L + Off - FVector(0, 0, Cap->GetScaledCapsuleHalfHeight()), A);
+			ShootSkull(DoomAngle + 90.f * (i + 1), LastTarget.Get());
 		}
 	}
 	DoomWorld->OnMonsterDied(this);
+}
+
+void ADoomMonster::ShootSkull(float Angle, AActor* SoulTarget)
+{
+	// A_PainShootSkull: no more than 20 lost souls on the map; the soul appears just past both bodies'
+	// edges (4 + 3/2 of the radii), only if the way there is clear, and charges at once
+	int32 Souls = 0;
+	for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
+	{
+		if (M.IsValid() && Is(M->Def, TEXT("LostSoul")) && !M->IsDead()) ++Souls;
+	}
+	if (Souls > 20)
+	{
+		return;
+	}
+	const FDoomThingDef* SoulDef = DoomInfo::FindThing(3006);
+	const float SoulRadius = SoulDef ? SoulDef->Radius : 16.f;
+	const float Prestep = 4.f + 1.5f * (Def->Radius + SoulRadius);
+	const float Rad = FMath::DegreesToRadians(Angle);
+	const FVector Dir = Doom::ToUE(FMath::Cos(Rad), FMath::Sin(Rad), 0).GetSafeNormal();
+	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Feet = GetActorLocation() - FVector(0, 0, Half) + Dir * Prestep * Doom::Scale + FVector(0, 0, 8.f * Doom::Scale);
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPainSpawn), false, this);
+	const FVector Body(0, 0, (SoulDef ? SoulDef->Height * 0.5f : 28.f) * Doom::Scale);
+	if (GetWorld()->SweepTestByChannel(GetActorLocation(), Feet + Body, FQuat::Identity, ECC_DoomMonster,
+		FCollisionShape::MakeSphere(SoulRadius * 0.9f * Doom::Scale), Q))
+	{
+		return; // vanilla spawns it and kills it at once; nothing is left either way
+	}
+	if (ADoomMonster* Soul = DoomWorld->SpawnMonster(3006, Feet, Angle))
+	{
+		Soul->Target = SoulTarget;
+		if (SoulTarget)
+		{
+			Soul->StartState(EMonsterState::Missile);
+		}
+	}
 }
 
 void ADoomMonster::MakeCorpse()

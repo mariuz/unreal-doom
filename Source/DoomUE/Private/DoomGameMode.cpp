@@ -741,6 +741,10 @@ void ADoomGameMode::DoomGod()
 		if (ADoomPlayer* P = W->GetPlayer())
 		{
 			P->bGodMode = !P->bGodMode;
+			if (P->bGodMode && !P->IsDead())
+			{
+				P->Inv().Health = 100; // IDDQD heals, too
+			}
 			W->ShowMessage(P->bGodMode ? TEXT("God mode on") : TEXT("God mode off"));
 		}
 	}

@@ -140,7 +140,7 @@ namespace
 	constexpr int32 DoorWait = 150;
 	constexpr int32 PlatWait = 105;
 
-	enum EDoorKind { DK_Raise, DK_Open, DK_Close, DK_Close30, DK_RaiseIn5Min };
+	enum EDoorKind { DK_Raise, DK_Open, DK_Close, DK_Close30, DK_RaiseIn5Min, DK_CloseIn30 };
 	enum EPlatKind { PK_Lift, PK_Perpetual, PK_RaiseChange, PK_RaiseNextChange };
 	enum EFloorKind { FK_RaiseLowestCeil, FK_RaiseCrush, FK_RaiseNext, FK_LowerHighest, FK_LowerHighestPlus8, FK_LowerLowest, FK_LowerLowestChange, FK_Raise24, FK_Raise24Change, FK_Raise512, FK_RaiseShortest };
 	enum ECeilKind { CK_RaiseHighest, CK_LowerFloor, CK_Lower8, CK_Crusher, CK_CrusherSilent };
@@ -1439,7 +1439,10 @@ void UDoomWorld::TicMovers()
 				}
 				else
 				{
-					PlaySound(M.bBlaze ? TEXT("BDCLS") : TEXT("DORCLS"), &SoundPos);
+					if (M.bBlaze)
+					{
+						PlaySound(TEXT("BDCLS"), &SoundPos); // vanilla: only blazing doors sound again when shut
+					}
 					if (M.CloseThenOpenWait) { M.Dir = 0; M.Counter = M.CloseThenOpenWait; }
 					else M.bDone = true;
 				}
@@ -1481,7 +1484,7 @@ void UDoomWorld::TicMovers()
 			{
 				if (M.Dir < 0) { M.Dir = 1; M.Dest = M.High; }
 				else { M.Dir = -1; M.Dest = M.Low; }
-				if (!M.bSilent) PlaySound(TEXT("PSTOP"), &SoundPos);
+				if (M.bSilent) PlaySound(TEXT("PSTOP"), &SoundPos); // vanilla: only the silent crusher (141) clanks at its ends
 			}
 			break;
 		default: // floors, ceilings
@@ -1493,9 +1496,9 @@ void UDoomWorld::TicMovers()
 					if (M.ChangeSpecial >= 0) S.Special = M.ChangeSpecial;
 					Level->SectorChanged(M.Sector);
 				}
-				if (bArrived)
+				if (bArrived && !M.bCeiling)
 				{
-					PlaySound(TEXT("PSTOP"), &SoundPos);
+					PlaySound(TEXT("PSTOP"), &SoundPos); // floors stop with a clank; ceilings stop silently
 				}
 				M.bDone = bArrived;
 			}
@@ -1536,6 +1539,11 @@ void UDoomWorld::AddDoor(int32 Sector, int32 Kind, float Speed, AActor* Activato
 	case DK_Close30:
 		M.Dir = -1; M.Dest = S.Floor; M.CloseThenOpenWait = 30 * Doom::TicRate; M.High = S.Ceiling;
 		PlaySound(TEXT("DORCLS"), &Pos);
+		break;
+	case DK_CloseIn30:
+		// sector 10 (P_SpawnDoorCloseIn30): a normal door, open now, that closes after 30 s; blocked, it
+		// reopens, waits and closes again like any door. No sound at load.
+		M.bReturn = true; M.Dir = 0; M.Counter = 30 * Doom::TicRate; M.High = S.Ceiling;
 		break;
 	case DK_RaiseIn5Min:
 		// opens after 5 minutes, then behaves as a normal door (waits, closes)
@@ -1618,10 +1626,12 @@ void UDoomWorld::AddFloor(int32 Sector, int32 Kind, float Speed, int32 LineIndex
 	case FK_Raise24: M.Dir = 1; M.Dest = S.Floor + 24; break;
 	case FK_Raise24Change:
 		M.Dir = 1; M.Dest = S.Floor + 24;
+		// raiseFloor24AndChange changes the texture and special as it starts
 		if (LineIndex >= 0 && Map->Lines[LineIndex].FrontSector != INDEX_NONE)
 		{
-			M.ChangeFloorPic = Map->Sectors[Map->Lines[LineIndex].FrontSector].FloorPic;
-			M.ChangeSpecial = Map->Sectors[Map->Lines[LineIndex].FrontSector].Special;
+			S.FloorPic = Map->Sectors[Map->Lines[LineIndex].FrontSector].FloorPic;
+			S.Special = Map->Sectors[Map->Lines[LineIndex].FrontSector].Special;
+			Level->SectorChanged(Sector);
 		}
 		break;
 	case FK_Raise512: M.Dir = 1; M.Dest = S.Floor + 512; break;
@@ -1738,7 +1748,7 @@ void UDoomWorld::StartSectorSpecials()
 		case 4: AddLight(FLightEffect::EType::StrobeFast, 15, false); break;
 		case 8: AddLight(FLightEffect::EType::Glow, 0, false); break;
 		case 9: ++Flow().TotalSecrets; break;
-		case 10: AddDoor(i, DK_Close30, DoorSpeed, nullptr); Movers.Last().Dir = 0; Movers.Last().Counter = 30 * Doom::TicRate; Movers.Last().CloseThenOpenWait = 0; break;
+		case 10: AddDoor(i, DK_CloseIn30, DoorSpeed, nullptr); break;
 		case 12: AddLight(FLightEffect::EType::StrobeSlow, 35, true); break;
 		case 13: AddLight(FLightEffect::EType::StrobeFast, 15, true); break;
 		case 14: AddDoor(i, DK_RaiseIn5Min, DoorSpeed, nullptr); break;
@@ -1902,9 +1912,9 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 		return false;
 	}
 	const bool bMonster = Activator && Activator->IsA<ADoomMonster>();
-	if (bMonster && !Spec->bMonster)
+	if (bMonster && !Spec->bMonster && !(How == EActivation::Shoot && L.Special == 46))
 	{
-		return false;
+		return false; // (a monster's bullet may open the GR door 46, as in P_ShootSpecialLine)
 	}
 	if (!bMonster && Spec->Act == EAct::TeleportMonsterOnly)
 	{
@@ -2001,10 +2011,20 @@ bool UDoomWorld::ActivateSpecial(int32 LineIndex, int32 SideIdx, AActor* Activat
 		{
 			if (Spec->Act == EAct::PlatRaiseNextChange) AddPlat(S, PK_RaiseNextChange, 0.5f, 0);
 			else AddPlat(S, PK_RaiseChange, 0.5f, Spec->Act == EAct::PlatRaise24Change ? 24 : 32);
+			// EV_DoPlat raiseAndChange / raiseToNearestAndChange: the floor takes the texture (and loses
+			// its special, for the "next" kinds) as it starts, so a nukage bridge stops hurting at once
+			FSectorMover& NewPlat = Movers.Last();
 			if (L.FrontSector != INDEX_NONE)
 			{
-				Movers.Last().ChangeFloorPic = Map->Sectors[L.FrontSector].FloorPic;
+				Map->Sectors[S].FloorPic = Map->Sectors[L.FrontSector].FloorPic;
 			}
+			if (NewPlat.ChangeSpecial >= 0)
+			{
+				Map->Sectors[S].Special = NewPlat.ChangeSpecial;
+			}
+			NewPlat.ChangeFloorPic = NAME_None;
+			NewPlat.ChangeSpecial = -1;
+			Level->SectorChanged(S);
 		});
 		break;
 	case EAct::FloorRaiseLowestCeil: ForFree([&](int32 S) { AddFloor(S, FK_RaiseLowestCeil, 1, LineIndex); }); break;
@@ -2136,8 +2156,9 @@ void UDoomWorld::UseLines(AActor* User, const FVector& From, float DoomAngle)
 		FDoomLine& L = Map->Lines[H.Line];
 		if (L.Special != 0)
 		{
-			// Doom only activates from the front side (P_UseSpecialLine checks side for some)
-			if (H.Side == 1 && FindSpec(L.Special) && FindSpec(L.Special)->Trig != 'D')
+			// P_UseSpecialLine: nothing works from a line's back side, doors included (you can't
+			// toggle a door from inside it)
+			if (H.Side == 1)
 			{
 				return;
 			}
@@ -2163,7 +2184,7 @@ bool UDoomWorld::TryMonsterUse(ADoomMonster* Monster, const FVector2f& From, con
 		if (L.Special != 0)
 		{
 			const FSpec* S = FindSpec(L.Special);
-			if (S && S->bMonster && S->Trig == 'D')
+			if (S && S->bMonster && S->Trig == 'D' && H.Side == 0)
 			{
 				return ActivateSpecial(H.Line, H.Side, Monster, EActivation::Use);
 			}
