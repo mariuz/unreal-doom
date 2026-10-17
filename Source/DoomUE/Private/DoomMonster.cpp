@@ -133,7 +133,10 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 	// the capsule keeps the monster's real height (so it fits under the ceilings it fits under in Doom
 	// and spawns on the floor); a capsule can't be wider than it is tall, so wide monsters (spider,
 	// arachnotron, mancubus, demons) also get a box of Doom's full width that catches bullets and missiles
-	GetCapsuleComponent()->SetCapsuleSize(FMath::Min(Def->Radius, Def->Height * 0.5f) * S, Def->Height * 0.5f * S);
+	// (a hair shorter than Doom's height: a 56-unit monster fits a 56-unit opening in Doom, and a capsule
+	// exactly that tall grazes the ceiling, which Character Movement takes for being stuck)
+	const float HalfHeight = Def->Height * 0.5f * S - 1.f;
+	GetCapsuleComponent()->SetCapsuleSize(FMath::Min(Def->Radius * S, HalfHeight), HalfHeight);
 	if (Def->Radius > Def->Height * 0.5f && !HitBox)
 	{
 		HitBox = NewObject<UBoxComponent>(this, TEXT("HitBox"));
