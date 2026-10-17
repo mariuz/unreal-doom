@@ -159,6 +159,9 @@ public:
 	void CreditKill(AActor* Killer);
 	/** The player state behind an actor: a player, their controller, or a missile they fired. */
 	static ADoomPlayerState* CreditedPlayer(AActor* Actor);
+	/** Who to blame for damage done by DamageCauser (vanilla's "source"): a missile's shooter, the player
+	 *  or monster whose shot set a barrel off, a controller's pawn, else the causer itself. */
+	static AActor* DamageSource(AActor* DamageCauser);
 	void CreditItem(ADoomPlayer* Player);
 	void CreditSecret(ADoomPlayer* Player);
 
@@ -332,7 +335,7 @@ private:
 	void TicLights();
 	void TicSectorDamage();
 	void TicSectorDamage(ADoomPlayer* P, int32 Sector);
-	bool MovePlane(FSectorMover& M);
+	bool MovePlane(FSectorMover& M, bool& bBlocked);
 	bool ActivateSpecial(int32 Line, int32 Side, AActor* Activator, EActivation How, bool bForce = false);
 	bool CheckLock(AActor* Activator, int32 Lock);
 	void FlipSwitch(int32 Line, int32 Side, bool bRepeat);
@@ -398,6 +401,8 @@ private:
 	void LoadPatches(const TArray<FString>& DehFiles);
 	TMap<int32, FString> SlotCache;
 	void SerializeState(FArchive& Ar);
+	/** After SerializeState loaded a level: geometry, lights and things follow the restored sectors. */
+	void RefreshRestoredLevel();
 
 	TArray<TWeakObjectPtr<ADoomThing>> Things;
 	TArray<TWeakObjectPtr<ADoomMonster>> Monsters;

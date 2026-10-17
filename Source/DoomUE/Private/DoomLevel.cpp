@@ -911,7 +911,9 @@ void ADoomLevel::BuildBlockingCollision()
 		C->CreateMeshSection_LinearColor(0, All.V, All.I, All.N, All.UV0, All.C, NoTangents, true);
 		C->SetVisibility(false);
 		C->SetCastShadow(false);
-		// bullets and sight pass through impassable lines; bodies do not
+		// bullets and sight pass through impassable lines; bodies do not. Not WorldStatic: sight and
+		// blast checks trace WorldStatic objects, which would ignore the responses below
+		C->SetCollisionObjectType(ECC_WorldDynamic);
 		C->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
 		C->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 		C->SetCollisionResponseToChannel(ECC_DoomMissile, ECR_Ignore);
@@ -922,6 +924,7 @@ void ADoomLevel::BuildBlockingCollision()
 		C->CreateMeshSection_LinearColor(0, Monsters.V, Monsters.I, Monsters.N, Monsters.UV0, Monsters.C, NoTangents, true);
 		C->SetVisibility(false);
 		C->SetCastShadow(false);
+		C->SetCollisionObjectType(ECC_WorldDynamic); // not seen by WorldStatic sight traces
 		C->SetCollisionResponseToAllChannels(ECR_Ignore);
 		C->SetCollisionResponseToChannel(ECC_DoomMonster, ECR_Block);
 	}

@@ -681,6 +681,12 @@ void ADoomGameMode::StartPlay()
 		}, 2.f, false);
 	}
 
+	// -playtest: doors, lifts, splash damage, weapons, monsters (needs -warp); PASS/FAIL per step
+	if (FParse::Param(FCommandLine::Get(), TEXT("playtest")) && W->GetMap())
+	{
+		StartPlayTest();
+	}
+
 	// -savetest: save mid-action, scramble, load, compare (needs -warp)
 	if (FParse::Param(FCommandLine::Get(), TEXT("savetest")) && W->GetMap())
 	{

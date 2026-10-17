@@ -9,6 +9,7 @@
 #include "DoomUE.h"
 #include "AIController.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -28,6 +29,21 @@ namespace
 	int32 MonsterRand() { return DoomInfo::Random(); }
 
 	bool Is(const FDoomThingDef* D, const TCHAR* Name) { return D && D->Name.Equals(Name, ESearchCase::CaseSensitive); }
+}
+
+float ADoomMonster::MonsterMass(const FDoomThingDef* D)
+{
+	// vanilla mobjinfo masses (knockback divides by these)
+	switch (D ? D->DoomEdNum : 0)
+	{
+	case 3006: return 50.f;                                  // lost soul
+	case 3002: case 58: case 3005: case 71: return 400.f;    // demon, spectre, cacodemon, pain elemental
+	case 66: case 64: return 500.f;                          // revenant, arch-vile
+	case 68: return 600.f;                                   // arachnotron
+	case 3003: case 69: case 67: case 16: case 7: return 1000.f; // barons, mancubus, cyberdemon, mastermind
+	case 72: case 88: return 10000000.f;                     // Keen, the boss brain
+	default: return 100.f;
+	}
 }
 
 ADoomMonster::ADoomMonster(const FObjectInitializer& ObjectInitializer)
@@ -114,11 +130,24 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 	bAmbush = bInAmbush;
 	Health = Def->Health;
 	const float S = Doom::Scale;
-	GetCapsuleComponent()->SetCapsuleSize(FMath::Min(Def->Radius, Def->Height * 0.5f) * S, Def->Height * 0.5f * S);
-	// Doom's radius is a box half-width; big monsters keep a full-width capsule for walls
-	if (Def->Radius > Def->Height * 0.5f)
+	// the capsule keeps the monster's real height (so it fits under the ceilings it fits under in Doom
+	// and spawns on the floor); a capsule can't be wider than it is tall, so wide monsters (spider,
+	// arachnotron, mancubus, demons) also get a box of Doom's full width that catches bullets and missiles
+	// (a hair shorter than Doom's height: a 56-unit monster fits a 56-unit opening in Doom, and a capsule
+	// exactly that tall grazes the ceiling, which Character Movement takes for being stuck)
+	const float HalfHeight = Def->Height * 0.5f * S - 1.f;
+	GetCapsuleComponent()->SetCapsuleSize(FMath::Min(Def->Radius * S, HalfHeight), HalfHeight);
+	if (Def->Radius > Def->Height * 0.5f && !HitBox)
 	{
-		GetCapsuleComponent()->SetCapsuleSize(Def->Radius * S * 0.9f, Def->Radius * S * 0.9f);
+		HitBox = NewObject<UBoxComponent>(this, TEXT("HitBox"));
+		HitBox->SetupAttachment(GetCapsuleComponent());
+		HitBox->SetBoxExtent(FVector(Def->Radius, Def->Radius, Def->Height * 0.5f) * S);
+		HitBox->SetCollisionObjectType(ECC_DoomMonster);
+		HitBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+		HitBox->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+		HitBox->SetCollisionResponseToChannel(ECC_DoomMissile, ECR_Block);
+		HitBox->SetCanEverAffectNavigation(false);
+		HitBox->RegisterComponent();
 	}
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->MaxWalkSpeed = Def->Speed / FMath::Max(1, Def->RunTics) * Doom::TicRate * S;
@@ -231,12 +260,7 @@ void ADoomMonster::DoomTic()
 	{
 		DoomWorld->CheckCrossings(this, LastPos, Pos, true);
 	}
-	LastPos = Pos;
-
-	if (ReactionTime > 0)
-	{
-		--ReactionTime;
-	}
+	LastPos = DoomPos(); // re-read: a teleport line moves the monster
 
 	switch (State)
 	{
@@ -269,6 +293,19 @@ void ADoomMonster::DoomTic()
 		}
 		if (Sprite->IsSequenceDone())
 		{
+			// A_CPosRefire / A_SpidRefire: chaingunners, SS, arachnotrons and the mastermind keep
+			// firing while they can see a live target (and now and then regardless)
+			const int32 Num = Def->DoomEdNum;
+			const bool bRefires = State == EMonsterState::Missile && (Num == 65 || Num == 84 || Num == 68 || Num == 7);
+			const ADoomPlayer* TP = Cast<ADoomPlayer>(Target.Get());
+			const ADoomMonster* TM = Cast<ADoomMonster>(Target.Get());
+			const bool bTargetAlive = (TP && !TP->IsDead()) || (TM && !TM->IsDead());
+			if (bRefires && (MonsterRand() < (Num == 68 || Num == 7 ? 10 : 40) || (bTargetAlive && DoomWorld->CheckSight(this, Target.Get()))))
+			{
+				FaceTarget();
+				StartState(EMonsterState::Missile);
+				break;
+			}
 			StartState(EMonsterState::Chase);
 		}
 		break;
@@ -438,15 +475,35 @@ bool ADoomMonster::TestMove(int32 Dir) const
 	const float Radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
 	const FVector Feet = GetActorLocation() - FVector(0, 0, Half);
 	const float Step = (Def->Flags & EThingFlag::Float) ? 0.f : 24.f * S;
-	const float BodyHalf = FMath::Max((Def->Height * S - Step) * 0.5f, Radius);
+	// the body above the step height, no taller than the monster: a taller test shape started inside
+	// low ceilings and failed in every direction, freezing monsters in low rooms and doorways
+	const float BodyHalf = FMath::Max((Def->Height * S - Step) * 0.5f - 1.f, 1.f);
 	const FVector From = Feet + FVector(0, 0, Step + BodyHalf + 1.f);
 	const FVector To = From + Dir3 * FMath::Max(Def->Speed, 8.f) * 2.f * S;
 
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMonsterMove), false, this);
-	const FCollisionShape Shape = FCollisionShape::MakeCapsule(Radius * 0.95f, BodyHalf);
-	if (GetWorld()->SweepTestByChannel(From, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
+	// a box, like Doom's: as wide as the walking capsule (a capsule that short would have to be thinner
+	// than the body, and then promised paths the body couldn't take), slightly inset for corners
+	const FCollisionShape Shape = FCollisionShape::MakeBox(FVector(Radius * 0.9f, Radius * 0.9f, BodyHalf));
+	FHitResult Block;
+	if (GetWorld()->SweepSingleByChannel(Block, From, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
 	{
-		return false;
+		if (!Block.bStartPenetrating)
+		{
+			return false;
+		}
+		// the box's corner already touches something (a wall we lean on, a neighbour): moving away from
+		// it is fine; test again from just outside it
+		const FVector Out = Block.Normal.GetSafeNormal2D();
+		if (FVector::DotProduct(Out, Dir3) < -0.1f)
+		{
+			return false;
+		}
+		const FVector Free = From + Out * (Block.PenetrationDepth + 1.f);
+		if (GetWorld()->SweepTestByChannel(Free, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
+		{
+			return false;
+		}
 	}
 	if (Def->Flags & EThingFlag::Float)
 	{
@@ -544,8 +601,31 @@ bool ADoomMonster::VileTryRaise()
 		{
 			continue;
 		}
+		// P_CheckPosition: no raising a corpse that something alive is standing on
+		bool bOccupied = false;
+		auto Blocks = [&](const AActor* A, float Radius)
+		{
+			const FVector2f D = Doom::ToDoom2D(A->GetActorLocation()) - M->DoomPos();
+			return FMath::Abs(D.X) < Radius + M->Def->Radius && FMath::Abs(D.Y) < Radius + M->Def->Radius;
+		};
+		for (ADoomPlayer* P : DoomWorld->GetPlayers())
+		{
+			bOccupied |= !P->IsDead() && Blocks(P, 16.f);
+		}
+		for (const TWeakObjectPtr<ADoomMonster>& O : DoomWorld->GetMonsters())
+		{
+			bOccupied |= O.IsValid() && O != M && !O->IsDead() && Blocks(O.Get(), O->Def->Radius);
+		}
+		if (bOccupied)
+		{
+			continue;
+		}
+		// face the corpse for the raise, then go back after whoever we were fighting (vanilla keeps the
+		// target; turning on the monster just raised made arch-viles shoot their own work)
+		const TWeakObjectPtr<AActor> Fighting = Target;
 		Target = M.Get();
 		FaceTarget();
+		Target = Fighting;
 		M->Resurrect();
 		const FVector L = M->GetActorLocation();
 		DoomWorld->PlaySound(TEXT("SLOP"), &L);
@@ -558,7 +638,7 @@ bool ADoomMonster::VileTryRaise()
 bool ADoomMonster::CanBeRaised() const
 {
 	return State == EMonsterState::Dead && !Is(Def, TEXT("LostSoul")) && !Is(Def, TEXT("Cyberdemon"))
-		&& !Is(Def, TEXT("SpiderMastermind")) && !Is(Def, TEXT("ArchVile")) && !Is(Def, TEXT("PainElemental")) && !Is(Def, TEXT("BossBrain"))
+		&& !Is(Def, TEXT("SpiderMastermind")) && !Is(Def, TEXT("ArchVile")) && !Is(Def, TEXT("BossBrain"))
 		&& !Is(Def, TEXT("CommanderKeen"));
 }
 
@@ -568,15 +648,27 @@ void ADoomMonster::Resurrect()
 	UCapsuleComponent* Cap = GetCapsuleComponent();
 	Cap->SetCollisionResponseToAllChannels(ECR_Block);
 	Cap->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	if (HitBox)
+	{
+		HitBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
 	FString Reverse = Def->Death;
 	Reverse.ReverseString();
 	Sprite->PlaySequence(Reverse, 5, false, false);
 	State = EMonsterState::Raising;
 	Target.Reset();
+	if (Def->Flags & EThingFlag::Float)
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+	}
 }
 
 void ADoomMonster::Chase()
 {
+	if (ReactionTime > 0)
+	{
+		--ReactionTime; // once per A_Chase, not every tic
+	}
 	if (Threshold > 0)
 	{
 		--Threshold;
@@ -746,9 +838,12 @@ void ADoomMonster::DoAttack(bool bMelee)
 		break;
 	case EDoomAttack::Mancubus:
 	{
-		const float Spread = 11.25f * (1 + Sprite->FrameIndex() / 3);
-		Missile(TEXT("FatShot"), Spread);
-		Missile(TEXT("FatShot"), -Spread);
+		// A_FatAttack1/2/3 (the H frames of GHIGHIGH): one shot straight at the target with one 11.25
+		// degrees to one side, then 22.5 to the other, then a pair 5.6 degrees either side
+		static const float Volleys[3][2] = { { 0.f, 11.25f }, { 0.f, -22.5f }, { -5.625f, 5.625f } };
+		const float* V = Volleys[FMath::Clamp(Sprite->FrameIndex() / 3, 0, 2)];
+		Missile(TEXT("FatShot"), V[0]);
+		Missile(TEXT("FatShot"), V[1]);
 		break;
 	}
 	case EDoomAttack::Skull:
@@ -812,16 +907,25 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 	{
 		return 0.f; // cyberdemon and mastermind shrug off splash
 	}
-	AActor* Source = DamageCauser ? (DamageCauser->GetOwner() ? DamageCauser->GetOwner() : DamageCauser) : nullptr;
+	AActor* Source = UDoomWorld::DamageSource(DamageCauser);
 	Health -= FMath::RoundToInt(Damage);
 
-	// knockback (P_DamageMobj thrust): stronger for light monsters
-	if (Source && !(Def->Flags & EThingFlag::Hanging))
+	// knockback (P_DamageMobj thrust): away from the inflictor (missile, blast or shooter),
+	// damage * 12.5 / mass units per tic; no push from a player's chainsaw
+	const ADoomPlayer* SawPlayer = Cast<ADoomPlayer>(Source);
+	if (DamageCauser && !(Def->Flags & EThingFlag::Hanging) && !(SawPlayer && SawPlayer->Inv().Ready == EDoomWeapon::Chainsaw))
 	{
-		const FVector Away = (GetActorLocation() - Source->GetActorLocation()).GetSafeNormal2D();
-		const float Mass = FMath::Max(100.f, Def->Health * 1.f);
-		const float Thrust = FMath::Min(Damage * 12.5f * 100.f / Mass, 600.f) * Doom::Scale;
-		LaunchCharacter(Away * Thrust, false, false);
+		const FVector From = DamageEvent.IsOfType(FRadialDamageEvent::ClassID)
+			? static_cast<const FRadialDamageEvent&>(DamageEvent).Origin : DamageCauser->GetActorLocation();
+		const FVector Push = (GetActorLocation() - From).GetSafeNormal2D() * (Damage * 12.5f / MonsterMass(Def) * Doom::TicRate * Doom::Scale);
+		if (Def->Flags & EThingFlag::Float)
+		{
+			GetCharacterMovement()->Velocity += Push; // launching would switch flyers to falling
+		}
+		else
+		{
+			LaunchCharacter(Push, false, false);
+		}
 	}
 
 	if (Health <= 0)
@@ -837,8 +941,13 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 		DoomWorld->PlaySound(Def->PainSound, &L);
 	}
 	ReactionTime = 0;
-	// infighting: hit by another monster -> go after it
-	if (Source && Source != this && (Threshold <= 0 || Is(Def, TEXT("ArchVile"))) && !Is(Def, TEXT("ArchVile")))
+	// infighting: hit by another monster -> go after it; an arch-vile's victims never fight back, and
+	// anyone already chasing an arch-vile switches regardless of the threshold (vanilla)
+	const ADoomMonster* SourceMonster = Cast<ADoomMonster>(Source);
+	const bool bSourceVile = SourceMonster && SourceMonster->Def && Is(SourceMonster->Def, TEXT("ArchVile"));
+	const ADoomMonster* TargetMonster = Cast<ADoomMonster>(Target.Get());
+	const bool bTargetVile = TargetMonster && TargetMonster->Def && Is(TargetMonster->Def, TEXT("ArchVile"));
+	if (Source && Source != this && (Threshold <= 0 || bTargetVile) && !bSourceVile)
 	{
 		if (Source->IsA<ADoomPlayer>() || Source->IsA<ADoomMonster>())
 		{
@@ -907,6 +1016,10 @@ void ADoomMonster::MakeCorpse()
 	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	Cap->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	if (HitBox)
+	{
+		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
 	if (Def->Flags & EThingFlag::Float)
 	{
 		GetCharacterMovement()->SetMovementMode(MOVE_Falling); // flyers drop
@@ -944,6 +1057,10 @@ void ADoomMonster::DoomSerialize(FArchive& Ar)
 void ADoomMonster::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	if (Def && (Def->Flags & EThingFlag::Float) && !IsDead())
+	{
+		GetCharacterMovement()->SetMovementMode(MOVE_Flying); // a live flyer that was thrown down takes off again
+	}
 }
 
 void ADoomMonster::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)

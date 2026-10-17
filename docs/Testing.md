@@ -62,3 +62,35 @@ Approved images are per platform and RHI (`Windows/D3D12_SM5` here).
 The command-line switches (`-savetest`, `-exittest`, `-patchtest`, `-maptest`, `-autotest`, ...)
 still work for a quick look in a standalone `-game` run. The automation tests share their code:
 `UDoomWorld::RunSaveTest`, `FDoomMap::SubsectorArea` and `DoomContent::EditTest`.
+
+## The scripted play-test
+
+`-playtest` (with `-warp`) plays the interactive features through, one step after another, and
+logs `Playtest <step> PASS/FAIL/SKIP: <details>`, then `Playtest: N passed, M failed, K skipped`
+and quits. It stands in for the hand play-testing nobody has done yet, and caught most of the bugs
+fixed on the `feature/playtest-fixes` branch: run against the code before that branch, 8 of its
+first 11 steps failed on E1M1.
+
+```bash
+"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" DoomUE.uproject -game -warp=E1M1 -playtest -nomusic -windowed -resx=960 -resy=540
+```
+
+| Step | Checks |
+|---|---|
+| `door` | A DR door (special 1) opens to the lowest neighbouring ceiling - 4, waits and closes to the floor |
+| `lift` | A lift lowers to the lowest neighbouring floor, waits 3 s and comes back up |
+| `teleport` | A teleporter (39/97) puts the player in the destination sector, freezes them briefly, and fires nothing else |
+| `splash` | A 128-point blast 40 units away does 104 damage (128 - 40 + the player's 16-unit radius); 160 units away, none |
+| `walk` | On the longest level run of the map: top speed about 16 units per tic, and a slide of about 160 units after letting go |
+| `rate_*` | Shots in a fixed time with the trigger held: pistol every 14 tics, chaingun 2 per 8, plasma every 3, shotgun every 37, rockets every 20 |
+| `flyer` | A cacodemon hit by the player is still flying a second later |
+| `target` | 3 s of plasma at a baron in the open (aim kept on it) takes over 100 health |
+| `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units in 5 s (the rest are shut in closets) |
+| `automap` | With the map closed, the walls in view become known, beyond the player's own sector |
+| `quitprompt` | A left click on the quit prompt cancels it |
+| `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses |
+| `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
+
+Steps that need something the map lacks (a lift, a teleporter, room in front of the start) are
+skipped. Checked maps: Freedoom 1 E1M1, E1M2 and E1M4; Freedoom 2 MAP01 and MAP05 (add
+`-iwad=freedoom2.wad`). The steps live in `Source/DoomUE/Private/DoomPlayTest.cpp`.

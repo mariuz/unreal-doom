@@ -194,7 +194,8 @@ void FDoomMenu::Open(UDoomWorld& W, EMenuPage P)
 
 void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
 {
-	if (Key == EKeys::Enter)
+	// gamepads and mice can finish too: A or a click saves, B or Start cancels
+	if (Key == EKeys::Enter || Key == EKeys::Gamepad_FaceButton_Bottom || Key == EKeys::LeftMouseButton)
 	{
 		bEditing = false;
 		if (W.SaveGame(Item + 1, EditText))
@@ -204,7 +205,7 @@ void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
 		}
 		return;
 	}
-	if (Key == EKeys::Escape)
+	if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right || Key == EKeys::Gamepad_Special_Right || Key == EKeys::RightMouseButton)
 	{
 		bEditing = false;
 		W.PlaySound(TEXT("SWTCHX"), nullptr);

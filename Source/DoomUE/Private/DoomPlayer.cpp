@@ -32,8 +32,39 @@ namespace
 		EDoomWeapon::Chaingun, EDoomWeapon::Rocket, EDoomWeapon::Plasma, EDoomWeapon::BFG };
 }
 
+void UDoomPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
+{
+	if (!HasValidData() || HasAnimRootMotion() || DeltaTime < MIN_TICK_TIME)
+	{
+		return;
+	}
+	if (!IsMovingOnGround())
+	{
+		return; // Doom: no thrust and no friction off the ground
+	}
+	// v' = v * f^t + a / k * (1 - f^t): the exact solution of Doom's per-tic friction plus thrust, so
+	// the frame rate doesn't matter. MaxAcceleration is the full-input thrust that settles at MaxWalkSpeed.
+	const float K = -FMath::Loge(0.90625f) * Doom::TicRate; // friction rate per second
+	const float Keep = FMath::Exp(-K * DeltaTime);
+	const FVector Thrust = Acceleration.GetClampedToMaxSize(GetMaxAcceleration()) / GetMaxAcceleration() * GetMaxSpeed();
+	const float Z = Velocity.Z;
+	Velocity = Velocity * Keep + Thrust * (1.f - Keep);
+	Velocity.Z = Z;
+	// STOPSPEED: a crawl with no input stops dead; MAXMOVE caps the momentum at 30 units per tic
+	if (Acceleration.IsNearlyZero() && Velocity.Size2D() < Doom::TicRate * Doom::Scale / 16.f)
+	{
+		Velocity.X = Velocity.Y = 0.f;
+	}
+	const float MaxMove = 30.f * Doom::TicRate * Doom::Scale;
+	if (Velocity.Size2D() > MaxMove)
+	{
+		const FVector Flat = FVector(Velocity.X, Velocity.Y, 0).GetSafeNormal() * MaxMove;
+		Velocity = FVector(Flat.X, Flat.Y, Z);
+	}
+}
+
 ADoomPlayer::ADoomPlayer(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDoomPlayerMovement>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = true;
 	const float S = Doom::Scale;
@@ -70,11 +101,9 @@ ADoomPlayer::ADoomPlayer(const FObjectInitializer& ObjectInitializer)
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->MaxStepHeight = 24.f * S;
 	Move->GravityScale = 3.75f;           // Doom: 1 unit/tic^2
-	Move->MaxWalkSpeed = 16.6f * Doom::TicRate * S;
-	Move->MaxAcceleration = 4000.f * S;
-	Move->BrakingDecelerationWalking = 2600.f * S;
-	Move->GroundFriction = 7.f;
-	Move->AirControl = 0.05f;
+	Move->MaxWalkSpeed = 16.67f * Doom::TicRate * S; // top running speed (UDoomPlayerMovement)
+	Move->MaxAcceleration = 4000.f * S;              // only a scale for the input in UDoomPlayerMovement
+	Move->AirControl = 0.f;
 	Move->JumpZVelocity = 0.f;
 	Move->bCanWalkOffLedges = true;
 	Move->SetWalkableFloorAngle(50.f);
@@ -522,9 +551,48 @@ void ADoomPlayer::CycleWeaponNow(int32 Dir)
 void ADoomPlayer::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// the view (P_CalcHeight): bob while walking, ease back up after a step or a hard landing
+	const float FeetZ = DoomZ();
+	if (IsLocallyControlled() && !IsDead() && DoomWorld && DoomWorld->GetState() == EDoomGameState::Playing)
+	{
+		const float Tics = DeltaSeconds * Doom::TicRate;
+		const float Rise = FeetZ - LastFeetZ;
+		if (GetCharacterMovement()->IsMovingOnGround() && Rise > 0.5f && Rise <= 24.5f)
+		{
+			ViewHeightOffset -= Rise; // stepped up: the eye follows over a few tics
+		}
+		ViewHeightOffset = FMath::Max(ViewHeightOffset + ViewHeightDelta * Tics, -20.5f);
+		if (ViewHeightOffset < 0.f)
+		{
+			ViewHeightDelta += 0.25f * Tics;
+		}
+		else
+		{
+			ViewHeightOffset = ViewHeightDelta = 0.f;
+		}
+		const float Speed = GetVelocity().Size2D() / Doom::Scale / Doom::TicRate;
+		const float Bob = GetCharacterMovement()->IsMovingOnGround() ? FMath::Min(Speed * Speed / 4.f, 16.f) : 0.f;
+		const float BobZ = Bob * 0.5f * FMath::Sin(GetWorld()->GetTimeSeconds() * Doom::TicRate * 2.f * PI / 20.f);
+		const FVector Rel = Camera->GetRelativeLocation();
+		Camera->SetRelativeLocation(FVector(Rel.X, Rel.Y, FMath::Min(41.f + ViewHeightOffset + BobZ, Doom::HalfHeight(this) * 2.f / Doom::Scale - 4.f) * Doom::Scale - Doom::HalfHeight(this)));
+	}
+	LastFeetZ = FeetZ;
 	if (MuzzleLight && MuzzleLight->Intensity > 0)
 	{
 		MuzzleLight->SetIntensity(FMath::Max(0.f, MuzzleLight->Intensity - DeltaSeconds * 400000.f));
+	}
+}
+
+void ADoomPlayer::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	// P_ZMovement: a fall faster than 8 units per tic squats the view (and says "oof")
+	const float FallSpeed = -GetVelocity().Z / Doom::Scale / Doom::TicRate;
+	LastLandingVelocity = FallSpeed;
+	if (FallSpeed > 8.f && !IsDead())
+	{
+		ViewHeightDelta = -FallSpeed / 8.f;
+		PlaySelfSound(TEXT("OOF"));
 	}
 }
 
@@ -543,7 +611,7 @@ void ADoomPlayer::DoomTic()
 	{
 		DoomWorld->CheckCrossings(this, LastDoomPos, Pos, false);
 	}
-	LastDoomPos = Pos;
+	LastDoomPos = DoomPos(); // re-read: a teleport line moves the player
 	if (DoomWorld->GetState() != EDoomGameState::Playing)
 	{
 		return;
@@ -557,8 +625,12 @@ void ADoomPlayer::DoomTic()
 	const float Speed = GetVelocity().Size2D() / Doom::Scale / Doom::TicRate;
 	const float Bob = FMath::Min(Speed * Speed / 4.f, 16.f);
 	BobPhase = DoomWorld->GetTic() * 2.f * PI / 64.f;
-	BobX = FMath::Cos(BobPhase) * Bob;
-	BobY = FMath::Abs(FMath::Sin(BobPhase)) * Bob;
+	if (Phase == EWeaponPhase::Ready)
+	{
+		// A_WeaponReady moves the weapon; firing, raising and lowering leave it where it was
+		BobX = FMath::Cos(BobPhase) * Bob;
+		BobY = FMath::Abs(FMath::Sin(BobPhase)) * Bob;
+	}
 
 	TicWeapon();
 	TicPowerups();
@@ -696,6 +768,15 @@ void ADoomPlayer::TicWeapon()
 			break;
 		}
 		++FireIndex;
+		// A_ReFire runs on entering the last frame (when that frame doesn't fire itself), so with the
+		// trigger held its tics are skipped: plasma refires every 3 tics, the pistol every 14
+		if (FireIndex == D.Fire.Num() - 1 && !D.Fire[FireIndex].bFire &&
+			bFireHeld && !IsDead() && PendingWeapon == EDoomWeapon::Count && CheckAmmo())
+		{
+			bRefire = true;
+			StartFire();
+			break;
+		}
 		if (FireIndex >= D.Fire.Num())
 		{
 			// A_ReFire
@@ -807,7 +888,8 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 		const float Slope = AimSlope(DoomAngle(), 1024.f, AimTarget);
 		const FVector Dir = (Fwd + FVector(0, 0, Slope)).GetSafeNormal();
 		const TCHAR* Type = Inv().Ready == EDoomWeapon::Rocket ? TEXT("Rocket") : Inv().Ready == EDoomWeapon::Plasma ? TEXT("Plasma") : TEXT("BFGBall");
-		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir);
+		// the BFG's sound already played when the trigger was pulled
+		DoomWorld->SpawnProjectile(Type, this, Eye + Fwd * 20.f * Doom::Scale, Dir, nullptr, Inv().Ready == EDoomWeapon::BFG);
 		break;
 	}
 	default: break;
@@ -972,7 +1054,22 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	{
 		return 0.f;
 	}
-	if (bGodMode || Invulnerability > 0)
+	// knockback (P_DamageMobj thrust): away from the inflictor (the missile, the blast or the shooter),
+	// damage * 12.5 / mass units per tic, mass 100; also with god mode and from your own rockets
+	if (DamageCauser && DamageCauser != this)
+	{
+		const FVector From = DamageEvent.IsOfType(FRadialDamageEvent::ClassID)
+			? static_cast<const FRadialDamageEvent&>(DamageEvent).Origin : DamageCauser->GetActorLocation();
+		const ADoomPlayer* Shooter = Cast<ADoomPlayer>(UDoomWorld::DamageSource(DamageCauser));
+		const bool bSaw = Shooter && Shooter->Inv().Ready == EDoomWeapon::Chainsaw;
+		if (!bSaw)
+		{
+			const float Thrust = Damage * 12.5f / 100.f * Doom::TicRate * Doom::Scale;
+			LaunchCharacter((GetActorLocation() - From).GetSafeNormal2D() * Thrust, false, false);
+		}
+	}
+	// god mode and invulnerability stop everything but a telefrag
+	if ((bGodMode || Invulnerability > 0) && Damage < 1000.f)
 	{
 		return 0.f;
 	}
@@ -995,15 +1092,12 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 	Inv().Health -= D;
 	DamageCount = FMath::Min(DamageCount + D, 100);
 
-	AActor* Source = DamageCauser ? (DamageCauser->GetOwner() ? DamageCauser->GetOwner() : DamageCauser) : nullptr;
+	AActor* Source = UDoomWorld::DamageSource(DamageCauser);
 	if (Source && Source != this)
 	{
 		const FVector To = Source->GetActorLocation() - GetActorLocation();
 		const float Rel = FMath::FindDeltaAngleDegrees(GetControlRotation().Yaw, To.Rotation().Yaw);
-		FaceDamageDir = Rel > 30.f ? 1 : Rel < -30.f ? -1 : 0;
-		// knockback
-		const float Thrust = FMath::Min(Damage * 12.5f, 400.f) * Doom::Scale;
-		LaunchCharacter(-To.GetSafeNormal2D() * Thrust, false, false);
+		FaceDamageDir = Rel > 45.f ? 1 : Rel < -45.f ? -1 : 0;
 	}
 	else
 	{

@@ -18,6 +18,9 @@
 
 namespace
 {
+	// the intermission tic by which the kills, items, secrets and time have all counted up (DoomHUD)
+	constexpr int32 IntermissionCountedTic = 150;
+
 	UInputAction* NewAction(UObject* Outer, const TCHAR* Name, EInputActionValueType Type)
 	{
 		UInputAction* A = NewObject<UInputAction>(Outer, Name);
@@ -87,19 +90,27 @@ void ADoomPlayerController::CreateInput()
 		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(GameplayContext);
 		Neg->bX = false; Neg->bY = true; Neg->bZ = false;
 		Pad.Modifiers.Add(Neg);
+		// stick deflection is a turn rate: per second, not per frame (the old feel at 60 fps)
+		UInputModifierScalar* PadRate = NewObject<UInputModifierScalar>(GameplayContext);
+		PadRate->Scalar = FVector(60, 60, 1);
+		Pad.Modifiers.Add(PadRate);
+		Pad.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
 	}
 	{
-		// arrow keys turn, like Doom
+		// arrow keys turn, like Doom: a rate per second (the old per-frame 2.5 at 60 fps), so the
+		// frame rate doesn't change how fast you turn
 		FEnhancedActionKeyMapping& L = GameplayContext->MapKey(LookAction, EKeys::Left);
 		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(GameplayContext);
 		L.Modifiers.Add(Neg);
 		UInputModifierScalar* Sc = NewObject<UInputModifierScalar>(GameplayContext);
-		Sc->Scalar = FVector(2.5, 2.5, 1);
+		Sc->Scalar = FVector(150, 150, 1);
 		L.Modifiers.Add(Sc);
+		L.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
 		FEnhancedActionKeyMapping& R = GameplayContext->MapKey(LookAction, EKeys::Right);
 		UInputModifierScalar* Sc2 = NewObject<UInputModifierScalar>(GameplayContext);
-		Sc2->Scalar = FVector(2.5, 2.5, 1);
+		Sc2->Scalar = FVector(150, 150, 1);
 		R.Modifiers.Add(Sc2);
+		R.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
 	}
 	GameplayContext->MapKey(FireAction, EKeys::LeftMouseButton);
 	GameplayContext->MapKey(FireAction, EKeys::LeftControl);
@@ -275,7 +286,11 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 		if (W->Flow().IntermissionTic > Doom::TicRate)
 		{
 			W->PlaySoundLocal(TEXT("BAREXP"), nullptr);
-			if (HasAuthority())
+			if (HasAuthority() && W->Flow().IntermissionTic < IntermissionCountedTic)
+			{
+				W->Flow().IntermissionTic = IntermissionCountedTic; // the first press finishes the counts
+			}
+			else if (HasAuthority())
 			{
 				W->FinishIntermission();
 			}
@@ -315,8 +330,26 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
 		{
 			W->Menu.EditKey(*W, Params.Key);
+			return true; // swallowed: no menu navigation or game input while typing
 		}
-		return true; // swallowed: no menu navigation or game input while typing
+		return Super::InputKey(Params); // releases go through, so no key is left held down
+	}
+	// yes/no prompts (quit, end game, nightmare): only Y, Enter or the gamepad's A confirm; any other
+	// key or button cancels, as in Doom, so a stray click can't quit the game
+	if (W && W->GetState() == EDoomGameState::Menu && !W->Menu.Prompt().IsEmpty() && !W->bInputLocked && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
+	{
+		if (Params.Event == IE_Pressed)
+		{
+			if (Params.Key == EKeys::Y || Params.Key == EKeys::Enter || Params.Key == EKeys::Gamepad_FaceButton_Bottom)
+			{
+				W->Menu.Select(*W);
+			}
+			else
+			{
+				W->Menu.Back(*W);
+			}
+			return true;
+		}
 	}
 	return Super::InputKey(Params);
 }

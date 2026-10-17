@@ -55,6 +55,8 @@ public:
 
 private:
 	class UDoomWorld* DoomWorld() const;
+	/** -playtest: the scripted play-through of the interactive features (DoomPlayTest.cpp). */
+	void StartPlayTest();
 	double Accumulator = 0;       // level time not yet run as tics
 	double ScreenAccumulator = 0; // same, for the intermission and story screens
 };

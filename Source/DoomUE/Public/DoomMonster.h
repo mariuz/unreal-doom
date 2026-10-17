@@ -13,6 +13,7 @@
 
 class UDoomSpriteComponent;
 class UPointLightComponent;
+class UBoxComponent;
 class UDoomWorld;
 
 UENUM()
@@ -22,6 +23,8 @@ UCLASS()
 class DOOMUE_API ADoomMonster : public ACharacter
 {
 	GENERATED_BODY()
+	friend class UDoomWorld;    // teleports, telefrags
+	friend class ADoomGameMode; // the scripted test runs (-playtest)
 
 public:
 	ADoomMonster(const FObjectInitializer& ObjectInitializer);
@@ -32,6 +35,8 @@ public:
 
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 	virtual void Landed(const FHitResult& Hit) override;
+	/** Vanilla mobjinfo mass, for knockback. */
+	static float MonsterMass(const FDoomThingDef* D);
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	/** Level geometry is never a movement base: UDoomWorld carries bodies on lifts itself, and the
 	    level's runtime mesh components cannot be referenced over the network. */
@@ -78,6 +83,9 @@ public:
 	TObjectPtr<UDoomSpriteComponent> Sprite;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> Light;
+	/** Doom's full box width for bullets and missiles, on monsters wider than they are tall. */
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UBoxComponent> HitBox;
 
 private:
 	void Look();

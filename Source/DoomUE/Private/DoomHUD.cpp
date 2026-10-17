@@ -133,10 +133,11 @@ void ADoomHUD::DrawHUD()
 	}
 	ScreenPal = (W->GetState() == EDoomGameState::Playing && W->IsPaletteExact()) ? W->ScreenPalette() : 0;
 	// Doom's 320x200 frame, shown at 4:3 (non-square pixels) and centred
-	SY = Canvas->ClipY / 200.f;
-	SX = Canvas->ClipY / 240.f;
+	// (fit inside the window: letterboxed on screens narrower than 4:3)
+	SX = FMath::Min(Canvas->ClipX / 320.f, Canvas->ClipY / 240.f);
+	SY = SX * 1.2f;
 	OX = (Canvas->ClipX - 320.f * SX) * 0.5f;
-	OY = 0;
+	OY = (Canvas->ClipY - 200.f * SY) * 0.5f;
 
 	if (W->IsLoadingMap())
 	{
@@ -175,6 +176,8 @@ void ADoomHUD::DrawHUD()
 	{
 		return;
 	}
+	OY = Canvas->ClipY - 200.f * SY; // in play the status bar sits at the bottom, whatever the shape
+	MarkSeenLines(P);
 	if (W->bAutomap)
 	{
 		DrawAutomap(P);
@@ -307,16 +310,22 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 	{
 		Face = P->FaceDamageDir > 0 ? FString::Printf(TEXT("STFTR%d0"), Bracket) : FString::Printf(TEXT("STFTL%d0"), Bracket);
 	}
+	else if (P->DamageCount > 0)
+	{
+		Face = FString::Printf(TEXT("STFKILL%d"), Bracket); // hit head-on, or hurt by the floor
+	}
 	else if (P->AttackDown > 0 && P->Inv().Ready == EDoomWeapon::Chaingun)
 	{
 		Face = FString::Printf(TEXT("STFKILL%d"), Bracket);
 	}
 	else
 	{
-		if (++FaceTic > 40)
+		// looks around every half second of game time (ST_STRAIGHTFACECOUNT), not every N frames, and
+		// with its own random numbers: the HUD must not change the game's random sequence
+		if (FMath::Abs(W->GetTic() - FaceTic) >= Doom::TicRate / 2)
 		{
-			FaceTic = 0;
-			FaceIndex = DoomInfo::Random() % 3;
+			FaceTic = W->GetTic();
+			FaceIndex = FMath::RandRange(0, 2);
 		}
 		Face = FString::Printf(TEXT("STFST%d%d"), Bracket, FaceIndex);
 	}
@@ -440,6 +449,66 @@ void ADoomHUD::DrawStatusBar(ADoomPlayer* P)
 	}
 }
 
+void ADoomHUD::MarkSeenLines(ADoomPlayer* P)
+{
+	// vanilla marks every wall the renderer draws (ML_MAPPED); here: lines in the sectors reachable
+	// through open lines within 2048 units, with a clear 2D line of sight to their middle
+	FDoomMap* Map = DW()->GetMap();
+	const double Now = GetWorld()->GetRealTimeSeconds();
+	if (!Map || Now < NextSeenScan)
+	{
+		return;
+	}
+	NextSeenScan = Now + 0.15;
+	const FVector2f Eye = P->DoomPos();
+	const int32 Here = Map->SectorAt(Eye);
+	if (Here < 0)
+	{
+		return;
+	}
+	TArray<int32> Stack = { Here };
+	TSet<int32> Visited = { Here };
+	TArray<FLineHit> Hits;
+	while (Stack.Num())
+	{
+		const int32 S = Stack.Pop(EAllowShrinking::No);
+		for (int32 Li : Map->Sectors[S].Lines)
+		{
+			FDoomLine& L = Map->Lines[Li];
+			const FVector2f Mid = (Map->V(L.V1) + Map->V(L.V2)) * 0.5f;
+			if (FVector2f::Distance(Mid, Eye) > 2048.f)
+			{
+				continue;
+			}
+			// blocked by a solid line (one-sided, or a closed opening) on the way?
+			Hits.Reset();
+			Map->TraceLines(Eye, Mid, Hits);
+			bool bVisible = true;
+			for (const FLineHit& H : Hits)
+			{
+				float Top, Bottom;
+				if (H.Line != Li && H.Frac < 0.999f && !Map->LineOpening(H.Line, Top, Bottom))
+				{
+					bVisible = false;
+					break;
+				}
+			}
+			if (!bVisible)
+			{
+				continue;
+			}
+			L.bSeen = true;
+			const int32 O = Map->OtherSector(Li, S);
+			float Top, Bottom;
+			if (O != INDEX_NONE && !Visited.Contains(O) && Map->LineOpening(Li, Top, Bottom))
+			{
+				Visited.Add(O);
+				Stack.Add(O);
+			}
+		}
+	}
+}
+
 void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 {
 	UDoomWorld* W = DW();
@@ -449,22 +518,6 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 		return;
 	}
 	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY * 168.f / 200.f);
-
-	// lines become known when the player is in, or next to, their sectors
-	const int32 Here = Map->SectorAt(P->DoomPos());
-	if (Here >= 0)
-	{
-		for (int32 L : Map->Sectors[Here].Lines)
-		{
-			Map->Lines[L].bSeen = true;
-			const int32 O = Map->OtherSector(L, Here);
-			float Top, Bottom;
-			if (O != INDEX_NONE && Map->LineOpening(L, Top, Bottom))
-			{
-				for (int32 L2 : Map->Sectors[O].Lines) Map->Lines[L2].bSeen = true;
-			}
-		}
-	}
 
 	const FVector2f Center = P->DoomPos();
 	const float Zoom = Canvas->ClipY / 1600.f;
@@ -672,7 +725,7 @@ void ADoomHUD::DrawIntermission()
 	const float T = W->Flow().IntermissionTic;
 	auto Count = [&](int32 Got, int32 Total, float Start)
 	{
-		const int32 Pct = Total > 0 ? Got * 100 / Total : 100;
+		const int32 Pct = Got * 100 / FMath::Max(Total, 1); // vanilla: nothing to find shows 0%
 		return FMath::Clamp((int32)((T - Start) * 2.f), 0, Pct);
 	};
 	const FString Title = W->LevelTitle(W->GetMapName());

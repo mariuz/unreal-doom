@@ -251,7 +251,7 @@ float ADoomThing::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACon
 	Health -= FMath::RoundToInt(Damage);
 	if (DamageCauser)
 	{
-		LastAttacker = DamageCauser->GetOwner() ? DamageCauser->GetOwner() : DamageCauser;
+		LastAttacker = UDoomWorld::DamageSource(DamageCauser);
 	}
 	if (Health <= 0)
 	{

@@ -101,9 +101,10 @@ void ADoomProjectile::InitProjectile(UDoomWorld* InWorld, const FDoomProjectileD
 		Sphere->IgnoreActorWhenMoving(InSource, true);
 	}
 	float Speed = Def->Speed;
-	if (DoomWorld->GetSkill() >= 5 && InSource && !InSource->IsA<ADoomPlayer>())
+	if (DoomWorld->GetSkill() >= 5 && InSource && !InSource->IsA<ADoomPlayer>() &&
+		(Def->Name.Equals(TEXT("ImpBall")) || Def->Name.Equals(TEXT("CacoBall")) || Def->Name.Equals(TEXT("BaronBall"))))
 	{
-		Speed *= 1.6f; // nightmare's fast missiles
+		Speed = 20.f; // nightmare's fast imp, cacodemon and baron balls (the other missiles keep their speed)
 	}
 	Movement->InitialSpeed = Movement->MaxSpeed = Speed * Doom::TicRate * S;
 	Movement->Velocity = Direction * Movement->InitialSpeed;
@@ -205,7 +206,17 @@ void ADoomProjectile::Explode(AActor* HitActor)
 	const FVector L = GetActorLocation();
 	AActor* Credit = Source.IsValid() ? Source.Get() : this;
 
-	if (HitActor && HitActor != Source.Get() && (HitActor->IsA<ADoomMonster>() || HitActor->IsA<ADoomPlayer>() || HitActor->IsA<ADoomThing>()))
+	// PIT_CheckThing: a monster's missile explodes harmlessly on its own kind (hell knights and barons
+	// count as one), so imps don't fight imps
+	bool bSameSpecies = false;
+	const ADoomMonster* Shooter = Cast<ADoomMonster>(Source.Get());
+	const ADoomMonster* Victim = Cast<ADoomMonster>(HitActor);
+	if (Shooter && Victim && Shooter->Def && Victim->Def)
+	{
+		auto Kind = [](const FDoomThingDef* D) { return D->DoomEdNum == 69 ? 3003 : D->DoomEdNum; };
+		bSameSpecies = Kind(Shooter->Def) == Kind(Victim->Def);
+	}
+	if (HitActor && HitActor != Source.Get() && !bSameSpecies && (HitActor->IsA<ADoomMonster>() || HitActor->IsA<ADoomPlayer>() || HitActor->IsA<ADoomThing>()))
 	{
 		const int32 Damage = ((DoomInfo::Random() % 8) + 1) * Def->DamageMul;
 		FHitResult H;
