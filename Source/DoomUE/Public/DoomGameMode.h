@@ -30,6 +30,9 @@ public:
 	FString NextMapName(bool bSecret) const;
 	/** Starts counting tics afresh (new map, loaded game). */
 	void ResetClock() { Accumulator = ScreenAccumulator = 0; }
+	/** Screenshot tests: no tics run on their own (the test runs an exact number), while the engine
+	 *  keeps rendering and updating the camera, which pausing the game would stop. */
+	bool bClockStopped = false;
 	/** Spawns the marine; once a map is loaded, at the player's start (LoadMap places everyone else). */
 	virtual void RestartPlayer(AController* NewPlayer) override;
 	/** Numbers joining players 1 to 4 (their start and status bar colour). */

@@ -74,6 +74,15 @@ struct FSwitchButton
 	int32 Timer;
 };
 
+/** WADs and patches to load instead of the settings and the command line (automation tests). */
+struct FDoomWadSetup
+{
+	/** File name in Content/WADs or a path; empty: the settings' IWAD. */
+	FString IWad;
+	TArray<FString> PWads;
+	TArray<FString> DehFiles;
+};
+
 UCLASS()
 class DOOMUE_API UDoomWorld : public UTickableWorldSubsystem
 {
@@ -157,7 +166,7 @@ public:
 	bool bDeathmatchParam = false;
 
 	/** Loads the configured IWAD (+ PWADs). */
-	bool InitWads();
+	bool InitWads(const FDoomWadSetup* Setup = nullptr);
 
 	/** Loads a map and places the player. Inventory carries over unless bPistolStart. */
 	bool LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame = false);
@@ -181,8 +190,9 @@ public:
 	FString SlotDescription(int32 Slot);
 	void RefreshSlots();
 	static FString SlotName(int32 Slot);
-	/** Saves, scrambles the world, loads and compares (-savetest). */
-	void RunSaveTest();
+	/** Saves, scrambles the world, loads and compares (-savetest, DoomUE.Game.SaveLoad). Logs, and
+	 *  returns whether the loaded state matches the saved one; OutReport gets the three fingerprints. */
+	bool RunSaveTest(FString* OutReport);
 	FString StateFingerprint() const;
 	int32 NumMovers() const { return Movers.Num(); }
 	void UnloadMap();

@@ -1060,3 +1060,17 @@ void FDoomMap::TraceLines(const FVector2f& A, const FVector2f& B, TArray<FLineHi
 	}
 	OutHits.Sort([](const FLineHit& X, const FLineHit& Y) { return X.Frac < Y.Frac; });
 }
+
+double FDoomMap::SubsectorArea() const
+{
+	double Area = 0;
+	for (const FDoomSubsector& Ss : Subsectors)
+	{
+		for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
+		{
+			const FVector2f A = Ss.Polygon[k] - Ss.Polygon[0], B = Ss.Polygon[k + 1] - Ss.Polygon[0];
+			Area += 0.5 * (A.X * B.Y - A.Y * B.X);
+		}
+	}
+	return Area;
+}

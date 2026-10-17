@@ -105,6 +105,8 @@ public:
 	TArray<FDoomSector> Sectors;
 	TArray<FDoomSeg> Segs;
 	TArray<FDoomSubsector> Subsectors;
+	/** Total area of the subsector polygons (E1M1: 6,712,686 square units with vanilla nodes). */
+	double SubsectorArea() const;
 	TArray<FDoomNode> Nodes;
 	TArray<FDoomMapThing> Things;
 	FBox2f Bounds;

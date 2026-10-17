@@ -397,8 +397,12 @@ FString UDoomWorld::StateFingerprint() const
 		Flow().Kills, Flow().TotalKills, Flow().Items, Flow().TotalItems, *Player, NumMissiles, MissileSum.X, MissileSum.Y, MissileSum.Z, MissileVel.X, MissileVel.Y, MissileVel.Z);
 }
 
-void UDoomWorld::RunSaveTest()
+bool UDoomWorld::RunSaveTest(FString* OutReport)
 {
+	if (!Map.IsValid())
+	{
+		return false;
+	}
 	// Something in motion: open the first manual door and let a few tics run first.
 	for (int32 l = 0; l < Map->Lines.Num(); ++l)
 	{
@@ -466,6 +470,11 @@ void UDoomWorld::RunSaveTest()
 	}
 	const FString After = StateFingerprint() + FString::Printf(TEXT(" targets%d"), AwakeAfter);
 	const bool bPass = bSaved && bLoaded && Before == After && Before != Scrambled;
-	UE_LOG(LogDoom, Display, TEXT("Savetest %s\n  before:    %s\n  scrambled: %s\n  after:     %s"),
-		bPass ? TEXT("PASS") : TEXT("FAIL"), *Before, *Scrambled, *After);
+	const FString Report = FString::Printf(TEXT("before:    %s\n  scrambled: %s\n  after:     %s"), *Before, *Scrambled, *After);
+	UE_LOG(LogDoom, Display, TEXT("Savetest %s\n  %s"), bPass ? TEXT("PASS") : TEXT("FAIL"), *Report);
+	if (OutReport)
+	{
+		*OutReport = Report;
+	}
+	return bPass;
 }
