@@ -368,6 +368,8 @@ private:
 	TObjectPtr<class UDoomMusicWave> MusicWave;
 	FString CurrentMusic;
 	FString IWadName;
+	/** The loaded WADs, as baked tile sets are named (UDoomMapTiles::WadSetName). */
+	FString WadSetName;
 	FDoomMapInfoSet MapInfos;
 
 	// finales (DoomFinale.cpp)

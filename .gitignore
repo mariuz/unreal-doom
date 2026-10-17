@@ -11,3 +11,6 @@ Content/Doom/Tests/
 
 # packaging by-products
 Build/Windows/
+
+# baked tile sets of WAD maps (-run=DoomContent -baketiles=all; Tools/package.bat bakes them)
+Content/Doom/Tiles/

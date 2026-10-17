@@ -29,6 +29,9 @@ namespace DoomContent
 	void DumpNiagara(const FString& Path);
 	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */
 	bool ImportMap(const FString& MapName, bool bOverwrite);
+	/** Bakes a WAD map's static geometry as a tile set (/Game/Doom/Tiles/<WadSet>/<MAP>, UDoomMapTiles)
+	 *  for playing it from the WAD in packaged builds (-baketiles=MAP|all). */
+	bool BakeWadTiles(const FString& MapName);
 	/** Saves a level's static geometry as static mesh tiles (/Game/Doom/Maps/<MAP>_Tiles). */
 	bool BakeMapTiles(ADoomMapActor* MapActor);
 	/** Writes a WAD map as a Lyra arena: OBJ tiles, collision ramps and a gameplay JSON (-exportlyra=MAP -out=DIR). */

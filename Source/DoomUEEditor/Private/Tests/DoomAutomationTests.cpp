@@ -27,6 +27,7 @@
 #include "DoomGraphics.h"
 #include "DoomMapInfo.h"
 #include "DoomContentBuilder.h"
+#include "DoomLevel.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -64,11 +65,16 @@ namespace DoomTest
 
 		virtual bool Update() override
 		{
+			// timed from this step's first frame (the commands are all created when the test starts)
+			if (Started == 0)
+			{
+				Started = FPlatformTime::Seconds();
+			}
 			if (Step())
 			{
 				return true;
 			}
-			if (GetCurrentRunTime() > Timeout)
+			if (FPlatformTime::Seconds() - Started > Timeout)
 			{
 				Test->AddError(FString::Printf(TEXT("Timed out after %.0f s: %s"), Timeout, *What));
 				return true;
@@ -81,6 +87,7 @@ namespace DoomTest
 		FString What;
 		TFunction<bool()> Step;
 		float Timeout;
+		double Started = 0;
 	};
 
 	/** Waits Seconds of real time. */
@@ -349,11 +356,11 @@ bool FDoomExitTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("next map"), W->Flow().PendingMap, FString(TEXT("E1M2")));
 		return true;
 	}));
-	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("intermission"), Wait(1.5f)));
+	// Doom's own intermission waits a second before it can be left
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("the intermission counts 35 tics"), []() { return Doom()->Flow().IntermissionTic >= 35; }));
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("leave the intermission"), [this, S]()
 	{
 		UDoomWorld* W = Doom();
-		TestTrue(TEXT("the intermission counted tics"), W->Flow().IntermissionTic > 30);
 		PlayWorld()->GetAuthGameMode<ADoomGameMode>()->FinishIntermission();
 		S->bLoadingInBackground = W->IsLoadingMap();
 		TestTrue(TEXT("E1M2 loads in the background"), S->bLoadingInBackground);
@@ -383,6 +390,38 @@ bool FDoomEditMapTest::RunTest(const FString& Parameters)
 	// opens /Game/Doom/Maps/E1M1 in the editor, raises the start sector with a sector edit, turns an
 	// imp into a baron and saves /Game/Doom/Tests/E1M1_Edit (it replaces the level open in the editor)
 	TestTrue(TEXT("the preview rebuilds, the edits apply and the level saves"), DoomContent::EditTest(TEXT("E1M1")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomWadTilesTest, "DoomUE.Editor.WadTiles", DoomTest::Flags)
+bool FDoomWadTilesTest::RunTest(const FString& Parameters)
+{
+	// a map played straight from the WAD (no imported level) uses its baked tile set (-baketiles),
+	// which is how packaged builds get distance fields for it
+	if (!TestTrue(TEXT("E1M2's tile set bakes"), DoomContent::BakeWadTiles(TEXT("E1M2"))))
+	{
+		return false;
+	}
+	StartGame(this);
+	LoadMap(this, TEXT("E1M2"), true);
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("check the tiles"), [this]()
+	{
+		const ADoomLevel* Level = Doom()->GetLevel();
+		if (TestNotNull(TEXT("level"), Level))
+		{
+			TestTrue(TEXT("the static chunk is drawn by the saved tile set"), Level->UsesSavedTiles());
+			TestTrue(TEXT("tiles"), Level->NumBakedTiles() > 0);
+			AddInfo(FString::Printf(TEXT("E1M2: %d saved tiles"), Level->NumBakedTiles()));
+		}
+		return true;
+	}));
+	// the new meshes' distance fields build in the background: finish them, or they slow the next tests
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("distance fields"), []()
+	{
+		UAutomationBlueprintFunctionLibrary::FinishLoadingBeforeScreenshot();
+		return true;
+	}, 600.f));
+	EndGame(this);
 	return true;
 }
 

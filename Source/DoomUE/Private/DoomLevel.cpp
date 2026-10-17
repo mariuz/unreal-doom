@@ -3,6 +3,7 @@
 #include "DoomMap.h"
 #include "DoomGraphics.h"
 #include "DoomAssets.h"
+#include "DoomMapTiles.h"
 #include "DoomUE.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -769,27 +770,58 @@ void ADoomLevel::FillTileMesh(UStaticMesh* Mesh, const FTile& Tile, TFunctionRef
 
 bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 {
-	const ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld());
-	if (!MapActor || !Map || !MapActor->MapName.Equals(Map->Name, ESearchCase::IgnoreCase) || MapActor->BakedTiles.Num() == 0)
+	if (!Map)
 	{
 		return false;
 	}
-	if ((uint32)MapActor->BakedTileSignature != Sig)
+	auto Load = [this, &Out](const TArray<TSoftObjectPtr<UStaticMesh>>& Tiles)
 	{
+		Out.Reset();
+		for (const TSoftObjectPtr<UStaticMesh>& Tile : Tiles)
+		{
+			UStaticMesh* Mesh = Tile.LoadSynchronous();
+			if (!Mesh)
+			{
+				UE_LOG(LogDoom, Warning, TEXT("%s: missing baked tile %s"), *Map->Name, *Tile.ToString());
+				return false;
+			}
+			Out.Add(Mesh);
+		}
+		return Out.Num() > 0;
+	};
+	// an imported level's own tiles: they include its sector edits
+	const ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld());
+	if (MapActor && MapActor->MapName.Equals(Map->Name, ESearchCase::IgnoreCase) && MapActor->BakedTiles.Num())
+	{
+		if ((uint32)MapActor->BakedTileSignature == Sig)
+		{
+			return Load(MapActor->BakedTiles);
+		}
 		UE_LOG(LogDoom, Warning, TEXT("%s: the level's baked tiles are out of date (baked %08x, now %08x): press Bake Static Meshes on its DoomMap actor"),
 			*Map->Name, (uint32)MapActor->BakedTileSignature, Sig);
+	}
+	// the WAD's tile set (-run=DoomContent -baketiles)
+	if (TileSet.IsEmpty())
+	{
 		return false;
 	}
-	for (const TSoftObjectPtr<UStaticMesh>& Tile : MapActor->BakedTiles)
+	const FSoftObjectPath Path = UDoomMapTiles::AssetPath(TileSet, Map->Name);
+	const UDoomMapTiles* Set = Cast<UDoomMapTiles>(Path.TryLoad());
+	if (!Set)
 	{
-		UStaticMesh* Mesh = Tile.LoadSynchronous();
-		if (!Mesh)
-		{
-			UE_LOG(LogDoom, Warning, TEXT("%s: missing baked tile %s"), *Map->Name, *Tile.ToString());
-			return false;
-		}
-		Out.Add(Mesh);
+		return false;
 	}
+	if ((uint32)Set->Signature != Sig)
+	{
+		UE_LOG(LogDoom, Warning, TEXT("%s: the baked tile set %s is out of date (baked %08x, now %08x): run -run=DoomContent -baketiles=%s"),
+			*Map->Name, *Path.ToString(), (uint32)Set->Signature, Sig, *Map->Name);
+		return false;
+	}
+	if (!Load(Set->Tiles))
+	{
+		return false;
+	}
+	UE_LOG(LogDoom, Log, TEXT("%s: %d baked tiles from %s"), *Map->Name, Out.Num(), *Path.ToString());
 	return true;
 }
 

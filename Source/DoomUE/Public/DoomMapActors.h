@@ -242,6 +242,8 @@ private:
 namespace DoomEditorData
 {
 	DOOMUE_API FDoomWad* Wad();
+	/** The editor's WADs as baked tile sets are named (UDoomMapTiles::WadSetName). */
+	DOOMUE_API FString WadSet();
 	DOOMUE_API FDoomGraphics* Graphics();
 	DOOMUE_API TArray<FString> MapNames();
 }
