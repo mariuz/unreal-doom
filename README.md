@@ -160,6 +160,8 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/Architecture.md](docs/Architecture.md): how the port uses Unreal's gameplay framework
   (game mode, game state, player state, world subsystem), the 35 Hz clock, credit, saves, and
   map loading on worker threads.
+* [AGENTS.md](AGENTS.md): handover notes for the next agent (AI or human): conventions, build and
+  test commands, tooling and code traps already found, related projects, where things stand.
 * [docs/Testing.md](docs/Testing.md): the automation tests (maps and node formats, DeHackEd /
   Boom / UMAPINFO patches, save and load, level exits, map editing, screenshot comparisons), run
   from the Session Frontend or with `Tools/run_tests.bat` in CI.
