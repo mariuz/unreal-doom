@@ -100,8 +100,13 @@ loose files.
 The project packages as a standalone Win64 game:
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.bat" BuildCookRun -project="E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -noP4 -platform=Win64 -clientconfig=Development -build -cook -stage -pak -archive -archivedirectory="E:/Work/DoomUE_Package"
+Tools/package.bat E:/Work/DoomUE_Package
 ```
+
+It first bakes a static-mesh **tile set** for every map of the IWAD
+(`-run=DoomContent -baketiles=all`, into `Content/Doom/Tiles/<wads>/<MAP>`, git-ignored), then runs
+`RunUAT BuildCookRun -platform=Win64 -clientconfig=Development -build -cook -stage -pak -archive`.
+Add `-iwad=freedoom2.wad` (or `-file=` for PWADs) after the folder to bake another WAD's maps.
 
 * `Content/WADs` is staged as loose files (`DirectoriesToAlwaysStageAsNonUFS`), so WADs can be
   swapped after packaging.
@@ -109,9 +114,15 @@ The project packages as a standalone Win64 game:
 * Every imported level is added to `MapsToCook` in `DefaultGame.ini` by the importer.
 
 Run `DoomUE.exe` from the archive folder. It takes the same switches; for example
-`DoomUE.exe /Game/Doom/Maps/E1M1 -modern` plays an imported level. Packaged games cannot build
-meshes at runtime, so the modern renderer's distance fields come from the levels' baked tiles.
-Maps played straight from the WAD (`-warp`) draw the procedural geometry.
+`DoomUE.exe /Game/Doom/Maps/E1M1 -modern` plays an imported level, and `DoomUE.exe -warp=E1M2 -modern`
+a map straight from the WAD. Packaged games cannot build meshes at runtime, so the modern renderer's
+distance fields come from baked tiles:
+* an imported level uses its own tiles, which include its sector edits;
+* any other map uses its WAD's tile set.
+
+Both are used only when their signature still matches the map's geometry; otherwise the
+procedural geometry is drawn and the log says which bake is out of date. In the editor, maps
+without saved tiles are baked when they load.
 
 ### Command line
 
@@ -339,7 +350,11 @@ Game tables: `DA_DoomGameData` holds 115 things, 9 projectiles and 9 weapons. Wi
 to 777 and the starting bullets to 77 in the asset (an editor Python script) showed up in the
 game unchanged. `-savetest`, `-exittest`, `-edittest` and MAP30's `-endtest` pass with the asset.
 
-Automation tests ([docs/Testing.md](docs/Testing.md)): `Tools/run_tests.bat` runs 11 tests in
+WAD tile sets: `-baketiles` bakes E1M1 and E1M2 with the same signatures the game computes
+(`74c3d863`, `17b4800a`), and a modern `-warp=E1M2` run draws the 18 baked tiles of
+`/Game/Doom/Tiles/freedoom1/E1M2`. `DoomUE.Editor.WadTiles` checks the same in PIE.
+
+Automation tests ([docs/Testing.md](docs/Testing.md)): `Tools/run_tests.bat` runs 12 tests in
 about a minute: maps and node formats, the four patch kinds, save and load, the level exit, the map
 editing, and the classic and modern screenshots. All pass. With `-NullRHI` the screenshot tests skip.
 The classic screenshot matches its approved image exactly, and the modern one differs by about
@@ -356,8 +371,7 @@ cases, knockback strength, and HUD offsets.
 Not done yet (roughly in priority order):
 
 1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-2. Packaged builds of maps played straight from the WAD (`-warp`, not imported) have no static mesh tiles; importing every map of a WAD (`-importmap=all`) covers them.
-3. Unreal practices worth adopting next:
+2. Unreal practices worth adopting next:
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.

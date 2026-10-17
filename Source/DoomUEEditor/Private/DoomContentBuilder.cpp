@@ -1,5 +1,6 @@
 #include "DoomContentBuilder.h"
 #include "DoomGameData.h"
+#include "DoomMapTiles.h"
 #include "DoomAssets.h"
 #include "DoomUE.h"
 #include "MaterialEditingLibrary.h"
@@ -1204,6 +1205,81 @@ bool DoomContent::ExportLyraLevel(const FString& InMapName, const FString& OutDi
 
 // ---- Map import --------------------------------------------------------------------------------
 
+namespace
+{
+	/** Splits a static chunk into 1024-unit tiles and saves them as static meshes in TileFolder. */
+	bool SaveTileMeshes(const FString& MapName, const FString& TileFolder, const TMap<FName, ADoomLevel::FSectionData>& Solid,
+		const TMap<FName, ADoomLevel::FSectionData>& NonSolid, TArray<UStaticMesh*>& Meshes)
+	{
+		TArray<ADoomLevel::FTile> Tiles;
+		ADoomLevel::SplitTiles(Solid, NonSolid, Tiles);
+		// slots keep their section key as the name; the game puts its own material instances there
+		UMaterialInterface* Placeholder = DoomAssets::WorldMaterial(true);
+		auto Coord = [](int32 V) { return V < 0 ? FString::Printf(TEXT("N%d"), -V) : FString::FromInt(V); };
+		for (const ADoomLevel::FTile& Tile : Tiles)
+		{
+			const FString Name = FString::Printf(TEXT("SM_%s_%s_%s"), *MapName, *Coord(Tile.Cell.X), *Coord(Tile.Cell.Y));
+			UPackage* Pkg = MakePackage(Name, *TileFolder);
+			UStaticMesh* Mesh = NewObject<UStaticMesh>(Pkg, FName(*Name), RF_Public | RF_Standalone);
+			ADoomLevel::FillTileMesh(Mesh, Tile, [Placeholder](FName) { return Placeholder; });
+			Mesh->Build(true);
+			Meshes.Add(Mesh);
+		}
+		FStaticMeshCompilingManager::Get().FinishCompilation(Meshes);
+		bool bOk = true;
+		for (UStaticMesh* Mesh : Meshes)
+		{
+			bOk &= Save(Mesh);
+		}
+		return bOk;
+	}
+}
+
+bool DoomContent::BakeWadTiles(const FString& InMapName)
+{
+	const FString MapName = InMapName.ToUpper();
+	FDoomWad* Wad = DoomEditorData::Wad();
+	FDoomGraphics* Gfx = DoomEditorData::Graphics();
+	FDoomMap Map;
+	if (!Wad || !Gfx || !Map.Load(*Wad, MapName))
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Bake tiles: no map %s in the WAD"), *MapName);
+		return false;
+	}
+	// the static chunk exactly as the game builds it from the WAD: same movable sectors and sky
+	TSet<int32> Movable;
+	UDoomWorld::ComputeMovableSectors(Map, Movable);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Inactive, false);
+	ADoomLevel* Level = World->SpawnActor<ADoomLevel>();
+	Level->bEditorPreview = true;
+	Level->Build(Map, *Gfx, Movable, true, FDoomGraphics::SkyTextureFor(MapName));
+	TMap<FName, ADoomLevel::FSectionData> Solid, NonSolid;
+	Level->GetStaticSections(Solid, NonSolid);
+	World->DestroyWorld(false);
+	if (Solid.Num() == 0 && NonSolid.Num() == 0)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Bake tiles: no static geometry in %s"), *MapName);
+		return false;
+	}
+	const FString WadSet = DoomEditorData::WadSet();
+	const FString TileFolder = UDoomMapTiles::Folder(WadSet, MapName);
+	TArray<UStaticMesh*> Meshes;
+	bool bOk = SaveTileMeshes(MapName, TileFolder, Solid, NonSolid, Meshes);
+	const FString SetName = UDoomMapTiles::AssetName(MapName);
+	UPackage* Pkg = MakePackage(SetName, *TileFolder);
+	UDoomMapTiles* Set = NewObject<UDoomMapTiles>(Pkg, FName(*SetName), RF_Public | RF_Standalone);
+	Set->MapName = MapName;
+	Set->WadSet = WadSet;
+	Set->Signature = ADoomLevel::Signature(Solid, NonSolid);
+	for (UStaticMesh* Mesh : Meshes)
+	{
+		Set->Tiles.Add(Mesh);
+	}
+	bOk &= Save(Set);
+	UE_LOG(LogDoomContent, Display, TEXT("Bake tiles: %s: %d tiles in %s (signature %08x)"), *MapName, Meshes.Num(), *TileFolder, (uint32)Set->Signature);
+	return bOk;
+}
+
 bool DoomContent::BakeMapTiles(ADoomMapActor* MapActor)
 {
 	if (!MapActor)
@@ -1224,30 +1300,14 @@ bool DoomContent::BakeMapTiles(ADoomMapActor* MapActor)
 	for (const auto& P : Solid) Verts += P.Value.V.Num();
 	for (const auto& P : NonSolid) Verts += P.Value.V.Num();
 	UE_LOG(LogDoomContent, Display, TEXT("Bake: static chunk %d + %d sections, %d vertices"), Solid.Num(), NonSolid.Num(), Verts);
-	TArray<ADoomLevel::FTile> Tiles;
-	ADoomLevel::SplitTiles(Solid, NonSolid, Tiles);
-	// slots keep their section key as the name; the game puts its own material instances there
-	UMaterialInterface* Placeholder = DoomAssets::WorldMaterial(true);
 	const FString MapName = MapActor->MapName.ToUpper();
 	const FString TileFolder = FString::Printf(TEXT("/Game/Doom/Maps/%s_Tiles/"), *MapName);
-	auto Coord = [](int32 V) { return V < 0 ? FString::Printf(TEXT("N%d"), -V) : FString::FromInt(V); };
 	TArray<UStaticMesh*> Meshes;
-	for (const ADoomLevel::FTile& Tile : Tiles)
-	{
-		const FString Name = FString::Printf(TEXT("SM_%s_%s_%s"), *MapName, *Coord(Tile.Cell.X), *Coord(Tile.Cell.Y));
-		UPackage* Pkg = MakePackage(Name, *TileFolder);
-		UStaticMesh* Mesh = NewObject<UStaticMesh>(Pkg, FName(*Name), RF_Public | RF_Standalone);
-		ADoomLevel::FillTileMesh(Mesh, Tile, [Placeholder](FName) { return Placeholder; });
-		Mesh->Build(true);
-		Meshes.Add(Mesh);
-	}
-	FStaticMeshCompilingManager::Get().FinishCompilation(Meshes);
-	bool bOk = true;
+	bool bOk = SaveTileMeshes(MapName, TileFolder, Solid, NonSolid, Meshes);
 	MapActor->Modify();
 	MapActor->BakedTiles.Reset();
 	for (UStaticMesh* Mesh : Meshes)
 	{
-		bOk &= Save(Mesh);
 		MapActor->BakedTiles.Add(Mesh);
 	}
 	MapActor->BakedTileSignature = Sig;
@@ -1433,6 +1493,27 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 			bOk &= DoomContent::ImportMap(N, Params.Contains(TEXT("-force")));
 		}
 		return bOk ? 0 : 1;
+	}
+	// -baketiles=E1M1,E1M2|all [-iwad= -file=]: tile sets for maps played straight from the WAD
+	FString BakeTiles;
+	if (FParse::Value(*Params, TEXT("-baketiles="), BakeTiles, false))
+	{
+		TArray<FString> Names;
+		if (BakeTiles.Equals(TEXT("all"), ESearchCase::IgnoreCase))
+		{
+			Names = DoomEditorData::MapNames();
+		}
+		else
+		{
+			BakeTiles.ParseIntoArray(Names, TEXT(","));
+		}
+		int32 Failed = 0;
+		for (const FString& N : Names)
+		{
+			Failed += DoomContent::BakeWadTiles(N) ? 0 : 1;
+		}
+		UE_LOG(LogDoomContent, Display, TEXT("Bake tiles: %d maps of %s, %d failed"), Names.Num(), *DoomEditorData::WadSet(), Failed);
+		return Failed ? 1 : 0;
 	}
 	// -gamedata [-force]: the editable game tables, from the built-in ones
 	if (Params.Contains(TEXT("-gamedata")))

@@ -34,9 +34,12 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Game.SaveLoad` | `-savetest` | On E1M1 with a door moving, corpses, awake monsters and a rocket and a homing tracer in flight: save, scramble the world, load; the state fingerprint matches the saved one |
 | `DoomUE.Game.ExitToNextMap` | `-exittest` | Two kills credited to the game state and the player state, the intermission, then E1M2 loaded in the background, with the counters reset and the shells carried over |
 | `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
+| `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
 | `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots` |
 
-The game tests play in PIE on `/Engine/Maps/Entry`, as a `-game` run would. Patches load through
+The game tests play in PIE on `/Engine/Maps/Entry`, as a `-game` run would. Steps wait for
+conditions, not for fixed times, because background work such as distance-field builds can slow
+the editor down a lot. A test that creates meshes finishes their distance fields before it ends. Patches load through
 `UDoomWorld::InitWads` with an explicit `FDoomWadSetup`, so no command-line switches are needed.
 Because the info tables are global, each test resets them afterwards.
 

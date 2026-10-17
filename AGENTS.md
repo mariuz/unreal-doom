@@ -33,11 +33,13 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 11 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
+* **Tests:** 12 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
   of writing.
   * Run them before merging.
   * Run without `-NullRHI` when rendering changes: that also compares the screenshots.
   * The `-savetest`, `-exittest`, `-patchtest` and similar switches still work in `-game` runs.
+  * Make steps wait for conditions, not fixed times: background work such as distance-field builds
+    can slow the editor a lot.
 * **Screenshots** land in `Saved/Screenshots/WindowsEditor/`.
   * `-autotest[=s]` saves `autotest_<map>.png` and quits.
   * Check rendering by looking at these images, never by capturing the desktop.
@@ -98,6 +100,12 @@ Tools/run_tests.bat DoomUE -NullRHI
   * `LoadMapAsync` is used for new games and level transitions; `LoadMap` is synchronous.
 * **`InitWads` replaces the graphics**, so it unloads any loaded map first. That fixed a crash the
   tests found.
+* **Tile sets:** packaged builds can't build meshes at runtime.
+  * `ADoomLevel::FindSavedTiles` first tries an imported level's own tiles, then the WAD's tile set
+    (`UDoomMapTiles` under `/Game/Doom/Tiles/<wadset>/<MAP>`).
+  * Both are used only when the static chunk's signature matches.
+  * `Tools/package.bat` bakes all of them before packaging. They're git-ignored.
+  * Anything that changes generated geometry changes the signatures, so re-bake after it.
 * **Automation:**
   * In the editor, `AutomationOpenMap` also starts PIE; don't add another `FStartPIECommand`.
   * The info tables are global, so tests reset them afterwards.
@@ -127,6 +135,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * tile sets for maps played straight from the WAD;
   * automation tests;
   * game tables as an editable data asset;
   * asynchronous map loading with a loading screen;

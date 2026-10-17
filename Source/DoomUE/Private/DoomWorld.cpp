@@ -4,6 +4,7 @@
 #include "DoomGraphics.h"
 #include "DoomSound.h"
 #include "DoomLevel.h"
+#include "DoomMapTiles.h"
 #include "DoomThing.h"
 #include "DoomMonster.h"
 #include "DoomProjectile.h"
@@ -209,6 +210,7 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 		Wad->AddFile(Resolve(P));
 	}
 	Wad->Finalize();
+	WadSetName = UDoomMapTiles::WadSetName(IWad, PWads);
 	if (!Wad->IsValid())
 	{
 		UE_LOG(LogDoom, Error, TEXT("WAD has no PLAYPAL"));
@@ -401,6 +403,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	// the map's wall textures and flats decode on worker threads while the chunks are laid out
 	L.Pictures = Gfx->CollectPrefetch(*Map);
 	L.Task = UE::Tasks::Launch(UE_SOURCE_LOCATION, [G = Gfx.Get(), P = L.Pictures]() { G->DecodePrefetch(*P); });
+	Level->TileSet = WadSetName;
 	Level->BeginBuild(*Map, *Gfx, Movable, bModern, L.Sky);
 	return true;
 }

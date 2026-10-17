@@ -16,6 +16,9 @@
 #include "Engine/Texture2D.h"
 #include "Containers/Ticker.h"
 #include "Misc/Paths.h"
+#include "Misc/Parse.h"
+#include "Misc/CommandLine.h"
+#include "DoomMapTiles.h"
 #include "UObject/ConstructorHelpers.h"
 
 // ------------------------------------------------------------------------------------------------
@@ -28,6 +31,7 @@ namespace
 	{
 		TUniquePtr<FDoomWad> Wad;
 		TUniquePtr<FDoomGraphics> Gfx;
+		FString WadSet;
 		bool bTried = false;
 	};
 
@@ -42,10 +46,20 @@ namespace
 			{
 				return FPaths::FileExists(Name) ? Name : FPaths::Combine(FPaths::ProjectContentDir(), TEXT("WADs"), Name);
 			};
-			E.Wad = MakeUnique<FDoomWad>();
-			if (E.Wad->AddFile(Resolve(Settings->IWAD)))
+			// -iwad= / -file= choose other WADs (baking another IWAD's tile sets)
+			FString IWad = Settings->IWAD;
+			FParse::Value(FCommandLine::Get(), TEXT("-iwad="), IWad);
+			TArray<FString> PWads = Settings->PWADs;
+			FString FileArg;
+			if (FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg, false))
 			{
-				for (const FString& P : Settings->PWADs)
+				FileArg.ParseIntoArray(PWads, TEXT(","));
+			}
+			E.WadSet = UDoomMapTiles::WadSetName(IWad, PWads);
+			E.Wad = MakeUnique<FDoomWad>();
+			if (E.Wad->AddFile(Resolve(IWad)))
+			{
+				for (const FString& P : PWads)
 				{
 					E.Wad->AddFile(Resolve(P));
 				}
@@ -75,6 +89,7 @@ namespace
 }
 
 FDoomWad* DoomEditorData::Wad() { return EditorWad().Wad.Get(); }
+FString DoomEditorData::WadSet() { return EditorWad().WadSet; }
 FDoomGraphics* DoomEditorData::Graphics() { return EditorWad().Gfx.Get(); }
 
 TArray<FString> DoomEditorData::MapNames()

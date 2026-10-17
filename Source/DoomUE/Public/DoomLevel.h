@@ -69,6 +69,9 @@ public:
 	/** Editor preview: collision cooks in the background and nothing is baked. */
 	bool bEditorPreview = false;
 
+	/** The loaded WADs (UDoomMapTiles::WadSetName): where to look for the map's baked tile set. */
+	FString TileSet;
+
 	/** A sector's floor/ceiling or a side's texture changed: rebuild the affected chunks on Flush. */
 	void SectorChanged(int32 Sector);
 	void LineChanged(int32 Line);
