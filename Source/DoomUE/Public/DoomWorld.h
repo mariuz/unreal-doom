@@ -401,6 +401,8 @@ private:
 	void LoadPatches(const TArray<FString>& DehFiles);
 	TMap<int32, FString> SlotCache;
 	void SerializeState(FArchive& Ar);
+	/** After SerializeState loaded a level: geometry, lights and things follow the restored sectors. */
+	void RefreshRestoredLevel();
 
 	TArray<TWeakObjectPtr<ADoomThing>> Things;
 	TArray<TWeakObjectPtr<ADoomMonster>> Monsters;

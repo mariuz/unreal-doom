@@ -6,6 +6,9 @@
 #include "DoomWorld.h"
 #include "DoomMap.h"
 #include "DoomPlayer.h"
+#include "DoomPlayerController.h"
+#include "DoomMenu.h"
+#include "InputKeyEventArgs.h"
 #include "DoomMonster.h"
 #include "DoomUE.h"
 #include "Engine/DamageEvents.h"
@@ -38,6 +41,8 @@ namespace
 		bool bStarted = false;
 		int32 Passed = 0, Failed = 0, Skipped = 0;
 		FTimerHandle Timer;
+		/** Movement steps: push forward every frame (input is used up each frame). */
+		bool bHoldForward = false;
 	};
 }
 
@@ -289,7 +294,7 @@ void ADoomGameMode::StartPlayTest()
 
 	// --- 7. awake monsters actually walk (no freezing in low rooms or doorways) -------------------
 	{
-		struct FChase { TMap<TWeakObjectPtr<ADoomMonster>, FVector2f> Start; };
+		struct FChase { TMap<TWeakObjectPtr<ADoomMonster>, FVector2f> Start, Last; TMap<TWeakObjectPtr<ADoomMonster>, float> Path; };
 		TSharedRef<FChase> C = MakeShared<FChase>();
 		Run->Steps.Add({ TEXT("chase"),
 			[W, C, GoHome, Player](FString& Msg)
@@ -304,6 +309,8 @@ void ADoomGameMode::StartPlayTest()
 						M->Target = P;
 						M->StartState(EMonsterState::Chase);
 						C->Start.Add(M, M->DoomPos());
+						C->Last.Add(M, M->DoomPos());
+						C->Path.Add(M, 0.f);
 					}
 				}
 				if (C->Start.Num() == 0) { Msg = TEXT("no monsters"); return false; }
@@ -311,6 +318,13 @@ void ADoomGameMode::StartPlayTest()
 			},
 			[C](int32 Tics, FString& Msg)
 			{
+				// how far each one walked, tic by tic: a monster pacing inside a closed room still walks
+				for (TPair<TWeakObjectPtr<ADoomMonster>, FVector2f>& E : C->Last)
+				{
+					if (!E.Key.IsValid()) continue;
+					C->Path[E.Key] += FVector2f::Distance(E.Key->DoomPos(), E.Value);
+					E.Value = E.Key->DoomPos();
+				}
 				if (Tics < 175) return EStep::Running;
 				int32 Moved = 0, Alive = 0;
 				FString Stuck;
@@ -318,11 +332,175 @@ void ADoomGameMode::StartPlayTest()
 				{
 					if (!E.Key.IsValid() || E.Key->IsDead()) continue;
 					++Alive;
-					if (FVector2f::Distance(E.Key->DoomPos(), E.Value) > 32.f) ++Moved;
-					else Stuck += FString::Printf(TEXT(" %s(%.0f,%.0f)"), *E.Key->Def->Name, E.Value.X, E.Value.Y);
+					if (FVector2f::Distance(E.Key->DoomPos(), E.Value) > 32.f || C->Path[E.Key] > 64.f) ++Moved;
+					else
+					{
+						// why: free walking directions, the room's height, and whether the sector is closed in
+						int32 Dirs = 0;
+						for (int32 d = 0; d < 8; ++d) Dirs += E.Key->TestMove(d);
+						const UDoomWorld* DW = E.Key->DoomWorld;
+						const int32 Sec = DW->GetMap()->SectorAt(E.Key->DoomPos());
+						const FDoomSector* S = Sec >= 0 ? &DW->GetMap()->Sectors[Sec] : nullptr;
+						Stuck += FString::Printf(TEXT(" %s(%.0f,%.0f dirs %d room %.0f walked %.0f)"), *E.Key->Def->Name, E.Value.X, E.Value.Y, Dirs,
+							S ? S->Ceiling - S->Floor : -1.f, C->Path[E.Key]);
+					}
 				}
-				Msg = FString::Printf(TEXT("%d of %d awake monsters moved over 32 units in 5 s; still:%s"), Moved, Alive, *Stuck);
-				return Alive > 0 && Moved * 10 >= Alive * 8 ? EStep::Pass : EStep::Fail;
+				Msg = FString::Printf(TEXT("%d of %d awake monsters got 32 units away or walked 64 in 5 s; still:%s"), Moved, Alive, *Stuck);
+				return Alive > 0 && Moved * 10 >= Alive * 9 ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+
+	// --- 9. walking: Doom's top speed and the slide when you let go -------------------------------
+	{
+		struct FWalk { float Top = 0; FVector2f Release; float Slide = -1; int32 ReleaseTic = -1; FRotator Dir; };
+		TSharedRef<FWalk> K = MakeShared<FWalk>();
+		TSharedRef<FPlayRun> RunRef = Run;
+		Run->Steps.Add({ TEXT("walk"),
+			[W, K, RunRef, GoHome, Player](FString& Msg)
+			{
+				GoHome();
+				ADoomPlayer* P = Player();
+				// a long straight run: from any thing's spot on the map, the clearest of 16 directions
+				// (800 units on the flat are enough to reach top speed and slide out)
+				float Best = 0;
+				FVector BestFrom = P->GetActorLocation();
+				FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPlaytest), false, P);
+				const FDoomMap* M = W->GetMap();
+				const float Half = Doom::HalfHeight(P);
+				for (const FDoomMapThing& T : M->Things)
+				{
+					const int32 Sec = M->SectorAt(T.P);
+					if (Sec < 0) continue;
+					const FVector From = Doom::ToUE(T.P, M->Sectors[Sec].Floor) + FVector(0, 0, Half + 2.f);
+					for (int32 a = 0; a < 16 && Best < 1000.f; ++a)
+					{
+						const FRotator Dir(0, a * 22.5f, 0);
+						FHitResult Hit;
+						const FVector To = From + Dir.Vector() * 1000.f * Doom::Scale;
+						if (W->GetWorld()->SweepSingleByChannel(Hit, From, From, FQuat::Identity, ECC_Pawn, P->GetCapsuleComponent()->GetCollisionShape(), Q)) break; // spot taken
+						const float Dist = W->GetWorld()->SweepSingleByChannel(Hit, From, To, FQuat::Identity, ECC_Pawn, P->GetCapsuleComponent()->GetCollisionShape(), Q)
+							? Hit.Distance / Doom::Scale : 1000.f;
+						// the floor must stay level all the way (a step or a drop changes the speed)
+						FHitResult Floor;
+						const FVector End = From + Dir.Vector() * Dist * Doom::Scale * 0.95f;
+						const bool bLevel = W->GetWorld()->LineTraceSingleByChannel(Floor, End, End - FVector(0, 0, Half + 8.f * Doom::Scale), ECC_Visibility, Q)
+							&& FMath::Abs(Floor.ImpactPoint.Z - (From.Z - Half - 2.f)) < 2.f * Doom::Scale;
+						if (bLevel && Dist > Best) { Best = Dist; K->Dir = Dir; BestFrom = From; }
+					}
+				}
+				if (Best < 800.f) { Msg = FString::Printf(TEXT("no 800-unit level run on the map (longest %.0f)"), Best); return false; }
+				P->SetActorLocation(BestFrom, false, nullptr, ETeleportType::TeleportPhysics);
+				P->GetController()->SetControlRotation(K->Dir);
+				RunRef->bHoldForward = true;
+				return true;
+			},
+			[K, RunRef, Player](int32 Tics, FString& Msg)
+			{
+				ADoomPlayer* P = Player();
+				const float Speed = P->GetVelocity().Size2D() / Doom::Scale / Doom::TicRate;
+				if (Tics <= 30)
+				{
+					K->Top = FMath::Max(K->Top, Speed);
+					return EStep::Running;
+				}
+				if (K->ReleaseTic < 0)
+				{
+					RunRef->bHoldForward = false;
+					K->ReleaseTic = Tics;
+					K->Release = P->DoomPos();
+					return EStep::Running;
+				}
+				if (Speed > 0.01f && Tics - K->ReleaseTic < 140) return EStep::Running;
+				K->Slide = FVector2f::Distance(P->DoomPos(), K->Release);
+				Msg = FString::Printf(TEXT("top speed %.1f units/tic after 30 tics (vanilla 16.7, ~15.5 by then), slid %.0f units after letting go (vanilla ~160)"), K->Top, K->Slide);
+				return K->Top > 14.f && K->Top < 17.5f && K->Slide > 110.f && K->Slide < 210.f ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+	// --- 10. the automap learns the walls in view while it is closed -----------------------------
+	Run->Steps.Add({ TEXT("automap"),
+		[W, Map, GoHome](FString& Msg)
+		{
+			GoHome();
+			W->bAutomap = false;
+			for (FDoomLine& L : Map->Lines) L.bSeen = false;
+			return true;
+		},
+		[W, Map, Player](int32 Tics, FString& Msg)
+		{
+			if (Tics < 20) return EStep::Running;
+			const int32 Here = Map->SectorAt(Player()->DoomPos());
+			int32 Seen = 0, Away = 0;
+			for (int32 i = 0; i < Map->Lines.Num(); ++i)
+			{
+				const FDoomLine& L = Map->Lines[i];
+				if (!L.bSeen) continue;
+				++Seen;
+				if (L.FrontSector != Here && L.BackSector != Here) ++Away;
+			}
+			Msg = FString::Printf(TEXT("%d lines known after 20 tics with the map closed, %d of them away from the player's sector"), Seen, Away);
+			return Seen >= 20 && Away > 0 ? EStep::Pass : EStep::Fail;
+		} });
+
+	// --- 11. a stray click on the quit prompt cancels it (only Y, Enter or A confirm) ------------
+	Run->Steps.Add({ TEXT("quitprompt"),
+		[W, Player](FString& Msg)
+		{
+			W->Menu.Open(*W, EMenuPage::Quit);
+			APlayerController* PC = Cast<APlayerController>(Player()->GetController());
+			if (W->Menu.Prompt().IsEmpty() || !PC) { Msg = TEXT("the quit page has no prompt"); return false; }
+			W->bInputLocked = false;
+			PC->InputKey(FInputKeyEventArgs(nullptr, FInputDeviceId::CreateFromInternalId(0), EKeys::LeftMouseButton, IE_Pressed, FPlatformTime::Cycles64()));
+			PC->InputKey(FInputKeyEventArgs(nullptr, FInputDeviceId::CreateFromInternalId(0), EKeys::LeftMouseButton, IE_Released, FPlatformTime::Cycles64()));
+			W->bInputLocked = true;
+			return true;
+		},
+		[W](int32 Tics, FString& Msg)
+		{
+			if (Tics < 3) return EStep::Running; // a quit would have ended the run by now
+			const bool bClosedPrompt = W->GetState() != EDoomGameState::Menu || W->Menu.Prompt().IsEmpty();
+			Msg = FString::Printf(TEXT("after a left click: still running, state %d, prompt \"%s\""), (int32)W->GetState(), *W->Menu.Prompt().Left(20));
+			W->Menu.Close(*W);
+			return bClosedPrompt ? EStep::Pass : EStep::Fail;
+		} });
+
+	// --- 12. switching the renderer in the middle of a level keeps the game where it was ----------
+	{
+		struct FSwap { FVector2f Pos; int32 Kills = 0, Dead = 0, Tic = 0; bool bModern = false; };
+		TSharedRef<FSwap> X = MakeShared<FSwap>();
+		Run->Steps.Add({ TEXT("renderer"),
+			[W, X, GoHome, Player](FString& Msg)
+			{
+				GoHome();
+				ADoomPlayer* P = Player();
+				// kill one monster first, so a reload from scratch would show
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (M.IsValid() && !M->IsDead()) { UGameplayStatics::ApplyDamage(M.Get(), 100000.f, P->GetController(), P, nullptr); break; }
+				}
+				X->Pos = P->DoomPos();
+				X->Kills = W->Flow().Kills;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters()) X->Dead += M.IsValid() && M->IsDead();
+				X->Tic = W->GetTic();
+				X->bModern = W->IsModern();
+				W->Menu.Open(*W, EMenuPage::Options);
+				W->SetModern(!X->bModern);
+				return true;
+			},
+			[W, X](int32 Tics, FString& Msg)
+			{
+				ADoomPlayer* P = W->GetPlayer();
+				int32 Dead = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters()) Dead += M.IsValid() && M->IsDead();
+				Msg = FString::Printf(TEXT("modern %d -> %d, state %d (menu %d), player (%.0f,%.0f) -> (%.0f,%.0f), kills %d -> %d, corpses %d -> %d, tic %d -> %d"),
+					X->bModern, W->IsModern(), (int32)W->GetState(), (int32)EDoomGameState::Menu, X->Pos.X, X->Pos.Y, P ? P->DoomPos().X : 0, P ? P->DoomPos().Y : 0,
+					X->Kills, W->Flow().Kills, X->Dead, Dead, X->Tic, W->GetTic());
+				const bool bPass = P && W->IsModern() != X->bModern && W->GetState() == EDoomGameState::Menu && FVector2f::Distance(P->DoomPos(), X->Pos) < 1.f
+					&& W->Flow().Kills == X->Kills && Dead == X->Dead;
+				W->Menu.Close(*W);
+				W->SetModern(X->bModern);
+				return bPass ? EStep::Pass : EStep::Fail;
 			} });
 	}
 
@@ -351,16 +529,40 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
+
+	// --- 13 (last: it leaves the map). the intermission shows the vanilla par time ----------------
+	Run->Steps.Add({ TEXT("intermission"),
+		[this, W](FString& Msg)
+		{
+			ExitLevel(false);
+			return W->GetState() == EDoomGameState::Intermission;
+		},
+		[W, Shot](int32 Tics, FString& Msg)
+		{
+			const int32 Par = DoomInfo::ParTime(W->GetMapName());
+			Msg = FString::Printf(TEXT("%s par %d s (vanilla E1M1 30, MAP01 30), intermission tic %d"), *W->GetMapName(), Par, W->Flow().IntermissionTic);
+			if (Tics == 170) Shot(TEXT("intermission"));
+			if (Tics < 175) return EStep::Running;
+			return Par > 0 ? EStep::Pass : EStep::Fail;
+		} });
+
 	// run the steps one after the other, one poll per Doom tic
 	TSharedRef<FPlayRun> R = Run;
 	GetWorldTimerManager().SetTimer(Run->Timer, [this, W, R, Home, HomeView, GoHome]()
 	{
 		ADoomPlayer* P = W->GetPlayer();
-		if (!P || W->GetState() != EDoomGameState::Playing)
+		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt")
+			|| R->Steps[R->Index].Name == TEXT("renderer") || R->Steps[R->Index].Name == TEXT("intermission"));
+		if (!P || (W->GetState() != EDoomGameState::Playing && !bOffPlay))
 		{
 			return;
 		}
-		const int32 Now = W->GetTic();
+		if (R->bHoldForward)
+		{
+			P->AddMovementInput(FRotator(0, P->GetControlRotation().Yaw, 0).Vector(), 1.f);
+		}
+		// Doom's tics stop in the menu and the intermission: count 1/35 s of real time there instead
+		const int32 Now = W->GetState() == EDoomGameState::Playing && !bOffPlay ? W->GetTic() : (int32)(W->GetWorld()->GetRealTimeSeconds() * Doom::TicRate);
 		if (Now == R->LastTic)
 		{
 			return;

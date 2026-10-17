@@ -1,5 +1,7 @@
 #include "DoomWorld.h"
 #include "Engine/DamageEvents.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/MemoryReader.h"
 #include "DoomUE.h"
 #include "DoomWad.h"
 #include "DoomGraphics.h"
@@ -266,9 +268,27 @@ void UDoomWorld::SetModern(bool b)
 	if (bModern != b)
 	{
 		bModern = b;
-		if (Map.IsValid() && Flow().Phase == EDoomGameState::Playing)
+		if (!Map.IsValid())
 		{
-			LoadMap(Flow().CurrentMap, false); // rebuild with the other material set
+			return;
+		}
+		if (IsNetGame())
+		{
+			ShowMessage(TEXT("The renderer changes on the next map.")); // a reload would restart everyone's level
+			return;
+		}
+		// rebuild with the other material set, keeping the game where it is (the menu is usually open):
+		// the save game's state round trip, in memory
+		TArray<uint8> State;
+		FMemoryWriter Writer(State, true);
+		SerializeState(Writer);
+		const EDoomGameState Phase = Flow().Phase;
+		if (LoadMap(Flow().CurrentMap, false, true))
+		{
+			FMemoryReader Reader(State, true);
+			SerializeState(Reader);
+			RefreshRestoredLevel();
+			Flow().Phase = Phase;
 		}
 	}
 }
@@ -1332,6 +1352,10 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 				FVector L = C->GetActorLocation();
 				L.Z = New * Doom::Scale + Half + 1.f;
 				C->SetActorLocation(L, false, nullptr, ETeleportType::None);
+				if (ADoomPlayer* P = Cast<ADoomPlayer>(C))
+				{
+					P->LastFeetZ = P->DoomZ(); // carried up, not a step: the view doesn't dip
+				}
 			}
 		};
 		for (ADoomPlayer* P : GetPlayers()) Lift(P);
@@ -2882,6 +2906,18 @@ FString UDoomWorld::NetFingerprint() const
 
 void UDoomWorld::SetState(EDoomGameState S)
 {
+	if (S != EDoomGameState::Playing)
+	{
+		// the menu swaps the input mappings, and a held trigger or run key may never see its release:
+		// don't come back auto-firing
+		for (ADoomPlayer* P : GetPlayers())
+		{
+			if (P->IsLocallyControlled())
+			{
+				P->bFireHeld = P->bRunHeld = false;
+			}
+		}
+	}
 	if (IsNetGame())
 	{
 		// network games never pause: the menu is this player's overlay, not a phase of the game

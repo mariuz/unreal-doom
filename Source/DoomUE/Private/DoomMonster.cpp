@@ -259,11 +259,6 @@ void ADoomMonster::DoomTic()
 	}
 	LastPos = DoomPos(); // re-read: a teleport line moves the monster
 
-	if (ReactionTime > 0)
-	{
-		--ReactionTime;
-	}
-
 	switch (State)
 	{
 	case EMonsterState::Idle:
@@ -295,6 +290,19 @@ void ADoomMonster::DoomTic()
 		}
 		if (Sprite->IsSequenceDone())
 		{
+			// A_CPosRefire / A_SpidRefire: chaingunners, SS, arachnotrons and the mastermind keep
+			// firing while they can see a live target (and now and then regardless)
+			const int32 Num = Def->DoomEdNum;
+			const bool bRefires = State == EMonsterState::Missile && (Num == 65 || Num == 84 || Num == 68 || Num == 7);
+			const ADoomPlayer* TP = Cast<ADoomPlayer>(Target.Get());
+			const ADoomMonster* TM = Cast<ADoomMonster>(Target.Get());
+			const bool bTargetAlive = (TP && !TP->IsDead()) || (TM && !TM->IsDead());
+			if (bRefires && (MonsterRand() < (Num == 68 || Num == 7 ? 10 : 40) || (bTargetAlive && DoomWorld->CheckSight(this, Target.Get()))))
+			{
+				FaceTarget();
+				StartState(EMonsterState::Missile);
+				break;
+			}
 			StartState(EMonsterState::Chase);
 		}
 		break;
@@ -471,10 +479,28 @@ bool ADoomMonster::TestMove(int32 Dir) const
 	const FVector To = From + Dir3 * FMath::Max(Def->Speed, 8.f) * 2.f * S;
 
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMonsterMove), false, this);
-	const FCollisionShape Shape = FCollisionShape::MakeCapsule(FMath::Min(Radius * 0.95f, BodyHalf), BodyHalf);
-	if (GetWorld()->SweepTestByChannel(From, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
+	// a box, like Doom's: as wide as the walking capsule (a capsule that short would have to be thinner
+	// than the body, and then promised paths the body couldn't take), slightly inset for corners
+	const FCollisionShape Shape = FCollisionShape::MakeBox(FVector(Radius * 0.9f, Radius * 0.9f, BodyHalf));
+	FHitResult Block;
+	if (GetWorld()->SweepSingleByChannel(Block, From, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
 	{
-		return false;
+		if (!Block.bStartPenetrating)
+		{
+			return false;
+		}
+		// the box's corner already touches something (a wall we lean on, a neighbour): moving away from
+		// it is fine; test again from just outside it
+		const FVector Out = Block.Normal.GetSafeNormal2D();
+		if (FVector::DotProduct(Out, Dir3) < -0.1f)
+		{
+			return false;
+		}
+		const FVector Free = From + Out * (Block.PenetrationDepth + 1.f);
+		if (GetWorld()->SweepTestByChannel(Free, To, FQuat::Identity, ECC_DoomMonster, Shape, Q))
+		{
+			return false;
+		}
 	}
 	if (Def->Flags & EThingFlag::Float)
 	{
@@ -572,8 +598,31 @@ bool ADoomMonster::VileTryRaise()
 		{
 			continue;
 		}
+		// P_CheckPosition: no raising a corpse that something alive is standing on
+		bool bOccupied = false;
+		auto Blocks = [&](const AActor* A, float Radius)
+		{
+			const FVector2f D = Doom::ToDoom2D(A->GetActorLocation()) - M->DoomPos();
+			return FMath::Abs(D.X) < Radius + M->Def->Radius && FMath::Abs(D.Y) < Radius + M->Def->Radius;
+		};
+		for (ADoomPlayer* P : DoomWorld->GetPlayers())
+		{
+			bOccupied |= !P->IsDead() && Blocks(P, 16.f);
+		}
+		for (const TWeakObjectPtr<ADoomMonster>& O : DoomWorld->GetMonsters())
+		{
+			bOccupied |= O.IsValid() && O != M && !O->IsDead() && Blocks(O.Get(), O->Def->Radius);
+		}
+		if (bOccupied)
+		{
+			continue;
+		}
+		// face the corpse for the raise, then go back after whoever we were fighting (vanilla keeps the
+		// target; turning on the monster just raised made arch-viles shoot their own work)
+		const TWeakObjectPtr<AActor> Fighting = Target;
 		Target = M.Get();
 		FaceTarget();
+		Target = Fighting;
 		M->Resurrect();
 		const FVector L = M->GetActorLocation();
 		DoomWorld->PlaySound(TEXT("SLOP"), &L);
@@ -586,7 +635,7 @@ bool ADoomMonster::VileTryRaise()
 bool ADoomMonster::CanBeRaised() const
 {
 	return State == EMonsterState::Dead && !Is(Def, TEXT("LostSoul")) && !Is(Def, TEXT("Cyberdemon"))
-		&& !Is(Def, TEXT("SpiderMastermind")) && !Is(Def, TEXT("ArchVile")) && !Is(Def, TEXT("PainElemental")) && !Is(Def, TEXT("BossBrain"))
+		&& !Is(Def, TEXT("SpiderMastermind")) && !Is(Def, TEXT("ArchVile")) && !Is(Def, TEXT("BossBrain"))
 		&& !Is(Def, TEXT("CommanderKeen"));
 }
 
@@ -613,6 +662,10 @@ void ADoomMonster::Resurrect()
 
 void ADoomMonster::Chase()
 {
+	if (ReactionTime > 0)
+	{
+		--ReactionTime; // once per A_Chase, not every tic
+	}
 	if (Threshold > 0)
 	{
 		--Threshold;
@@ -782,9 +835,12 @@ void ADoomMonster::DoAttack(bool bMelee)
 		break;
 	case EDoomAttack::Mancubus:
 	{
-		const float Spread = 11.25f * (1 + Sprite->FrameIndex() / 3);
-		Missile(TEXT("FatShot"), Spread);
-		Missile(TEXT("FatShot"), -Spread);
+		// A_FatAttack1/2/3 (the H frames of GHIGHIGH): one shot straight at the target with one 11.25
+		// degrees to one side, then 22.5 to the other, then a pair 5.6 degrees either side
+		static const float Volleys[3][2] = { { 0.f, 11.25f }, { 0.f, -22.5f }, { -5.625f, 5.625f } };
+		const float* V = Volleys[FMath::Clamp(Sprite->FrameIndex() / 3, 0, 2)];
+		Missile(TEXT("FatShot"), V[0]);
+		Missile(TEXT("FatShot"), V[1]);
 		break;
 	}
 	case EDoomAttack::Skull:

@@ -395,6 +395,19 @@ void DoomInfo::ResetTables()
 		ThingTable().Num(), ProjectileTable().Num(), WeaponTable().Num(), *GTablesSource);
 	GStrings.Reset();
 	GPars.Reset();
+	// vanilla par times (g_game.c pars / cpars; episode 4 has none); DeHackEd and UMAPINFO override them
+	static const int32 Pars[3][9] = {
+		{ 30, 75, 120, 90, 165, 180, 180, 30, 165 },
+		{ 90, 90, 90, 120, 90, 360, 240, 30, 170 },
+		{ 90, 45, 90, 150, 90, 90, 165, 30, 135 } };
+	static const int32 CPars[32] = {
+		30, 90, 120, 120, 90, 150, 120, 120, 270, 90, 210, 150, 150, 150, 210, 150,
+		420, 150, 210, 150, 240, 150, 180, 150, 150, 300, 330, 420, 300, 180, 120, 30 };
+	for (int32 e = 0; e < 3; ++e)
+	{
+		for (int32 m = 0; m < 9; ++m) GPars.Add(FString::Printf(TEXT("E%dM%d"), e + 1, m + 1), Pars[e][m]);
+	}
+	for (int32 m = 0; m < 32; ++m) GPars.Add(FString::Printf(TEXT("MAP%02d"), m + 1), CPars[m]);
 	GSpriteRenames.Reset();
 	GSoundRenames.Reset();
 }

@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "InputActionValue.h"
 #include "DoomInfo.h"
 #include "DoomPlayerState.h"
@@ -46,6 +47,17 @@ class UPointLightComponent;
 class UDoomWorld;
 class UDoomInputConfig;
 
+/** The marine's walking, as P_XYMovement / P_Thrust: on the ground the momentum keeps 0.90625 of
+ *  itself per tic and the input adds thrust (top speed 16.67 units per tic running, a long slide when
+ *  you let go, knockback that carries); in the air nothing changes it (no air control). */
+UCLASS()
+class DOOMUE_API UDoomPlayerMovement : public UCharacterMovementComponent
+{
+	GENERATED_BODY()
+public:
+	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
+};
+
 UCLASS()
 class DOOMUE_API ADoomPlayer : public ACharacter
 {
@@ -59,6 +71,7 @@ public:
 	void InitForLevel(UDoomWorld* InWorld, bool bPistolStart);
 	void DoomTic();
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void Landed(const FHitResult& Hit) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
@@ -186,7 +199,9 @@ private:
 	bool bRefire = false;
 	FVector2f LastDoomPos;
 	float BobPhase = 0;
-	float ViewHeightOffset = 0;
+	float ViewHeightOffset = 0;  // units below the eye height (step-ups, landing squat), P_CalcHeight
+	float ViewHeightDelta = 0;   // units per tic it recovers by
+	float LastFeetZ = 0;
 	int32 DeathTics = 0;
 	int32 SawIdle = 0;
 	int32 ReactionTime = 0;

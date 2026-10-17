@@ -310,6 +310,16 @@ bool UDoomWorld::LoadGame(int32 Slot)
 		LoadMap(Save->Map, true);
 		return false;
 	}
+	RefreshRestoredLevel();
+	ResetClock();
+	Flow().Phase = EDoomGameState::Playing;
+	ShowMessage(Slot <= 0 ? TEXT("Quickloaded.") : FString::Printf(TEXT("Loaded slot %d."), Slot));
+	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
+	return true;
+}
+
+void UDoomWorld::RefreshRestoredLevel()
+{
 	// geometry and lights follow the restored sectors
 	for (int32 s = 0; s < Map->Sectors.Num(); ++s) Level->SectorChanged(s);
 	for (int32 l = 0; l < Map->Lines.Num(); ++l) Level->LineChanged(l);
@@ -319,11 +329,6 @@ bool UDoomWorld::LoadGame(int32 Slot)
 	{
 		if (T.IsValid()) T->SnapToPlanes();
 	}
-	ResetClock();
-	Flow().Phase = EDoomGameState::Playing;
-	ShowMessage(Slot <= 0 ? TEXT("Quickloaded.") : FString::Printf(TEXT("Loaded slot %d."), Slot));
-	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
-	return true;
 }
 
 void UDoomWorld::RefreshSlots()

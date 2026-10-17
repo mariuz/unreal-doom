@@ -22,6 +22,9 @@ public:
 
 
 private:
+	/** Automap: lines the player can see become known, whether or not the map is open. */
+	void MarkSeenLines(class ADoomPlayer* P);
+	double NextSeenScan = 0;
 	void DrawPatch(const FDoomPicture* Pic, float X, float Y, bool bUseOffsets = true, FLinearColor Tint = FLinearColor::White);
 	void DrawPatchByName(const FString& Name, float X, float Y, bool bUseOffsets = true);
 	void DrawFullscreenPic(const FString& Name);
