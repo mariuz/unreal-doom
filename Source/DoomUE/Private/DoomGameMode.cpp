@@ -77,7 +77,8 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 	{
 		return;
 	}
-	Accumulator += Delta;
+	// a stopped clock (screenshot tests) runs no tics but still publishes the material globals
+	Accumulator = bClockStopped ? 0 : Accumulator + Delta;
 	while (Accumulator >= Doom::TicSeconds)
 	{
 		Accumulator -= Doom::TicSeconds;
@@ -344,15 +345,7 @@ void ADoomGameMode::StartPlay()
 			TestWad.Finalize();
 			FDoomMap TestMap;
 			const bool bOk = TestMap.Load(TestWad, MapName);
-			double Area = 0;
-			for (const FDoomSubsector& Ss : TestMap.Subsectors)
-			{
-				for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
-				{
-					const FVector2f A = Ss.Polygon[k] - Ss.Polygon[0], B = Ss.Polygon[k + 1] - Ss.Polygon[0];
-					Area += 0.5 * (A.X * B.Y - A.Y * B.X);
-				}
-			}
+			const double Area = TestMap.SubsectorArea();
 			UE_LOG(LogDoom, Display, TEXT("Maptest %s %s: %s, %s nodes, %d subsectors, area %.0f"), *FPaths::GetCleanFilename(File), *MapName,
 				bOk ? TEXT("ok") : TEXT("FAILED"), *TestMap.NodesFormat, TestMap.Subsectors.Num(), Area);
 		}
@@ -692,7 +685,7 @@ void ADoomGameMode::StartPlay()
 	if (FParse::Param(FCommandLine::Get(), TEXT("savetest")) && W->GetMap())
 	{
 		FTimerHandle T;
-		GetWorldTimerManager().SetTimer(T, [W]() { W->RunSaveTest(); }, 2.f, false);
+		GetWorldTimerManager().SetTimer(T, [W]() { W->RunSaveTest(nullptr); }, 2.f, false);
 	}
 
 	// -autotest[=seconds] [-autoyaw=deg]: screenshot Saved/Screenshots/autotest_<map>.png and quit

@@ -162,8 +162,14 @@ void UDoomWorld::Deinitialize()
 	Super::Deinitialize();
 }
 
-bool UDoomWorld::InitWads()
+bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 {
+	// the level, things and sprites point into the old graphics: a loaded map cannot outlive them
+	UnloadMap();
+	if (Wad.IsValid())
+	{
+		SetState(EDoomGameState::Title);
+	}
 	const UDoomSettings* Settings = GetDefault<UDoomSettings>();
 	auto Resolve = [](const FString& Name) -> FString
 	{
@@ -176,11 +182,18 @@ bool UDoomWorld::InitWads()
 	};
 
 	FString IWad = Settings->IWAD;
-	FParse::Value(FCommandLine::Get(), TEXT("-iwad="), IWad);
+	if (Setup && !Setup->IWad.IsEmpty())
+	{
+		IWad = Setup->IWad;
+	}
+	else if (!Setup)
+	{
+		FParse::Value(FCommandLine::Get(), TEXT("-iwad="), IWad);
+	}
 	IWadName = FPaths::GetCleanFilename(IWad).ToLower();
-	TArray<FString> PWads = Settings->PWADs;
+	TArray<FString> PWads = Setup ? Setup->PWads : Settings->PWADs;
 	FString FileArg;
-	if (FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg, false))
+	if (!Setup && FParse::Value(FCommandLine::Get(), TEXT("-file="), FileArg, false))
 	{
 		FileArg.ParseIntoArray(PWads, TEXT(","));
 	}
@@ -204,7 +217,11 @@ bool UDoomWorld::InitWads()
 	}
 	FString DehArg;
 	TArray<FString> DehFiles;
-	if (FParse::Value(FCommandLine::Get(), TEXT("-deh="), DehArg, false))
+	if (Setup)
+	{
+		for (const FString& F : Setup->DehFiles) DehFiles.Add(Resolve(F));
+	}
+	else if (FParse::Value(FCommandLine::Get(), TEXT("-deh="), DehArg, false))
 	{
 		DehArg.ParseIntoArray(DehFiles, TEXT(","));
 		for (FString& F : DehFiles) F = Resolve(F);

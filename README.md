@@ -160,6 +160,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/Architecture.md](docs/Architecture.md): how the port uses Unreal's gameplay framework
   (game mode, game state, player state, world subsystem), the 35 Hz clock, credit, saves, and
   map loading on worker threads.
+* [docs/Testing.md](docs/Testing.md): the automation tests (maps and node formats, DeHackEd /
+  Boom / UMAPINFO patches, save and load, level exits, map editing, screenshot comparisons), run
+  from the Session Frontend or with `Tools/run_tests.bat` in CI.
 * [docs/Multiplayer.md](docs/Multiplayer.md): co-op and deathmatch for up to 4 players: how to
   host and join, the rules, what replicates, and the two-process `-nettest`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
@@ -334,6 +337,14 @@ Game tables: `DA_DoomGameData` holds 115 things, 9 projectiles and 9 weapons. Wi
 to 777 and the starting bullets to 77 in the asset (an editor Python script) showed up in the
 game unchanged. `-savetest`, `-exittest`, `-edittest` and MAP30's `-endtest` pass with the asset.
 
+Automation tests ([docs/Testing.md](docs/Testing.md)): `Tools/run_tests.bat` runs 11 tests in
+about a minute: maps and node formats, the four patch kinds, save and load, the level exit, the map
+editing, and the classic and modern screenshots. All pass. With `-NullRHI` the screenshot tests skip.
+The classic screenshot matches its approved image exactly, and the modern one differs by about
+0.07%. A failing test makes the run exit non-zero (checked with a deliberately wrong expectation).
+Writing them found a crash: reloading the WADs while a map was loaded left the level pointing at
+freed graphics. `InitWads` now unloads the map first.
+
 Implemented but **not yet play-tested by hand**: everything interactive. That includes doors,
 lifts, floors, ceilings, crushers, stairs, donuts, switches, light specials, teleporters, exits,
 secrets, damaging floors, pickups, all nine weapons, monster AI and attacks, the automap, the
@@ -345,7 +356,6 @@ Not done yet (roughly in priority order):
 1. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 2. Packaged builds of maps played straight from the WAD (`-warp`, not imported) have no static mesh tiles; importing every map of a WAD (`-importmap=all`) covers them.
 3. Unreal practices worth adopting next:
-   * **Automation tests**: turn the `-savetest`, `-edittest`, `-maptest` and screenshot switches into `IMPLEMENT_SIMPLE_AUTOMATION_TEST` / functional tests, so they run from the Session Frontend and in CI.
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Enhanced Input assets**: the input actions and mapping context are made in code; saved `UInputAction` / `UInputMappingContext` assets would allow rebinding in the editor and per-platform mappings.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
