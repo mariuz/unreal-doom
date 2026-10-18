@@ -5,6 +5,9 @@
 #include "DoomSettings.h"
 #include "DoomUE.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "DoomPlayerController.h"
+#include "DoomInput.h"
 
 namespace
 {
@@ -104,6 +107,25 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("WARP TO: < %s >"), Maps.IsValidIndex(WarpIndex) ? *Maps[WarpIndex] : TEXT("-")) });
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("COLORS: %s"), S->bPaletteExact ? TEXT("EXACT") : TEXT("SMOOTH")) });
+		R.Add({ EKind::Choice, FString(), TEXT("CONTROLS") });
+		break;
+	}
+	case EMenuPage::Controls:
+	{
+		// one row per rebindable control with its keys, then a reset
+		const ADoomPlayerController* PC = Cast<ADoomPlayerController>(UGameplayStatics::GetPlayerController(W.GetWorld(), 0));
+		if (PC)
+		{
+			for (const ADoomPlayerController::FBinding& B : PC->GetBindings())
+			{
+				FMenuRow Row{ EKind::Choice, FString(), B.Label };
+				TArray<FString> Keys;
+				for (const FKey& K : B.Keys) Keys.Add(DoomInput::KeyLabel(K));
+				Row.ValueText = Keys.Num() ? FString::Join(Keys, TEXT(", ")) : TEXT("-");
+				R.Add(Row);
+			}
+		}
+		R.Add({ EKind::Choice, FString(), TEXT("RESET TO DEFAULTS") });
 		break;
 	}
 	case EMenuPage::Sound:
@@ -158,6 +180,7 @@ FIntPoint FDoomMenu::Origin() const
 	case EMenuPage::Episode:
 	case EMenuPage::Skill: return FIntPoint(48, 63);
 	case EMenuPage::Options: return FIntPoint(60, 37);
+	case EMenuPage::Controls: return FIntPoint(40, 28);
 	case EMenuPage::Sound: return FIntPoint(80, 64);
 	case EMenuPage::Load:
 	case EMenuPage::Save: return FIntPoint(80, 54);
@@ -249,9 +272,30 @@ void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
 	}
 }
 
+void FDoomMenu::CaptureKey(UDoomWorld& W, const FKey& Key)
+{
+	bCapturing = false;
+	if (Key == EKeys::Escape)
+	{
+		W.PlaySound(TEXT("SWTCHX"), nullptr);
+		return;
+	}
+	const TArray<DoomInput::FMappable>& Controls = DoomInput::Mappables();
+	ADoomPlayerController* PC = Cast<ADoomPlayerController>(UGameplayStatics::GetPlayerController(W.GetWorld(), 0));
+	if (PC && Controls.IsValidIndex(Item) && PC->Rebind(Controls[Item].Name, Key))
+	{
+		W.PlaySound(TEXT("PISTOL"), nullptr);
+	}
+	else
+	{
+		W.PlaySound(TEXT("OOF"), nullptr);
+	}
+}
+
 void FDoomMenu::Close(UDoomWorld& W)
 {
 	bEditing = false;
+	bCapturing = false;
 	Stack.Reset();
 	W.SetState(W.GetMap() ? EDoomGameState::Playing : EDoomGameState::Title);
 }
@@ -418,6 +462,19 @@ void FDoomMenu::Activate(UDoomWorld& W)
 {
 	switch (Page)
 	{
+	case EMenuPage::Controls:
+		if (Item >= DoomInput::Mappables().Num())
+		{
+			if (ADoomPlayerController* PC = Cast<ADoomPlayerController>(UGameplayStatics::GetPlayerController(W.GetWorld(), 0)))
+			{
+				PC->ResetBindings();
+			}
+		}
+		else
+		{
+			bCapturing = true; // the next key binds (ADoomPlayerController::InputKey -> CaptureKey)
+		}
+		return;
 	case EMenuPage::Main:
 	{
 		const bool bDoom2 = W.GetWad()->IsDoom2();
@@ -449,6 +506,7 @@ void FDoomMenu::Activate(UDoomWorld& W)
 	case EMenuPage::Options:
 		if (Item == 0) Push(W, EMenuPage::EndGame);
 		else if (Item == 4) Push(W, EMenuPage::Sound);
+		else if (Item == 9) Push(W, EMenuPage::Controls);
 		else if (Item == 7 && W.GetWad()->MapNames().IsValidIndex(WarpIndex))
 		{
 			Stack.Reset();

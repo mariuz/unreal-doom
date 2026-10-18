@@ -25,6 +25,9 @@ namespace DoomContent
 	bool Build(bool bForce, bool bMaterials = true, bool bEffects = true);
 	/** Writes UDoomGameData from the built-in tables when missing (or always with bOverwrite). */
 	bool BuildGameData(bool bOverwrite);
+	/** Saves the input actions and mapping contexts (DoomInput::Build) in /Game/Doom/Input when missing
+	 *  (or always with bOverwrite): editable in the editor, cooked into packaged games. */
+	bool BuildInput(bool bOverwrite);
 	/** Logs a Niagara system's lightweight emitters and their module properties (-dumpniagara=Path). */
 	void DumpNiagara(const FString& Path);
 	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */

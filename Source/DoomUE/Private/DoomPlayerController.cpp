@@ -9,6 +9,9 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
+#include "DoomInput.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
+#include "GameplayTagContainer.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "DoomPlayer.h"
 #include "UnrealClient.h"
@@ -20,13 +23,6 @@ namespace
 {
 	// the intermission tic by which the kills, items, secrets and time have all counted up (DoomHUD)
 	constexpr int32 IntermissionCountedTic = 150;
-
-	UInputAction* NewAction(UObject* Outer, const TCHAR* Name, EInputActionValueType Type)
-	{
-		UInputAction* A = NewObject<UInputAction>(Outer, Name);
-		A->ValueType = Type;
-		return A;
-	}
 }
 
 void ADoomPlayerController::CreateInput()
@@ -35,164 +31,112 @@ void ADoomPlayerController::CreateInput()
 	{
 		return;
 	}
-	MoveAction = NewAction(this, TEXT("IA_Move"), EInputActionValueType::Axis2D);
-	LookAction = NewAction(this, TEXT("IA_Look"), EInputActionValueType::Axis2D);
-	FireAction = NewAction(this, TEXT("IA_Fire"), EInputActionValueType::Boolean);
-	UseAction = NewAction(this, TEXT("IA_Use"), EInputActionValueType::Boolean);
-	RunAction = NewAction(this, TEXT("IA_Run"), EInputActionValueType::Boolean);
-	AutomapAction = NewAction(this, TEXT("IA_Automap"), EInputActionValueType::Boolean);
-	AutomapZoomAction = NewAction(this, TEXT("IA_AutomapZoom"), EInputActionValueType::Axis1D);
-	AutomapPanAction = NewAction(this, TEXT("IA_AutomapPan"), EInputActionValueType::Axis2D);
-	AutomapFollowAction = NewAction(this, TEXT("IA_AutomapFollow"), EInputActionValueType::Boolean);
-	AutomapBigAction = NewAction(this, TEXT("IA_AutomapBig"), EInputActionValueType::Boolean);
-	AutomapMarkAction = NewAction(this, TEXT("IA_AutomapMark"), EInputActionValueType::Boolean);
-	AutomapClearAction = NewAction(this, TEXT("IA_AutomapClearMarks"), EInputActionValueType::Boolean);
-	AutomapGridAction = NewAction(this, TEXT("IA_AutomapGrid"), EInputActionValueType::Boolean);
-	NextWeaponAction = NewAction(this, TEXT("IA_NextWeapon"), EInputActionValueType::Boolean);
-	PrevWeaponAction = NewAction(this, TEXT("IA_PrevWeapon"), EInputActionValueType::Boolean);
-	for (int32 i = 0; i < 7; ++i)
+	// the saved assets (/Game/Doom/Input, made by the content builder), else the same set built here
+	FDoomInputObjects In;
+	const bool bAssets = DoomInput::LoadAssets(In);
+	if (!bAssets)
 	{
-		SlotActions.Add(NewAction(this, *FString::Printf(TEXT("IA_Slot%d"), i + 1), EInputActionValueType::Boolean));
+		DoomInput::Build([this](UClass* Class, FName Name) { return NewObject<UObject>(this, Class, Name); }, In);
 	}
-	MenuUpAction = NewAction(this, TEXT("IA_MenuUp"), EInputActionValueType::Boolean);
-	MenuDownAction = NewAction(this, TEXT("IA_MenuDown"), EInputActionValueType::Boolean);
-	MenuLeftAction = NewAction(this, TEXT("IA_MenuLeft"), EInputActionValueType::Boolean);
-	MenuRightAction = NewAction(this, TEXT("IA_MenuRight"), EInputActionValueType::Boolean);
-	MenuSelectAction = NewAction(this, TEXT("IA_MenuSelect"), EInputActionValueType::Boolean);
-	MenuBackAction = NewAction(this, TEXT("IA_MenuBack"), EInputActionValueType::Boolean);
-	MenuCloseAction = NewAction(this, TEXT("IA_MenuClose"), EInputActionValueType::Boolean);
-	QuickSaveAction = NewAction(this, TEXT("IA_QuickSave"), EInputActionValueType::Boolean);
-	QuickLoadAction = NewAction(this, TEXT("IA_QuickLoad"), EInputActionValueType::Boolean);
-	for (int32 i = 0; i < 4; ++i)
-	{
-		PageActions.Add(NewAction(this, *FString::Printf(TEXT("IA_MenuF%d"), i + 1), EInputActionValueType::Boolean));
-	}
+	UE_LOG(LogDoom, Log, TEXT("Input: %s"), bAssets ? TEXT("the assets in /Game/Doom/Input") : TEXT("built in code (no assets in /Game/Doom/Input)"));
+	MoveAction = In.Move;
+	LookAction = In.Look;
+	FireAction = In.Fire;
+	UseAction = In.Use;
+	RunAction = In.Run;
+	AutomapAction = In.Automap;
+	AutomapZoomAction = In.AutomapZoom;
+	AutomapPanAction = In.AutomapPan;
+	AutomapFollowAction = In.AutomapFollow;
+	AutomapBigAction = In.AutomapBig;
+	AutomapMarkAction = In.AutomapMark;
+	AutomapClearAction = In.AutomapClear;
+	AutomapGridAction = In.AutomapGrid;
+	NextWeaponAction = In.NextWeapon;
+	PrevWeaponAction = In.PrevWeapon;
+	SlotActions = TArray<TObjectPtr<UInputAction>>(In.Slots);
+	MenuUpAction = In.MenuUp;
+	MenuDownAction = In.MenuDown;
+	MenuLeftAction = In.MenuLeft;
+	MenuRightAction = In.MenuRight;
+	MenuSelectAction = In.MenuSelect;
+	MenuBackAction = In.MenuBack;
+	MenuCloseAction = In.MenuClose;
+	QuickSaveAction = In.QuickSave;
+	QuickLoadAction = In.QuickLoad;
+	PageActions = TArray<TObjectPtr<UInputAction>>(In.Pages);
+	GameplayContext = In.Gameplay;
+	MenuContext = In.Menu;
+	AutomapPanContext = In.AutomapPanContext;
+}
 
-	GameplayContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Doom"));
-	auto Axis = [&](FKey Key, bool bSwizzle, bool bNegate)
-	{
-		FEnhancedActionKeyMapping& M = GameplayContext->MapKey(MoveAction, Key);
-		if (bSwizzle)
-		{
-			M.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(GameplayContext));
-		}
-		if (bNegate)
-		{
-			M.Modifiers.Add(NewObject<UInputModifierNegate>(GameplayContext));
-		}
-	};
-	// forward/back on Y (swizzled), strafe on X
-	Axis(EKeys::W, true, false);
-	Axis(EKeys::Up, true, false);
-	Axis(EKeys::S, true, true);
-	Axis(EKeys::Down, true, true);
-	Axis(EKeys::D, false, false);
-	Axis(EKeys::A, false, true);
-	{
-		FEnhancedActionKeyMapping& Pad = GameplayContext->MapKey(MoveAction, EKeys::Gamepad_Left2D);
-		(void)Pad;
-	}
-	GameplayContext->MapKey(LookAction, EKeys::Mouse2D);
-	{
-		FEnhancedActionKeyMapping& Pad = GameplayContext->MapKey(LookAction, EKeys::Gamepad_Right2D);
-		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(GameplayContext);
-		Neg->bX = false; Neg->bY = true; Neg->bZ = false;
-		Pad.Modifiers.Add(Neg);
-		// stick deflection is a turn rate: per second, not per frame (the old feel at 60 fps)
-		UInputModifierScalar* PadRate = NewObject<UInputModifierScalar>(GameplayContext);
-		PadRate->Scalar = FVector(60, 60, 1);
-		Pad.Modifiers.Add(PadRate);
-		Pad.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
-	}
-	{
-		// arrow keys turn, like Doom: a rate per second (the old per-frame 2.5 at 60 fps), so the
-		// frame rate doesn't change how fast you turn
-		FEnhancedActionKeyMapping& L = GameplayContext->MapKey(LookAction, EKeys::Left);
-		UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(GameplayContext);
-		L.Modifiers.Add(Neg);
-		UInputModifierScalar* Sc = NewObject<UInputModifierScalar>(GameplayContext);
-		Sc->Scalar = FVector(150, 150, 1);
-		L.Modifiers.Add(Sc);
-		L.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
-		FEnhancedActionKeyMapping& R = GameplayContext->MapKey(LookAction, EKeys::Right);
-		UInputModifierScalar* Sc2 = NewObject<UInputModifierScalar>(GameplayContext);
-		Sc2->Scalar = FVector(150, 150, 1);
-		R.Modifiers.Add(Sc2);
-		R.Modifiers.Add(NewObject<UInputModifierScaleByDeltaTime>(GameplayContext));
-	}
-	GameplayContext->MapKey(FireAction, EKeys::LeftMouseButton);
-	GameplayContext->MapKey(FireAction, EKeys::LeftControl);
-	GameplayContext->MapKey(FireAction, EKeys::Gamepad_RightTrigger);
-	GameplayContext->MapKey(UseAction, EKeys::E);
-	GameplayContext->MapKey(UseAction, EKeys::SpaceBar);
-	GameplayContext->MapKey(UseAction, EKeys::RightMouseButton);
-	GameplayContext->MapKey(UseAction, EKeys::Gamepad_FaceButton_Bottom);
-	GameplayContext->MapKey(RunAction, EKeys::LeftShift);
-	GameplayContext->MapKey(AutomapAction, EKeys::Tab);
-	GameplayContext->MapKey(AutomapAction, EKeys::Gamepad_Special_Left);
-	// the automap's keys (they do nothing while it is closed): = and - zoom, F follow, 0 the whole map,
-	// M mark, C clear the marks, G grid; the arrows pan when follow mode is off (AutomapPanContext)
-	GameplayContext->MapKey(AutomapZoomAction, EKeys::Equals);
-	GameplayContext->MapKey(AutomapZoomAction, EKeys::Add);
-	GameplayContext->MapKey(AutomapZoomAction, EKeys::Hyphen).Modifiers.Add(NewObject<UInputModifierNegate>(GameplayContext));
-	GameplayContext->MapKey(AutomapZoomAction, EKeys::Subtract).Modifiers.Add(NewObject<UInputModifierNegate>(GameplayContext));
-	GameplayContext->MapKey(AutomapFollowAction, EKeys::F);
-	GameplayContext->MapKey(AutomapBigAction, EKeys::Zero);
-	GameplayContext->MapKey(AutomapMarkAction, EKeys::M);
-	GameplayContext->MapKey(AutomapClearAction, EKeys::C);
-	GameplayContext->MapKey(AutomapGridAction, EKeys::G);
-	AutomapPanContext = NewObject<UInputMappingContext>(this, TEXT("IMC_DoomAutomapPan"));
-	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Right);
-	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Left).Modifiers.Add(NewObject<UInputModifierNegate>(AutomapPanContext));
-	AutomapPanContext->MapKey(AutomapPanAction, EKeys::Up).Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(AutomapPanContext));
-	{
-		FEnhancedActionKeyMapping& Down = AutomapPanContext->MapKey(AutomapPanAction, EKeys::Down);
-		Down.Modifiers.Add(NewObject<UInputModifierSwizzleAxis>(AutomapPanContext));
-		Down.Modifiers.Add(NewObject<UInputModifierNegate>(AutomapPanContext));
-	}
-	GameplayContext->MapKey(NextWeaponAction, EKeys::MouseScrollDown);
-	GameplayContext->MapKey(NextWeaponAction, EKeys::Gamepad_RightShoulder);
-	GameplayContext->MapKey(PrevWeaponAction, EKeys::MouseScrollUp);
-	GameplayContext->MapKey(PrevWeaponAction, EKeys::Gamepad_LeftShoulder);
-	const FKey Digits[7] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven };
-	for (int32 i = 0; i < 7; ++i)
-	{
-		GameplayContext->MapKey(SlotActions[i], Digits[i]);
-	}
-	GameplayContext->MapKey(QuickSaveAction, EKeys::F6);
-	GameplayContext->MapKey(PageActions[0], EKeys::F1);
-	GameplayContext->MapKey(PageActions[1], EKeys::F2);
-	GameplayContext->MapKey(PageActions[2], EKeys::F3);
-	GameplayContext->MapKey(PageActions[3], EKeys::F4);
-	GameplayContext->MapKey(QuickLoadAction, EKeys::F9);
-	GameplayContext->MapKey(MenuBackAction, EKeys::Escape);
-	GameplayContext->MapKey(MenuBackAction, EKeys::Gamepad_Special_Right);
+UEnhancedInputUserSettings* ADoomPlayerController::UserSettings() const
+{
+	const UEnhancedInputLocalPlayerSubsystem* Sub = GetLocalPlayer() ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()) : nullptr;
+	return Sub ? Sub->GetUserSettings() : nullptr;
+}
 
-	MenuContext = NewObject<UInputMappingContext>(this, TEXT("IMC_DoomMenu"));
-	MenuContext->MapKey(MenuUpAction, EKeys::Up);
-	MenuContext->MapKey(MenuUpAction, EKeys::W);
-	MenuContext->MapKey(MenuUpAction, EKeys::Gamepad_DPad_Up);
-	MenuContext->MapKey(MenuDownAction, EKeys::Down);
-	MenuContext->MapKey(MenuDownAction, EKeys::S);
-	MenuContext->MapKey(MenuDownAction, EKeys::Gamepad_DPad_Down);
-	MenuContext->MapKey(MenuLeftAction, EKeys::Left);
-	MenuContext->MapKey(MenuLeftAction, EKeys::A);
-	MenuContext->MapKey(MenuLeftAction, EKeys::Gamepad_DPad_Left);
-	MenuContext->MapKey(MenuRightAction, EKeys::Right);
-	MenuContext->MapKey(MenuRightAction, EKeys::D);
-	MenuContext->MapKey(MenuRightAction, EKeys::Gamepad_DPad_Right);
-	MenuContext->MapKey(MenuSelectAction, EKeys::Enter);
-	MenuContext->MapKey(MenuSelectAction, EKeys::Y);
-	MenuContext->MapKey(MenuBackAction, EKeys::N);
-	MenuContext->MapKey(MenuBackAction, EKeys::BackSpace);
-	MenuContext->MapKey(MenuSelectAction, EKeys::SpaceBar);
-	MenuContext->MapKey(MenuSelectAction, EKeys::LeftMouseButton);
-	MenuContext->MapKey(MenuSelectAction, EKeys::Gamepad_FaceButton_Bottom);
-	MenuContext->MapKey(QuickLoadAction, EKeys::F9);
-	// Esc (and Start) close the whole menu, as in Doom; Backspace, N and the gamepad's B go back one page
-	MenuContext->MapKey(MenuCloseAction, EKeys::Escape);
-	MenuContext->MapKey(MenuCloseAction, EKeys::Gamepad_Special_Right);
-	MenuContext->MapKey(MenuBackAction, EKeys::Gamepad_FaceButton_Right);
+TArray<ADoomPlayerController::FBinding> ADoomPlayerController::GetBindings() const
+{
+	TArray<FBinding> Out;
+	const UEnhancedInputUserSettings* Settings = UserSettings();
+	const UEnhancedPlayerMappableKeyProfile* Profile = Settings ? Settings->GetActiveKeyProfile() : nullptr;
+	for (const DoomInput::FMappable& M : DoomInput::Mappables())
+	{
+		FBinding B{ M.Name, M.Label };
+		if (Profile)
+		{
+			// in slot order (first, second...)
+			TArray<FPlayerKeyMapping> Rows = Profile->FindKeyMappingRow(M.Name) ? Profile->FindKeyMappingRow(M.Name)->Mappings.Array() : TArray<FPlayerKeyMapping>();
+			Rows.Sort([](const FPlayerKeyMapping& A, const FPlayerKeyMapping& C) { return (uint8)A.GetSlot() < (uint8)C.GetSlot(); });
+			for (const FPlayerKeyMapping& K : Rows)
+			{
+				if (K.GetCurrentKey().IsValid()) B.Keys.Add(K.GetCurrentKey());
+			}
+		}
+		else if (GameplayContext)
+		{
+			// no user settings (disabled): the context's own keys
+			for (const FEnhancedActionKeyMapping& K : GameplayContext->GetMappings())
+			{
+				if (K.IsPlayerMappable() && K.GetMappingName() == M.Name) B.Keys.Add(K.Key);
+			}
+		}
+		Out.Add(B);
+	}
+	return Out;
+}
+
+bool ADoomPlayerController::Rebind(FName Mapping, const FKey& Key)
+{
+	UEnhancedInputUserSettings* Settings = UserSettings();
+	if (!Settings || !Key.IsValid())
+	{
+		return false;
+	}
+	FMapPlayerKeyArgs Args;
+	Args.MappingName = Mapping;
+	Args.Slot = EPlayerMappableKeySlot::First;
+	Args.NewKey = Key;
+	FGameplayTagContainer Failure;
+	Settings->MapPlayerKey(Args, Failure);
+	Settings->ApplySettings();
+	Settings->SaveSettings();
+	return Failure.IsEmpty();
+}
+
+void ADoomPlayerController::ResetBindings()
+{
+	if (UEnhancedInputUserSettings* Settings = UserSettings())
+	{
+		FGameplayTagContainer Failure;
+		if (const UEnhancedPlayerMappableKeyProfile* Profile = Settings->GetActiveKeyProfile())
+		{
+			Settings->ResetKeyProfileIdToDefault(Profile->GetProfileIdString(), Failure);
+		}
+		Settings->ApplySettings();
+		Settings->SaveSettings();
+	}
 }
 
 void ADoomPlayerController::BeginPlay()
@@ -287,6 +231,14 @@ void ADoomPlayerController::ApplyContexts()
 	if (bContextsInitialized && bMenu == bMenuContextActive && bPan == bPanContextActive)
 	{
 		return;
+	}
+	if (!bContextsInitialized)
+	{
+		// its player-mappable keys (and the player's saved changes) join the user settings' key profile
+		if (UEnhancedInputUserSettings* Settings = Sub->GetUserSettings())
+		{
+			Settings->RegisterInputMappingContext(GameplayContext);
+		}
 	}
 	bContextsInitialized = true;
 	bMenuContextActive = bMenu;
@@ -403,6 +355,13 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 			return true; // swallowed: no menu navigation or game input while typing
 		}
 		return Super::InputKey(Params); // releases go through, so no key is left held down
+	}
+	// the Controls page waiting for a key: the next key or mouse button pressed is the new binding
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bCapturing && !W->bInputLocked
+		&& Params.Event == IE_Pressed && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
+	{
+		W->Menu.CaptureKey(*W, Params.Key);
+		return true;
 	}
 	// yes/no prompts (quit, end game, nightmare): only Y, Enter or the gamepad's A confirm; any other
 	// key or button cancels, as in Doom, so a stray click can't quit the game

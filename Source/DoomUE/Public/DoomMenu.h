@@ -9,7 +9,7 @@
 
 class UDoomWorld;
 
-enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, Load, Save, ReadThis, Quit, EndGame };
+enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, Load, Save, ReadThis, Quit, EndGame, Controls };
 
 struct FMenuRow
 {
@@ -20,6 +20,7 @@ struct FMenuRow
 	int32 Value = 0;        // sliders: 0..Max-1; the thermometer sits on the next (Gap) row
 	int32 Max = 0;
 	FString ValuePatch;     // toggles: M_MSGON / M_MSGOFF
+	FString ValueText;      // drawn to the right of Text (the Controls page's keys)
 	bool bEnabled = true;
 };
 
@@ -50,8 +51,13 @@ public:
 
 	TArray<FMenuRow> Rows(UDoomWorld& W) const;
 	TArray<FMenuTitle> Titles() const;
-	/** Top-left of the first row (Doom's menu x / y), rows are 16 pixels apart. */
+	/** Top-left of the first row (Doom's menu x / y), rows are RowHeight() pixels apart. */
 	FIntPoint Origin() const;
+	/** 16, as in Doom; the Controls page packs its long list tighter and scrolls. */
+	int32 RowHeight() const { return Page == EMenuPage::Controls ? 10 : 16; }
+	int32 VisibleRows() const { return Page == EMenuPage::Controls ? 15 : 100; }
+	/** The first row shown (the Controls page scrolls to keep the selection in view). */
+	int32 FirstVisibleRow(int32 NumRows) const { return FMath::Clamp(Item - VisibleRows() / 2, 0, FMath::Max(0, NumRows - VisibleRows())); }
 	TArray<FDoomEpisode> Episodes(UDoomWorld& W) const;
 	TArray<FString> HelpPages(UDoomWorld& W) const;
 	/** Text of a confirmation prompt (Nightmare, Quit, End Game), else empty. */
@@ -64,6 +70,11 @@ public:
 	static constexpr int32 MaxNameLength = 24;
 	/** A key while typing: Enter saves, Escape cancels, Backspace deletes, printable keys type. */
 	void EditKey(UDoomWorld& W, const FKey& Key);
+
+	/** The Controls page waits for the key to bind to the selected control. */
+	bool bCapturing = false;
+	/** That key: binds it (Escape cancels). */
+	void CaptureKey(UDoomWorld& W, const FKey& Key);
 
 private:
 	void Push(UDoomWorld& W, EMenuPage P);
