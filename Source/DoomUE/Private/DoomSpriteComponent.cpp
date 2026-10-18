@@ -101,6 +101,7 @@ void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
 
 void UDoomSpriteComponent::PlaySequence(const FString& Frames, int32 Tics, bool bInLoop, bool bFullBright)
 {
+	Wake(); // a new sequence animates
 	Seq = Frames.IsEmpty() ? FString(TEXT("A")) : Frames;
 	Index = 0;
 	TicsPerFrame = FMath::Max(1, Tics);
@@ -232,6 +233,22 @@ void UDoomSpriteComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	if (Cam)
 	{
 		UpdateVisual(Cam->GetCameraLocation());
+	}
+	// a finished corpse sleeps: no tick of its own, UDoomWorld faces it to the camera while it shows
+	if (bSleepWhenDone && bDone && !bLoop && bLevelBound && DoomWorld && !bSleeping)
+	{
+		bSleeping = true;
+		SetComponentTickEnabled(false);
+		DoomWorld->AddSleepingSprite(this);
+	}
+}
+
+void UDoomSpriteComponent::Wake()
+{
+	if (bSleeping)
+	{
+		bSleeping = false;
+		SetComponentTickEnabled(true); // UDoomWorld drops it from its list on the next pass
 	}
 }
 

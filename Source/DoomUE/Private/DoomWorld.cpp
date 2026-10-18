@@ -34,6 +34,8 @@
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
+#include "DoomSpriteComponent.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Misc/Paths.h"
@@ -1360,6 +1362,14 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 			}
 		};
 		for (ADoomPlayer* P : GetPlayers()) Lift(P);
+		if (M.Dir < 0)
+		{
+			// a lowering floor: resting corpses on it fall with it (their movement ticks again)
+			for (const TWeakObjectPtr<ADoomMonster>& Mon : Monsters)
+			{
+				if (Mon.IsValid() && Mon->IsCorpseAsleep() && Map->SectorAt(Mon->DoomPos()) == M.Sector) Mon->WakeCorpse();
+			}
+		}
 		for (const TWeakObjectPtr<ADoomMonster>& Mon : Monsters)
 		{
 			if (Mon.IsValid()) Lift(Mon.Get());
@@ -2849,6 +2859,36 @@ void UDoomWorld::ApplySideNet(const FDoomSideNet& N)
 		Level->LineChanged(S.Line);
 	}
 	bClientGeometryDirty = true;
+}
+
+void UDoomWorld::AddSleepingSprite(UDoomSpriteComponent* Sprite)
+{
+	SleepingSprites.Add(Sprite);
+}
+
+void UDoomWorld::Tick(float DeltaTime)
+{
+	if (IsNetClient())
+	{
+		ClientTick(DeltaTime);
+	}
+	// sleeping corpse sprites: only the ones on screen need turning to the camera (off screen, their
+	// rotation catches up the first frame they show)
+	const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0);
+	const FVector View = Cam ? Cam->GetCameraLocation() : FVector::ZeroVector;
+	for (int32 i = SleepingSprites.Num() - 1; i >= 0; --i)
+	{
+		UDoomSpriteComponent* S = SleepingSprites[i].Get();
+		if (!S || !S->IsSleeping())
+		{
+			SleepingSprites.RemoveAtSwap(i, EAllowShrinking::No); // gone, or awake and ticking again
+			continue;
+		}
+		if (Cam && S->WasRecentlyRendered(0.2f))
+		{
+			S->RefreshFacing(View);
+		}
+	}
 }
 
 void UDoomWorld::ClientTick(float DeltaTime)

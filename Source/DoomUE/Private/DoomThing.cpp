@@ -3,6 +3,7 @@
 #include "DoomWorld.h"
 #include "DoomPlayer.h"
 #include "DoomSpriteComponent.h"
+#include "DoomLevel.h" // ECC_DoomMonster, ECC_DoomMissile
 #include "DoomUE.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PointLightComponent.h"
@@ -77,6 +78,11 @@ void ADoomThing::InitThing(UDoomWorld* InWorld, const FDoomThingDef* InDef, floa
 	if (Def->Flags & EThingFlag::Pickup)
 	{
 		Capsule->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+		// engine profiles don't list the project's channels, which default to Block (DefaultEngine.ini):
+		// without these, every item was a 40-unit pillar to monsters (and corpses fell onto their own
+		// dropped clip) and missiles burst on ammo lying on the floor; in Doom both pass over items
+		Capsule->SetCollisionResponseToChannel(ECC_DoomMonster, ECR_Ignore);
+		Capsule->SetCollisionResponseToChannel(ECC_DoomMissile, ECR_Ignore);
 		Capsule->SetGenerateOverlapEvents(true);
 		Capsule->OnComponentBeginOverlap.AddDynamic(this, &ADoomThing::OnOverlap);
 	}

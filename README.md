@@ -399,6 +399,16 @@ A second pass (`feature/vanilla-differences`) fixed most of what the audit had l
   vanilla's computer-map lines; INTERPIC for episode 4; the bunny scroll the right way round; Esc
   closes the whole menu (Backspace / B go back one page).
 
+Corpses sleep (`perf/sleeping-corpses`): a corpse that has rested a second on a floor nothing is
+moving stops its Character Movement and actor ticks, and once its death frames are over its sprite
+stops ticking too; `UDoomWorld` turns the sleeping sprites to the camera in one loop, only the ones
+on screen. A floor lowering under a corpse, a resurrection or a loaded save wakes it. With every
+monster killed, E1M4's 126 corpses run no movement, actor or sprite ticks (378 tick functions
+before). Found on the way: pickups blocked monsters and missiles (the project's collision channels
+default to Block and engine profiles don't list them), so monsters couldn't cross items, corpses
+landed on their own dropped clip and rockets burst on ammo on the floor; the play-test's chase step
+now reaches 118 of 118 monsters on E1M4. A raised monster also stayed a corpse on network clients.
+
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
@@ -422,7 +432,6 @@ Not done yet (roughly in priority order):
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 4. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
-   * **Corpses tick as full Characters**: a dead monster keeps its Character Movement and sprite ticking. Stop the movement tick once the corpse has landed, and the sprite's once its death animation is over.
    * **Sleeping monsters**: monsters that haven't woken only look every 4 tics but their movement ticks every frame. A tick interval, or no tick until they wake, and the Significance Manager by distance for awake ones.
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Sector, fullbright and fuzz as Custom Primitive Data would let every sprite share one material and draw in batches.
    * **AI controllers that do nothing**: every monster spawns an `AAIController`, but the AI is Doom's own code. No auto-possession and `bRunPhysicsWithNoController` would save an actor per monster (check that movement input still works without one).

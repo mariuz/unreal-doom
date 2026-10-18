@@ -60,6 +60,15 @@ public:
 	void SetFullBright(bool b);
 	void SetFuzz(bool b);
 
+	/** Corpses: once a non-looping sequence (the death frames) is over, stop this component's tick and
+	 *  let UDoomWorld turn it to the camera in one batched pass, only while it is on screen. */
+	bool bSleepWhenDone = false;
+	bool IsSleeping() const { return bSleeping; }
+	/** Back to ticking every frame (a new sequence, a resurrection, a corpse carried by a floor). */
+	void Wake();
+	/** The batched pass: face the camera and pick the rotation, as the tick would. */
+	void RefreshFacing(const FVector& ViewLocation) { UpdateVisual(ViewLocation); }
+
 	/** Save games: sprite prefix, sequence, frame, timing, brightness and fuzz. */
 	void DoomSerialize(FArchive& Ar);
 
@@ -78,6 +87,7 @@ private:
 	uint8 LastSerial = 0;
 	float ClientTicTime = 0;
 	bool bLevelBound = false;
+	bool bSleeping = false;
 
 	void UpdateVisual(const FVector& ViewLocation);
 

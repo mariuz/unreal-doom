@@ -35,6 +35,11 @@ public:
 
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 	virtual void Landed(const FHitResult& Hit) override;
+	/** A corpse at rest stops its Character Movement and actor ticks (hundreds of them on slaughter
+	 *  maps); a floor lowering under it, or a resurrection, starts them again. */
+	void WakeCorpse();
+	bool IsCorpseAsleep() const { return bCorpseAsleep; }
+
 	/** Vanilla mobjinfo mass, for knockback. */
 	static float MonsterMass(const FDoomThingDef* D);
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -102,6 +107,8 @@ private:
 	mutable int32 FloatGoalTics = 0;
 	/** The target when it died (a pain elemental's souls go after it). */
 	TWeakObjectPtr<AActor> LastTarget;
+	bool bCorpseAsleep = false;
+	int32 CorpseRestTics = 0;
 	void NewChaseDir();
 	void StartState(EMonsterState S);
 	void DoAttack(bool bMelee);
