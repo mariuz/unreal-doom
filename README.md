@@ -426,8 +426,15 @@ Not done yet (roughly in priority order):
    attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
-2. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
-3. Unreal practices worth adopting next:
+2. **Easier level design** in the Unreal editor (today: things and sector overrides; walls, textures and line specials still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
+   * **Line edits**: a *Doom Line Edit* actor, like the sector edit, overriding a line's special, tag, flags (impassable, secret, block monsters) and its upper, middle and lower textures.
+   * **Connections in the viewport**: lines from each trigger to the sectors it tags, sectors coloured by special (secret, damaging, door, lift), ghosts of where doors and lifts travel.
+   * **A map checker** in the Message Log: tags pointing at nothing, triggers without a special, missing textures, open sectors, unreachable keys, skills without a player start; each entry selects its actor.
+   * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
+   * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.
+   * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines, with floors triangulated directly instead of from BSP subsectors (or a bundled node builder).
+3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
+4. Unreal practices worth adopting next:
    * **Enhanced Input assets and rebinding**: the input actions and mapping contexts are built in code (`ADoomPlayerController::CreateInput`), so keys can't be rebound and new bindings compete for free letters (the automap's = - F 0 M C G). Saved `UInputAction` / `UInputMappingContext` assets plus `UEnhancedInputUserSettings` would give a rebind page in the menu and per-platform mappings.
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
    * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
@@ -435,9 +442,11 @@ Not done yet (roughly in priority order):
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
-4. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
+5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **Sleeping monsters**: monsters that haven't woken only look every 4 tics but their movement ticks every frame. A tick interval, or no tick until they wake, and the Significance Manager by distance for awake ones.
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Sector, fullbright and fuzz as Custom Primitive Data would let every sprite share one material and draw in batches.
    * **AI controllers that do nothing**: every monster spawns an `AAIController`, but the AI is Doom's own code. No auto-possession and `bRunPhysicsWithNoController` would save an actor per monster (check that movement input still works without one).
    * **Sight checks**: `CheckSight` traces through physics every time; Doom's REJECT lump (sector pairs that can never see each other) would skip most of them for free.
+   * **Effect actors from a pool**: every bullet puff, blood splat and teleport fog spawns an actor and destroys it moments later (`SpawnEffect`); the chaingun and super shotgun make dozens a second. A small pool (or Niagara bursts in the modern renderer) would spare the spawning and garbage collection.
+   * **Automap line marking**: `MarkSeenLines` traces to every nearby line every 0.15 s; lines already known never need testing again, and big open maps want a budget per pass.
    * **Moving sectors**: a moving door or lift dirties its chunk, which regenerates its mesh every tic. Doors and lifts as separate components moved by transform (or World Position Offset) would regenerate nothing; check in Insights whether it matters.

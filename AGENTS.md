@@ -76,7 +76,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 * **Privacy:** don't take screenshots of the desktop (it shows the owner's browser and other apps).
   Use in-engine screenshots only.
 * Decisions waiting on the owner:
-  * Roadmap item 2, DeHackEd frame and code-pointer edits, needs Doom's GPL state table. Bringing
+  * Roadmap item 3, DeHackEd frame and code-pointer edits, needs Doom's GPL state table. Bringing
     it in is the owner's licensing call.
   * Ask before adding third-party content.
 
