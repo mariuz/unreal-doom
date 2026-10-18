@@ -62,6 +62,8 @@ public:
 	const FDoomPicture* Flat(FName Name);
 	/** Every flat name in lump order (editor lists). */
 	const TArray<FName>& FlatNames() const { return FlatOrder; }
+	/** The WAD's wall textures, in TEXTURE1/2 order. */
+	const TArray<FName>& TextureNames() const { return TexOrder; }
 	/** A patch lump (HUD graphics, menu, etc). */
 	const FDoomPicture* Patch(const FString& LumpName);
 	/** Sprite frame: prefix "TROO", frame 'A', rotation 1..8 (0 = any). */

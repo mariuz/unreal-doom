@@ -413,6 +413,14 @@ glowing items keep ticking: 77 to 144 fewer sprite ticks per map (E1M1: 121 of i
 the classic screenshot still pixel-exact (the idle face now takes its random numbers from the tic,
 so it repeats run to run as vanilla's M_Random does).
 
+Level design in the editor (`feature/line-edits`): a *Doom Line Edit* actor overrides a line's
+special, tag, flags and both sides' textures (a shared side is copied first), and the viewport draws
+what the specials do: a line from each trigger to the sectors it tags and sector outlines coloured by
+kind (doors, lifts, teleporters, crushers, floors, lights, secrets, damaging floors), with a red cross
+on tags that point at nothing. `-edittest` now also turns E1M1's first door line into an impassable
+wall with a new texture and checks the overlay (222 lines on E1M1); playing the saved level applies
+the line edit.
+
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
@@ -427,8 +435,7 @@ Not done yet (roughly in priority order):
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
 2. **Easier level design** in the Unreal editor (today: things and sector overrides; walls, textures and line specials still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
-   * **Line edits**: a *Doom Line Edit* actor, like the sector edit, overriding a line's special, tag, flags (impassable, secret, block monsters) and its upper, middle and lower textures.
-   * **Connections in the viewport**: lines from each trigger to the sectors it tags, sectors coloured by special (secret, damaging, door, lift), ghosts of where doors and lifts travel.
+   * **Ghosts of moving sectors** in the viewport: where doors open to and lifts lower to, next to the connections overlay (done: line edits and the overlay, see below).
    * **A map checker** in the Message Log: tags pointing at nothing, triggers without a special, missing textures, open sectors, unreachable keys, skills without a player start; each entry selects its actor.
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
    * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.

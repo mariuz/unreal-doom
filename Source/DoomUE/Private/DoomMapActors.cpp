@@ -11,6 +11,7 @@
 #include "Components/BillboardComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Components/LineBatchComponent.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "Engine/Texture2D.h"
@@ -135,6 +136,10 @@ void ADoomMapActor::BeginPlay()
 	// the game builds its own geometry (with collision, movers and baking) through UDoomWorld
 	ClearGeometry();
 	PreviewMap.Reset();
+	if (Overlay)
+	{
+		Overlay->Flush();
+	}
 }
 
 void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
@@ -150,6 +155,21 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 		It->Apply(InMap);
 		++Edits;
 	}
+	int32 LineEdits = 0;
+	for (TActorIterator<ADoomLineEdit> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		It->Apply(InMap);
+		++LineEdits;
+	}
+	if (LineEdits > 0)
+	{
+		// specials may have been added or removed: the lines that crossings check
+		InMap.SpecialLines.Reset();
+		for (int32 i = 0; i < InMap.Lines.Num(); ++i)
+		{
+			if (InMap.Lines[i].Special != 0) InMap.SpecialLines.Add(i);
+		}
+	}
 	int32 Markers = 0;
 	if (bUseThingMarkers)
 	{
@@ -164,12 +184,38 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 			InMap.Things = MoveTemp(Things);
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%s: %d sector edits, %d thing markers from the level"), *MapName, Edits, Markers);
+	UE_LOG(LogDoom, Log, TEXT("%s: %d sector edits, %d line edits, %d thing markers from the level"), *MapName, Edits, LineEdits, Markers);
 }
 
 int32 ADoomMapActor::SectorAtLocation(const FVector& Location) const
 {
 	return PreviewMap ? PreviewMap->SectorAt(Doom::ToDoom2D(Location)) : INDEX_NONE;
+}
+
+int32 ADoomMapActor::NumConnectionLines() const
+{
+	return Overlay ? Overlay->BatchedLines.Num() : 0;
+}
+
+int32 ADoomMapActor::LineNearLocation(const FVector& Location) const
+{
+	if (!PreviewMap)
+	{
+		return INDEX_NONE;
+	}
+	const FVector2f P = Doom::ToDoom2D(Location);
+	int32 Best = INDEX_NONE;
+	float BestDist = TNumericLimits<float>::Max();
+	for (int32 i = 0; i < PreviewMap->Lines.Num(); ++i)
+	{
+		const float D = PreviewMap->DistanceToLine(P, i);
+		if (D < BestDist)
+		{
+			BestDist = D;
+			Best = i;
+		}
+	}
+	return Best;
 }
 
 void ADoomMapActor::RequestPreview()
@@ -211,6 +257,10 @@ void ADoomMapActor::RebuildPreview()
 		PreviewMap.Reset();
 		return;
 	}
+	if (Overlay)
+	{
+		Overlay->Flush();
+	}
 	if (!bShowPreview)
 	{
 		return; // keep the map data for sector lookups only
@@ -230,6 +280,138 @@ void ADoomMapActor::RebuildPreview()
 	TSet<int32> Movable;
 	UDoomWorld::ComputeMovableSectors(*PreviewMap, Movable);
 	Build(*PreviewMap, *G, Movable, bPreviewModern, FDoomGraphics::SkyTextureFor(MapName));
+	if (bShowConnections)
+	{
+		DrawConnections(*PreviewMap);
+	}
+}
+
+namespace
+{
+	enum class ESpecialKind : uint8 { None, Door, Lift, Teleport, Crusher, Floor, Light, Exit };
+
+	/** What a vanilla line special does, roughly, for the viewport overlay. */
+	ESpecialKind KindOf(int32 Special)
+	{
+		static const TSet<int32> Doors = { 1, 2, 3, 4, 16, 26, 27, 28, 29, 31, 32, 33, 34, 42, 46, 50, 61, 63, 75, 76, 86, 90, 99,
+			103, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 133, 134, 135, 136, 137 };
+		static const TSet<int32> Lifts = { 10, 14, 15, 20, 21, 22, 47, 53, 54, 62, 66, 67, 68, 87, 88, 89, 95, 120, 121, 122, 123 };
+		static const TSet<int32> Teleports = { 39, 97, 125, 126 };
+		static const TSet<int32> Crushers = { 6, 25, 40, 41, 43, 44, 49, 57, 72, 73, 74, 77, 141 };
+		static const TSet<int32> Lights = { 12, 13, 17, 35, 79, 80, 81, 104, 138, 139 };
+		static const TSet<int32> Exits = { 11, 51, 52, 124 };
+		if (Special == 0) return ESpecialKind::None;
+		if (Doors.Contains(Special)) return ESpecialKind::Door;
+		if (Lifts.Contains(Special)) return ESpecialKind::Lift;
+		if (Teleports.Contains(Special)) return ESpecialKind::Teleport;
+		if (Crushers.Contains(Special)) return ESpecialKind::Crusher;
+		if (Lights.Contains(Special)) return ESpecialKind::Light;
+		if (Exits.Contains(Special)) return ESpecialKind::Exit;
+		return ESpecialKind::Floor; // floors, ceilings, stairs, donuts
+	}
+
+	FLinearColor ColorOf(ESpecialKind K)
+	{
+		switch (K)
+		{
+		case ESpecialKind::Door: return FLinearColor(0.15f, 0.45f, 1.f);
+		case ESpecialKind::Lift: return FLinearColor(0.f, 0.9f, 0.9f);
+		case ESpecialKind::Teleport: return FLinearColor(1.f, 0.35f, 0.75f);
+		case ESpecialKind::Crusher: return FLinearColor(1.f, 0.15f, 0.1f);
+		case ESpecialKind::Light: return FLinearColor(1.f, 0.95f, 0.3f);
+		case ESpecialKind::Exit: return FLinearColor(1.f, 1.f, 1.f);
+		default: return FLinearColor(1.f, 0.55f, 0.1f);
+		}
+	}
+
+	bool IsManualDoor(int32 Special)
+	{
+		return Special == 1 || Special == 26 || Special == 27 || Special == 28 || Special == 31 || Special == 32
+			|| Special == 33 || Special == 34 || Special == 117 || Special == 118;
+	}
+}
+
+void ADoomMapActor::DrawConnections(const FDoomMap& InMap)
+{
+#if WITH_EDITOR
+	if (!Overlay)
+	{
+		Overlay = NewObject<ULineBatchComponent>(this, TEXT("Connections"), RF_Transient);
+		Overlay->SetupAttachment(RootComponent);
+		Overlay->bIsEditorOnly = true;
+		Overlay->SetHiddenInGame(true);
+		Overlay->RegisterComponent();
+	}
+	Overlay->Flush();
+	TArray<FBatchedLine> Lines;
+	const float S = Doom::Scale;
+	auto Outline = [&](int32 Sector, const FLinearColor& C)
+	{
+		const FDoomSector& Sec = InMap.Sectors[Sector];
+		for (int32 L : Sec.Lines)
+		{
+			const FDoomLine& Li = InMap.Lines[L];
+			Lines.Emplace(Doom::ToUE(InMap.V(Li.V1), Sec.Floor + 2.f), Doom::ToUE(InMap.V(Li.V2), Sec.Floor + 2.f), C, 0.f, 3.f * S, SDPG_World);
+		}
+	};
+	// what happens in each sector: the strongest kind of special that works on it
+	TArray<ESpecialKind> SectorKind;
+	SectorKind.Init(ESpecialKind::None, InMap.Sectors.Num());
+	TMultiMap<int32, int32> ByTag;
+	for (int32 s = 0; s < InMap.Sectors.Num(); ++s)
+	{
+		if (InMap.Sectors[s].Tag != 0) ByTag.Add(InMap.Sectors[s].Tag, s);
+	}
+	for (int32 i = 0; i < InMap.Lines.Num(); ++i)
+	{
+		const FDoomLine& L = InMap.Lines[i];
+		const ESpecialKind K = KindOf(L.Special);
+		if (K == ESpecialKind::None || K == ESpecialKind::Exit)
+		{
+			continue;
+		}
+		const FVector2f Mid = (InMap.V(L.V1) + InMap.V(L.V2)) * 0.5f;
+		const float MidZ = L.FrontSector != INDEX_NONE ? InMap.Sectors[L.FrontSector].Floor + 32.f : 32.f;
+		if (IsManualDoor(L.Special))
+		{
+			if (L.BackSector != INDEX_NONE) SectorKind[L.BackSector] = K; // the door is the sector behind
+			continue;
+		}
+		TArray<int32> Targets;
+		ByTag.MultiFind(L.Tag, Targets);
+		for (int32 T : Targets)
+		{
+			const FDoomSector& Sec = InMap.Sectors[T];
+			// the trigger to the sector it works on, drawn over the walls
+			Lines.Emplace(Doom::ToUE(Mid, MidZ), Doom::ToUE(Sec.Center, Sec.Floor + 32.f), ColorOf(K), 0.f, 2.f * S, SDPG_Foreground);
+			SectorKind[T] = K;
+		}
+		if (Targets.Num() == 0 && L.Tag != 0)
+		{
+			// a tag that points at nothing: a short red cross on the trigger
+			const FVector C = Doom::ToUE(Mid, MidZ);
+			Lines.Emplace(C + FVector(-16, -16, 0) * S, C + FVector(16, 16, 0) * S, FLinearColor::Red, 0.f, 3.f * S, SDPG_Foreground);
+			Lines.Emplace(C + FVector(-16, 16, 0) * S, C + FVector(16, -16, 0) * S, FLinearColor::Red, 0.f, 3.f * S, SDPG_Foreground);
+		}
+	}
+	for (int32 s = 0; s < InMap.Sectors.Num(); ++s)
+	{
+		const int32 Special = InMap.Sectors[s].Special;
+		if (Special == 9)
+		{
+			Outline(s, FLinearColor(0.85f, 0.2f, 1.f)); // secret
+		}
+		else if (Special == 4 || Special == 5 || Special == 7 || Special == 11 || Special == 16)
+		{
+			Outline(s, FLinearColor(0.2f, 1.f, 0.2f)); // damaging floor
+		}
+		else if (SectorKind[s] != ESpecialKind::None)
+		{
+			Outline(s, ColorOf(SectorKind[s]));
+		}
+	}
+	Overlay->DrawLines(Lines);
+#endif
 }
 
 void ADoomMapActor::ImportThings()
@@ -272,6 +454,35 @@ void ADoomMapActor::ImportThings()
 	}
 	UE_LOG(LogDoom, Log, TEXT("%s: %d thing markers"), *MapName, Fresh.Things.Num());
 	RequestPreview();
+#endif
+}
+
+void ADoomMapActor::AddLineEdit()
+{
+#if WITH_EDITOR
+	UWorld* World = GetWorld();
+	if (!World || !PreviewMap)
+	{
+		return;
+	}
+	const FVector View = World->ViewLocationsRenderedLastFrame.Num() ? World->ViewLocationsRenderedLastFrame[0] : GetActorLocation();
+	const int32 Li = LineNearLocation(View);
+	if (Li < 0)
+	{
+		return;
+	}
+	const FDoomLine& L = PreviewMap->Lines[Li];
+	const FVector2f Mid = (PreviewMap->V(L.V1) + PreviewMap->V(L.V2)) * 0.5f;
+	const float Floor = L.FrontSector != INDEX_NONE ? PreviewMap->Sectors[L.FrontSector].Floor : 0.f;
+	FActorSpawnParameters SP;
+	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (ADoomLineEdit* E = World->SpawnActor<ADoomLineEdit>(ADoomLineEdit::StaticClass(), FTransform(Doom::ToUE(Mid, Floor + 32.f)), SP))
+	{
+		E->Line = Li;
+		E->ReadFromLine();
+		E->SetActorLabel(FString::Printf(TEXT("Line %d"), Li));
+		E->SetFolderPath(TEXT("Doom/Line Edits"));
+	}
 #endif
 }
 
@@ -632,6 +843,188 @@ void ADoomSectorEdit::PostEditMove(bool bFinished)
 	if (bFinished)
 	{
 		Refresh(true);
+	}
+}
+#endif
+
+// ------------------------------------------------------------------------------------------------
+// ADoomLineEdit
+// ------------------------------------------------------------------------------------------------
+
+ADoomLineEdit::ADoomLineEdit()
+{
+	PrimaryActorTick.bCanEverTick = false;
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	Label = CreateDefaultSubobject<UTextRenderComponent>(TEXT("Label"));
+	Label->SetupAttachment(RootComponent);
+	Label->SetHorizontalAlignment(EHTA_Center);
+	Label->SetWorldSize(40.f);
+	Label->SetTextRenderColor(FColor(120, 220, 255));
+	Label->SetHiddenInGame(true);
+	Label->bIsEditorOnly = true;
+	SetHidden(true);
+#if WITH_EDITORONLY_DATA
+	if (UBillboardComponent* Icon = CreateEditorOnlyDefaultSubobject<UBillboardComponent>(TEXT("Icon")))
+	{
+		Icon->SetupAttachment(RootComponent);
+		static ConstructorHelpers::FObjectFinder<UTexture2D> Note(TEXT("/Engine/EditorResources/S_Note"));
+		if (Note.Succeeded()) Icon->SetSprite(Note.Object);
+	}
+#endif
+}
+
+void ADoomLineEdit::Apply(FDoomMap& Map) const
+{
+	if (!Map.Lines.IsValidIndex(Line))
+	{
+		return;
+	}
+	FDoomLine& L = Map.Lines[Line];
+	if (bSpecial) L.Special = (int16)Special;
+	if (bTag) L.Tag = (int16)Tag;
+	if (bFlags)
+	{
+		using namespace DoomLineFlags;
+		uint16 F = L.Flags & ~(Blocking | BlockMonsters | Secret | SoundBlock | DontDraw | DontPegTop | DontPegBottom);
+		if (bImpassable) F |= Blocking;
+		if (bBlockMonsters) F |= BlockMonsters;
+		if (bSecret) F |= Secret;
+		if (bBlockSound) F |= SoundBlock;
+		if (bNotOnAutomap) F |= DontDraw;
+		if (bUpperUnpegged) F |= DontPegTop;
+		if (bLowerUnpegged) F |= DontPegBottom;
+		L.Flags = F;
+	}
+	// a side shared with other lines (WAD packing) gets its own copy before its textures change
+	auto Side = [&Map, this](int32 s) -> FDoomSide*
+	{
+		int32 Si = Map.Lines[Line].Side[s];
+		if (!Map.Sides.IsValidIndex(Si))
+		{
+			return nullptr;
+		}
+		for (int32 i = 0; i < Map.Lines.Num(); ++i)
+		{
+			if (i != Line && (Map.Lines[i].Side[0] == Si || Map.Lines[i].Side[1] == Si))
+			{
+				const FDoomSide Copy = Map.Sides[Si];
+				Si = Map.Sides.Add(Copy);
+				Map.Lines[Line].Side[s] = Si;
+				Map.Sides[Si].Line = Line;
+				break;
+			}
+		}
+		return &Map.Sides[Si];
+	};
+	auto Tex = [](FName N) { return (N.IsNone() || N == TEXT("-")) ? NAME_None : N; };
+	if (bFrontUpper || bFrontMiddle || bFrontLower)
+	{
+		if (FDoomSide* F = Side(0))
+		{
+			if (bFrontUpper) F->Upper = Tex(FrontUpper);
+			if (bFrontMiddle) F->Middle = Tex(FrontMiddle);
+			if (bFrontLower) F->Lower = Tex(FrontLower);
+		}
+	}
+	if (bBackUpper || bBackMiddle || bBackLower)
+	{
+		if (FDoomSide* B = Side(1))
+		{
+			if (bBackUpper) B->Upper = Tex(BackUpper);
+			if (bBackMiddle) B->Middle = Tex(BackMiddle);
+			if (bBackLower) B->Lower = Tex(BackLower);
+		}
+	}
+}
+
+void ADoomLineEdit::ReadFromLine()
+{
+	const ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld());
+	// the WAD's own values, not the preview's (which has this actor's overrides applied)
+	FDoomMap Fresh;
+	if (!MapActor || !DoomEditorData::Wad() || !Fresh.Load(*DoomEditorData::Wad(), MapActor->MapName) || !Fresh.Lines.IsValidIndex(Line))
+	{
+		return;
+	}
+	Modify();
+	const FDoomLine& L = Fresh.Lines[Line];
+	Special = L.Special;
+	Tag = L.Tag;
+	using namespace DoomLineFlags;
+	bImpassable = (L.Flags & Blocking) != 0;
+	bBlockMonsters = (L.Flags & BlockMonsters) != 0;
+	bSecret = (L.Flags & Secret) != 0;
+	bBlockSound = (L.Flags & SoundBlock) != 0;
+	bNotOnAutomap = (L.Flags & DontDraw) != 0;
+	bUpperUnpegged = (L.Flags & DontPegTop) != 0;
+	bLowerUnpegged = (L.Flags & DontPegBottom) != 0;
+	auto Name = [](FName N) { return N.IsNone() ? FName(TEXT("-")) : N; };
+	if (Fresh.Sides.IsValidIndex(L.Side[0]))
+	{
+		const FDoomSide& F = Fresh.Sides[L.Side[0]];
+		FrontUpper = Name(F.Upper); FrontMiddle = Name(F.Middle); FrontLower = Name(F.Lower);
+	}
+	if (Fresh.Sides.IsValidIndex(L.Side[1]))
+	{
+		const FDoomSide& B = Fresh.Sides[L.Side[1]];
+		BackUpper = Name(B.Upper); BackMiddle = Name(B.Middle); BackLower = Name(B.Lower);
+	}
+	Refresh(false, false);
+}
+
+TArray<FString> ADoomLineEdit::GetTextureNames()
+{
+	TArray<FString> Names = { TEXT("-") };
+	if (FDoomGraphics* G = DoomEditorData::Graphics())
+	{
+		for (FName N : G->TextureNames())
+		{
+			Names.Add(N.ToString());
+		}
+	}
+	return Names;
+}
+
+void ADoomLineEdit::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	Refresh(false, Line == INDEX_NONE);
+}
+
+void ADoomLineEdit::Refresh(bool bRebuild, bool bPickLine)
+{
+	// editor feedback only (the label is an editor-only component, stripped from game worlds)
+	if (!GetWorld() || GetWorld()->IsGameWorld() || !Label)
+	{
+		return;
+	}
+	ADoomMapActor* MapActor = ADoomMapActor::Find(GetWorld());
+	if (bPickLine && MapActor && MapActor->GetPreviewMap())
+	{
+		Line = MapActor->LineNearLocation(GetActorLocation());
+	}
+	const int32 ShownSpecial = bSpecial ? Special : -1;
+	Label->SetText(FText::FromString(Line < 0 ? FString(TEXT("no line"))
+		: ShownSpecial > 0 ? FString::Printf(TEXT("Line %d: special %d"), Line, ShownSpecial) : FString::Printf(TEXT("Line %d"), Line)));
+	if (bRebuild && MapActor)
+	{
+		MapActor->RequestPreview();
+	}
+}
+
+#if WITH_EDITOR
+void ADoomLineEdit::PostEditChangeProperty(FPropertyChangedEvent& Event)
+{
+	Super::PostEditChangeProperty(Event);
+	Refresh(true, false);
+}
+
+void ADoomLineEdit::PostEditMove(bool bFinished)
+{
+	Super::PostEditMove(bFinished);
+	if (bFinished)
+	{
+		Refresh(true, true); // moved: it edits the line it now stands by
 	}
 }
 #endif

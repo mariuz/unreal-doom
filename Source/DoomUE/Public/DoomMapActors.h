@@ -10,6 +10,10 @@
 //    them, change their type from a list, or set their skill / ambush flags.
 //  * ADoomSectorEdit actors, dropped into any room: they override that sector's floor and
 //    ceiling heights, light, flats, special and tag ("Read From Sector" fills in the current values).
+//  * ADoomLineEdit actors, placed by a line: they override its special, tag, flags and the upper,
+//    middle and lower textures of both sides ("Read From Line" fills in the current values).
+//  * In the viewport, lines from each trigger to the sectors it works on, and sector outlines
+//    coloured by what happens there (doors, lifts, secrets, damaging floors...).
 //  * Baked static mesh tiles of the level's static geometry (/Game/Doom/Maps/<MAP>_Tiles), saved
 //    at import or with "Bake Static Meshes": the modern renderer draws them with distance fields
 //    for Lumen, also in packaged builds (which cannot bake meshes at runtime).
@@ -25,6 +29,7 @@
 #include "DoomMapActors.generated.h"
 
 class UBillboardComponent;
+class ULineBatchComponent;
 class UArrowComponent;
 class UTextRenderComponent;
 class FDoomWad;
@@ -55,6 +60,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Doom|Preview")
 	bool bPreviewModern = false;
 
+	/** Draw what the specials do: a line from each trigger to the sectors it tags, and outlines of
+	 *  door (blue), lift (cyan), teleporter destination (pink), crusher (red), floor and stair
+	 *  (orange) and light (yellow) sectors, secrets (magenta) and damaging floors (green). */
+	UPROPERTY(EditAnywhere, Category = "Doom|Preview")
+	bool bShowConnections = true;
+
 	/** Rebuilds the viewport preview from the WAD, the sector edits and the markers. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void RebuildPreview();
@@ -66,6 +77,10 @@ public:
 	/** Adds a sector edit actor at the middle of the sector under the active viewport's camera. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void AddSectorEdit();
+
+	/** Adds a line edit actor on the line nearest the active viewport's camera. */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void AddLineEdit();
 
 	/** Saves the static geometry, with the current sector edits, as static mesh tile assets. Do it
 	    again after editing sectors: the game ignores tiles that no longer match. */
@@ -89,6 +104,10 @@ public:
 
 	/** Editor helper: the WAD map's sector under an Unreal location, or INDEX_NONE. */
 	int32 SectorAtLocation(const FVector& Location) const;
+	/** Editor helper: the WAD map's line nearest an Unreal location (2D), or INDEX_NONE. */
+	int32 LineNearLocation(const FVector& Location) const;
+	/** Lines in the connections overlay (tests). */
+	int32 NumConnectionLines() const;
 	const FDoomMap* GetPreviewMap() const { return PreviewMap.Get(); }
 
 	/** Asks the editor preview to rebuild on the next tick (several edits in a row rebuild once). */
@@ -103,6 +122,11 @@ protected:
 #endif
 
 private:
+	/** The connections overlay (bShowConnections), editor only. */
+	void DrawConnections(const FDoomMap& InMap);
+	UPROPERTY(Transient)
+	TObjectPtr<ULineBatchComponent> Overlay;
+
 	TUniquePtr<FDoomMap> PreviewMap;
 	bool bPreviewQueued = false;
 };
@@ -233,6 +257,101 @@ protected:
 
 private:
 	void Refresh(bool bRebuild);
+
+	UPROPERTY(VisibleAnywhere, Category = "Doom")
+	TObjectPtr<UTextRenderComponent> Label;
+};
+
+UCLASS(HideCategories = (Rendering, Physics, Collision, Input, HLOD, Cooking, Replication, Networking, LOD, Actor, DataLayers, WorldPartition, LevelInstance))
+class DOOMUE_API ADoomLineEdit : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	ADoomLineEdit();
+
+	/** The line this actor edits: the one nearest to it when placed or moved. */
+	UPROPERTY(VisibleAnywhere, Category = "Doom")
+	int32 Line = INDEX_NONE;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bSpecial = false;
+	/** Line special (1 door, 11 exit, 62 lift, 97 teleporter...); 0 for none. */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bSpecial"))
+	int32 Special = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bTag = false;
+	/** The sectors the special works on (their sector tag). */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bTag"))
+	int32 Tag = 0;
+
+	/** Override the flags below (all of them together, as read from the line). */
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags")
+	bool bFlags = false;
+	/** Nothing walks through (two-sided lines; one-sided ones always block). */
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bImpassable = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bBlockMonsters = false;
+	/** Shown as a one-sided wall on the automap; monsters can't use it. */
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bSecret = false;
+	/** Sound passes only one such line on its way. */
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bBlockSound = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bNotOnAutomap = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bUpperUnpegged = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Flags", meta = (EditCondition = "bFlags"))
+	bool bLowerUnpegged = false;
+
+	// textures of the front and back sides ("-" for none)
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (InlineEditConditionToggle))
+	bool bFrontUpper = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (EditCondition = "bFrontUpper", GetOptions = "GetTextureNames"))
+	FName FrontUpper;
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (InlineEditConditionToggle))
+	bool bFrontMiddle = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (EditCondition = "bFrontMiddle", GetOptions = "GetTextureNames"))
+	FName FrontMiddle;
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (InlineEditConditionToggle))
+	bool bFrontLower = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Front", meta = (EditCondition = "bFrontLower", GetOptions = "GetTextureNames"))
+	FName FrontLower;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (InlineEditConditionToggle))
+	bool bBackUpper = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (EditCondition = "bBackUpper", GetOptions = "GetTextureNames"))
+	FName BackUpper;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (InlineEditConditionToggle))
+	bool bBackMiddle = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (EditCondition = "bBackMiddle", GetOptions = "GetTextureNames"))
+	FName BackMiddle;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (InlineEditConditionToggle))
+	bool bBackLower = false;
+	UPROPERTY(EditAnywhere, Category = "Doom|Back", meta = (EditCondition = "bBackLower", GetOptions = "GetTextureNames"))
+	FName BackLower;
+
+	/** Copies the WAD's values for this line into the fields (overrides stay off). */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void ReadFromLine();
+
+	void Apply(FDoomMap& Map) const;
+
+	UFUNCTION()
+	static TArray<FString> GetTextureNames();
+
+protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
+	virtual void PostEditMove(bool bFinished) override;
+#endif
+
+private:
+	/** bPickLine: choose the line nearest the actor again (it was moved). */
+	void Refresh(bool bRebuild, bool bPickLine);
 
 	UPROPERTY(VisibleAnywhere, Category = "Doom")
 	TObjectPtr<UTextRenderComponent> Label;

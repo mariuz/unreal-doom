@@ -98,6 +98,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   responses explicitly on anything that must not stop monsters or missiles.
 * **Moving floors' collision lags the floor by a few tics** (async cooking): don't treat an actor
   resting on a moving sector as settled (corpses wait for the sector to stop and a second's rest).
+* **Line edits apply before `SpecialLines` is used**: `ADoomMapActor::ApplyEdits` rebuilds it after
+  line edits; a line edit that changes textures copies a side the WAD shares between lines first.
+* **Editor screenshots**: `-ExecutePythonScript` quits the editor after its script; use
+  `-ExecCmds="py script.py"` and `HighResShot` from a Slate post-tick callback timed by elapsed time.
 * **Corpses and one-frame things sleep** (`ADoomMonster::WakeCorpse`,
   `UDoomSpriteComponent::bSleepWhenDone` / `bSleepWhenStatic`): anything new that moves a corpse
   must wake it first; `PlaySequence` wakes a sprite. Keep the HUD deterministic (no `FMath::Rand`):
@@ -155,6 +159,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * line edits (`ADoomLineEdit`) and the connections overlay in the editor viewport;
   * sleeping corpses and one-frame things (no movement, actor or sprite ticks at rest; one batched
     facing pass), and pickups no longer block monsters and missiles;
   * the audit's remaining vanilla differences: specials' timing and sounds, autoaim and the BFG,
