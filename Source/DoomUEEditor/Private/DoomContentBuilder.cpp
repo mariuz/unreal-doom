@@ -1453,6 +1453,7 @@ bool DoomContent::EditTest(const FString& InMapName)
 	// a line edit: the first DR door line loses its special, becomes impassable and gets a new
 	// front upper texture (its front side may be shared, so the edit must not touch other lines)
 	const int32 Connections = MapActor->NumConnectionLines();
+	const int32 Ghosts = MapActor->NumGhostLines();
 	int32 DoorLine = INDEX_NONE;
 	for (int32 i = 0; i < Map->Lines.Num() && DoorLine < 0; ++i)
 	{
@@ -1527,9 +1528,9 @@ bool DoomContent::EditTest(const FString& InMapName)
 	}
 	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
-	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && bCheckerOk;
-	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines; the checker %s line %d's broken tag; saved %s"),
-		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections,
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; saved %s"),
+		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections, Ghosts,
 		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, *TestPackage);
 	return bPass;
 }

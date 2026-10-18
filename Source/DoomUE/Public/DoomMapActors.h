@@ -121,8 +121,9 @@ public:
 	int32 SectorAtLocation(const FVector& Location) const;
 	/** Editor helper: the WAD map's line nearest an Unreal location (2D), or INDEX_NONE. */
 	int32 LineNearLocation(const FVector& Location) const;
-	/** Lines in the connections overlay (tests). */
+	/** Lines in the connections overlay, and how many of them draw where doors and lifts travel (tests). */
 	int32 NumConnectionLines() const;
+	int32 NumGhostLines() const { return GhostLines; }
 	const FDoomMap* GetPreviewMap() const { return PreviewMap.Get(); }
 
 	/** Asks the editor preview to rebuild on the next tick (several edits in a row rebuild once). */
@@ -141,6 +142,7 @@ private:
 	void DrawConnections(const FDoomMap& InMap);
 	UPROPERTY(Transient)
 	TObjectPtr<ULineBatchComponent> Overlay;
+	int32 GhostLines = 0;
 
 	TUniquePtr<FDoomMap> PreviewMap;
 	bool bPreviewQueued = false;

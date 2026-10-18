@@ -71,7 +71,10 @@ With **Show Connections** on the DoomMap actor (on by default), the preview draw
   teleporters pink, crushers red, floors, ceilings and stairs orange, lights yellow;
 * the outlines of those sectors in the same colours (a manual door's sector behind the door line
   too), secrets in magenta and damaging floors in green;
-* a red cross on any trigger whose tag matches no sector.
+* a red cross on any trigger whose tag matches no sector;
+* where doors open to and lifts lower to (Doom's rules: the lowest neighbouring ceiling - 4, the
+  lowest neighbouring floor): a dimmer copy of the sector's outline at that height, with a post at
+  each corner, drawn over the walls.
 
 ## Checking a map
 

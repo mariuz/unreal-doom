@@ -429,6 +429,9 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+The overlay also shows where doors open to and lifts lower to: a dimmer outline at that height with
+corner posts, drawn over the walls (E1M1: 136 such lines); `-edittest` checks they're drawn.
+
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
@@ -443,7 +446,6 @@ Not done yet (roughly in priority order):
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
 2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
-   * **Ghosts of moving sectors** in the viewport: where doors open to and lifts lower to, next to the connections overlay (done: line edits and the overlay, see below).
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
    * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.
    * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines, with floors triangulated directly instead of from BSP subsectors (or a bundled node builder).
