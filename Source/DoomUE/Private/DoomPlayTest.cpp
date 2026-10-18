@@ -10,6 +10,7 @@
 #include "DoomMenu.h"
 #include "DoomHUD.h"
 #include "DoomSpriteComponent.h"
+#include "DoomThing.h"
 #include "InputKeyEventArgs.h"
 #include "DoomMonster.h"
 #include "DoomUE.h"
@@ -765,7 +766,33 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
-	// --- 17 (last: it leaves the map). the intermission shows the vanilla par time ----------------
+	// --- 17. one-frame things (decorations, items) sleep; animated ones (torches, glowing items) tick
+	Run->Steps.Add({ TEXT("things"),
+		[](FString& Msg) { return true; },
+		[W](int32 Tics, FString& Msg)
+		{
+			if (Tics < 5) return EStep::Running;
+			int32 Still = 0, StillAsleep = 0, Animated = 0, AnimatedTicking = 0;
+			for (const TWeakObjectPtr<ADoomThing>& T : W->GetThings())
+			{
+				if (!T.IsValid() || T->bEffect || T->bDead || !T->Sprite) continue;
+				if (T->Sprite->CurrentSequence().Len() == 1)
+				{
+					++Still;
+					StillAsleep += T->Sprite->IsSleeping() && !T->Sprite->IsComponentTickEnabled();
+				}
+				else
+				{
+					++Animated;
+					AnimatedTicking += T->Sprite->IsComponentTickEnabled();
+				}
+			}
+			Msg = FString::Printf(TEXT("%d one-frame things, %d asleep; %d animated, %d still ticking; %d sprites in the batched pass (sprite ticks before: %d)"),
+				Still, StillAsleep, Animated, AnimatedTicking, W->NumSleepingSprites(), Still + Animated);
+			return Still > 0 && StillAsleep == Still && AnimatedTicking == Animated ? EStep::Pass : EStep::Fail;
+		} });
+
+	// --- 18 (last: it leaves the map). the intermission shows the vanilla par time ----------------
 	Run->Steps.Add({ TEXT("intermission"),
 		[this, W](FString& Msg)
 		{

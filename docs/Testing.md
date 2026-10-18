@@ -101,6 +101,7 @@ first 11 steps failed on E1M1.
 | `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
 | `lostsoul` | A killed lost soul plays its death frames, then vanishes |
 | `liftcorpse` | A corpse asleep on a lift goes down with it and settles on the lowered floor |
+| `things` | Every one-frame thing's sprite sleeps (no tick, in the batched facing pass) and every animated one still ticks |
 | `corpses` | With every monster killed, 90% of the corpses (all, in practice) run no movement, actor or sprite tick, and a sleeping corpse still turns to face the camera when the player steps aside |
 | `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
 

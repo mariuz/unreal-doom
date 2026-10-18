@@ -408,6 +408,10 @@ before). Found on the way: pickups blocked monsters and missiles (the project's 
 default to Block and engine profiles don't list them), so monsters couldn't cross items, corpses
 landed on their own dropped clip and rockets burst on ammo on the floor; the play-test's chase step
 now reaches 118 of 118 monsters on E1M4. A raised monster also stayed a corpse on network clients.
+One-frame things (most decorations and items) sleep the same way from the start, while torches and
+glowing items keep ticking: 77 to 144 fewer sprite ticks per map (E1M1: 121 of its 194 things), with
+the classic screenshot still pixel-exact (the idle face now takes its random numbers from the tic,
+so it repeats run to run as vanilla's M_Random does).
 
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect

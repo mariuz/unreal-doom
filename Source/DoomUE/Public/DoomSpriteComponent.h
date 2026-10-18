@@ -63,6 +63,9 @@ public:
 	/** Corpses: once a non-looping sequence (the death frames) is over, stop this component's tick and
 	 *  let UDoomWorld turn it to the camera in one batched pass, only while it is on screen. */
 	bool bSleepWhenDone = false;
+	/** Map things: sleep the same way while the sequence is a single frame (it can't change until a
+	 *  new PlaySequence, which wakes it). */
+	bool bSleepWhenStatic = false;
 	bool IsSleeping() const { return bSleeping; }
 	/** Back to ticking every frame (a new sequence, a resurrection, a corpse carried by a floor). */
 	void Wake();
