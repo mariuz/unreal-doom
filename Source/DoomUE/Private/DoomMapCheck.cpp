@@ -8,11 +8,11 @@ namespace
 {
 	using ESev = FDoomMapIssue::ESeverity;
 
-	bool IsManualDoor(int32 S) { return S == 1 || S == 26 || S == 27 || S == 28 || S == 31 || S == 32 || S == 33 || S == 34 || S == 117 || S == 118; }
+	bool IsDoorUseSpecial(int32 S) { return S == 1 || S == 26 || S == 27 || S == 28 || S == 31 || S == 32 || S == 33 || S == 34 || S == 117 || S == 118; }
 	bool IsExit(int32 S) { return S == 11 || S == 51 || S == 52 || S == 124; }
 	bool IsTeleport(int32 S) { return S == 39 || S == 97 || S == 125 || S == 126; }
 	/** Specials that don't use a tag: manual doors, exits, the scrolling wall. */
-	bool UsesTag(int32 S) { return S != 0 && !IsManualDoor(S) && !IsExit(S) && S != 48; }
+	bool UsesTag(int32 S) { return S != 0 && !IsDoorUseSpecial(S) && !IsExit(S) && S != 48; }
 
 	/** 0 blue, 1 yellow, 2 red for locked doors and switches, else INDEX_NONE. */
 	int32 LockColor(int32 S)
@@ -89,7 +89,7 @@ TArray<FDoomMapIssue> DoomMapCheck::Run(const FDoomMap& Map, const FDoomGraphics
 	{
 		const FDoomLine& L = Map.Lines[i];
 		bHasExit |= IsExit(L.Special);
-		if (IsManualDoor(L.Special) && L.BackSector == INDEX_NONE)
+		if (IsDoorUseSpecial(L.Special) && L.BackSector == INDEX_NONE)
 		{
 			AddLine(ESev::Error, i, FString::Printf(TEXT("door special %d on a one-sided line (a door needs a sector behind it)"), L.Special));
 		}

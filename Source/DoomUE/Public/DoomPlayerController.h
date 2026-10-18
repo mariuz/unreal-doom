@@ -55,7 +55,22 @@ public:
 	/** The arrow keys pan the automap while follow mode is off (above the gameplay context). */
 	UPROPERTY() TObjectPtr<UInputMappingContext> AutomapPanContext;
 
+	// --- rebinding (the Controls menu): Enhanced Input's user settings, saved per player ----------
+	struct FBinding
+	{
+		FName Name;
+		FString Label;
+		TArray<FKey> Keys; // current keys, first slot first
+	};
+	/** Every rebindable control with its keys, in menu order (DoomInput::Mappables). */
+	TArray<FBinding> GetBindings() const;
+	/** Puts Key in the control's first slot (the second keeps its key) and saves; false if refused. */
+	bool Rebind(FName Mapping, const FKey& Key);
+	/** Back to the default keys, saved. */
+	void ResetBindings();
+
 private:
+	class UEnhancedInputUserSettings* UserSettings() const;
 	void CreateInput();
 	void ApplyContexts();
 	void MenuUp(const FInputActionValue& V);

@@ -23,6 +23,7 @@
 #include "NiagaraSystem.h"
 #include "DoomMapActors.h"
 #include "DoomMapCheck.h"
+#include "DoomInput.h"
 #include "HAL/FileManager.h"
 #include "DoomMap.h"
 #include "DoomGraphics.h"
@@ -792,9 +793,33 @@ bool DoomContent::BuildGameData(bool bOverwrite)
 	return Save(Data);
 }
 
+bool DoomContent::BuildInput(bool bOverwrite)
+{
+	FDoomInputObjects Existing;
+	if (!bOverwrite && DoomInput::LoadAssets(Existing))
+	{
+		UE_LOG(LogDoomContent, Log, TEXT("Doom input assets already exist"));
+		return true;
+	}
+	UE_LOG(LogDoomContent, Display, TEXT("Generating Doom input assets in %s"), DoomInput::AssetFolder);
+	FDoomInputObjects In;
+	DoomInput::Build([](UClass* Class, FName Name)
+	{
+		UPackage* Pkg = MakePackage(Name.ToString(), DoomInput::AssetFolder);
+		return NewObject<UObject>(Pkg, Class, Name, RF_Public | RF_Standalone | RF_Transactional);
+	}, In);
+	bool bOk = true;
+	for (UObject* Asset : In.All())
+	{
+		bOk &= Asset && Save(Asset);
+	}
+	return bOk;
+}
+
 bool DoomContent::Build(bool bForce, bool bMaterials, bool bEffects)
 {
 	BuildGameData(false);
+	BuildInput(false);
 	bool bEffectsOk = true;
 	if (bEffects && (bForce || !EffectsExist()))
 	{
@@ -1611,6 +1636,11 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		UE_LOG(LogDoomContent, Display, TEXT("Bake tiles: %d maps of %s, %d failed"), Names.Num(), *DoomEditorData::WadSet(), Failed);
 		return Failed ? 1 : 0;
+	}
+	// -input [-force]: the input actions and mapping contexts as assets
+	if (Params.Contains(TEXT("-input")))
+	{
+		return DoomContent::BuildInput(Params.Contains(TEXT("-force"))) ? 0 : 1;
 	}
 	// -gamedata [-force]: the editable game tables, from the built-in ones
 	if (Params.Contains(TEXT("-gamedata")))

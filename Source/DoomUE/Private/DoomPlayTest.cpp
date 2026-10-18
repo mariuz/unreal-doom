@@ -11,6 +11,9 @@
 #include "DoomHUD.h"
 #include "DoomSpriteComponent.h"
 #include "DoomThing.h"
+#include "DoomInput.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
 #include "InputKeyEventArgs.h"
 #include "DoomMonster.h"
 #include "DoomUE.h"
@@ -792,7 +795,72 @@ void ADoomGameMode::StartPlayTest()
 			return Still > 0 && StillAsleep == Still && AnimatedTicking == Animated ? EStep::Pass : EStep::Fail;
 		} });
 
-	// --- 18 (last: it leaves the map). the intermission shows the vanilla par time ----------------
+	// --- 18. rebinding: the Controls list, Fire moved to F and back to the defaults ----------------
+	{
+		struct FRebind { int32 Phase = 0; int32 PhaseTic = 0; FString Report; bool bOk = true; };
+		TSharedRef<FRebind> B = MakeShared<FRebind>();
+		Run->Steps.Add({ TEXT("rebind"),
+			[](FString& Msg) { return true; },
+			[W, B, Player, Shot](int32 Tics, FString& Msg)
+			{
+				ADoomPlayerController* PC = Cast<ADoomPlayerController>(Player()->GetController());
+				UEnhancedInputLocalPlayerSubsystem* Sub = PC && PC->GetLocalPlayer() ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()) : nullptr;
+				if (!PC || !Sub) { Msg = TEXT("no Doom controller or Enhanced Input subsystem"); return EStep::Fail; }
+				auto FireKeys = [&]()
+				{
+					TArray<FString> Names;
+					for (const FKey& K : Sub->QueryKeysMappedToAction(PC->FireAction)) Names.Add(K.ToString());
+					return FString::Join(Names, TEXT(" "));
+				};
+				auto Has = [&](const FKey& K) { return Sub->QueryKeysMappedToAction(PC->FireAction).Contains(K); };
+				if (Tics - B->PhaseTic < 3) return EStep::Running; // the subsystem rebuilds its mappings next frame
+				switch (B->Phase)
+				{
+				case 0:
+				{
+					const TArray<ADoomPlayerController::FBinding> Bindings = PC->GetBindings();
+					const ADoomPlayerController::FBinding* Fire = Bindings.FindByPredicate([](const ADoomPlayerController::FBinding& X) { return X.Name == TEXT("Fire"); });
+					B->bOk &= Bindings.Num() == DoomInput::Mappables().Num() && Fire && Fire->Keys.Num() == 2;
+					B->Report = FString::Printf(TEXT("%d controls listed, Fire on [%s] (keys in play: %s)"), Bindings.Num(),
+						Fire ? *FString::JoinBy(Fire->Keys, TEXT(" "), [](const FKey& K) { return K.ToString(); }) : TEXT("-"), *FireKeys());
+					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl);
+					B->bOk &= PC->Rebind(TEXT("Fire"), EKeys::F);
+					break;
+				}
+				case 1:
+				{
+					B->Report += FString::Printf(TEXT("; after binding F: %s"), *FireKeys());
+					B->bOk &= Has(EKeys::F) && !Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl);
+					// the Controls page as the player sees it, on the Fire row
+					W->Menu.Open(*W, EMenuPage::Options);
+					W->Menu.Item = 9;
+					W->Menu.Select(*W);
+					W->Menu.Item = DoomInput::Mappables().IndexOfByPredicate([](const DoomInput::FMappable& M) { return M.Name == TEXT("Fire"); });
+					const TArray<FMenuRow> Rows = W->Menu.Rows(*W);
+					B->bOk &= W->Menu.Page == EMenuPage::Controls && Rows.IsValidIndex(W->Menu.Item) && Rows[W->Menu.Item].ValueText.StartsWith(TEXT("F,"));
+					B->Report += FString::Printf(TEXT("; the menu row reads \"%s  %s\""), Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].Text : TEXT("?"),
+						Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].ValueText : TEXT("?"));
+					Shot(TEXT("controls"));
+					break;
+				}
+				case 2:
+					W->Menu.Close(*W);
+					PC->ResetBindings();
+					break;
+				case 3:
+					B->Report += FString::Printf(TEXT("; after reset: %s"), *FireKeys());
+					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl) && !Has(EKeys::F);
+					Msg = B->Report;
+					return B->bOk ? EStep::Pass : EStep::Fail;
+				}
+				++B->Phase;
+				B->PhaseTic = Tics;
+				Msg = B->Report;
+				return EStep::Running;
+			} });
+	}
+
+	// --- 19 (last: it leaves the map). the intermission shows the vanilla par time ----------------
 	Run->Steps.Add({ TEXT("intermission"),
 		[this, W](FString& Msg)
 		{
@@ -813,7 +881,7 @@ void ADoomGameMode::StartPlayTest()
 	GetWorldTimerManager().SetTimer(Run->Timer, [this, W, R, Home, HomeView, GoHome]()
 	{
 		ADoomPlayer* P = W->GetPlayer();
-		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt")
+		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt") || R->Steps[R->Index].Name == TEXT("rebind")
 			|| R->Steps[R->Index].Name == TEXT("renderer") || R->Steps[R->Index].Name == TEXT("intermission"));
 		if (!P || (W->GetState() != EDoomGameState::Playing && !bOffPlay))
 		{

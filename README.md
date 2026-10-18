@@ -165,6 +165,12 @@ WASD / arrows move, mouse looks, LMB / Ctrl fires, E / Space / RMB uses, 1-7 / m
 switches weapons, F6 / F9 quick save / load, Tab opens the automap, Shift toggles run (always-run is on by default), and
 Esc opens Doom's menu (F1 help, F2 save, F3 load, F4 sound volume; Y / N answer prompts; Esc closes it, Backspace goes back a page). Options also switch the renderer, field of view and warp to any map. Gamepad works too.
 
+**Rebinding:** Options > Controls lists every keyboard and mouse control with its keys. Select one and
+press the new key (Esc keeps the old one); it replaces the first key, a second key stays. *Reset to
+defaults* at the bottom. The changes are Enhanced Input user settings, saved per player. The input
+actions and mapping contexts are assets in `/Game/Doom/Input` (`-run=DoomContent -input [-force]`
+regenerates them from `DoomInput::Build`; without them the game builds the same set in code).
+
 On the automap: = and - zoom, F toggles follow mode (with it off the arrows pan), 0 shows the whole
 map, M marks a spot, C clears the marks, G toggles the grid.
 
@@ -432,6 +438,13 @@ checker names that line.
 The overlay also shows where doors open to and lifts lower to: a dimmer outline at that height with
 corner posts, drawn over the walls (E1M1: 136 such lines); `-edittest` checks they're drawn.
 
+Input (`feature/input-rebinding`): the input actions and mapping contexts are built once
+(`DoomInput::Build`) and saved as assets in `/Game/Doom/Input`; the game loads them, or builds the
+same set in code when they're missing. The 28 keyboard and mouse controls are player-mappable, and
+Options > Controls rebinds them through Enhanced Input's user settings (saved per player) with a
+reset to the defaults; the play-test's `rebind` step moves Fire to F, checks that Enhanced Input
+now maps F (and not Mouse1) and the menu row, then resets.
+
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
@@ -451,7 +464,7 @@ Not done yet (roughly in priority order):
    * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines, with floors triangulated directly instead of from BSP subsectors (or a bundled node builder).
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
-   * **Enhanced Input assets and rebinding**: the input actions and mapping contexts are built in code (`ADoomPlayerController::CreateInput`), so keys can't be rebound and new bindings compete for free letters (the automap's = - F 0 M C G). Saved `UInputAction` / `UInputMappingContext` assets plus `UEnhancedInputUserSettings` would give a rebind page in the menu and per-platform mappings.
+   * **Gamepad rebinding and per-platform mappings**: the Controls page rebinds keyboard and mouse; the gamepad's buttons are fixed, and there is one mapping set for every platform.
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
    * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).

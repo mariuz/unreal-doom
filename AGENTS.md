@@ -98,6 +98,11 @@ Tools/run_tests.bat DoomUE -NullRHI
   responses explicitly on anything that must not stop monsters or missiles.
 * **Moving floors' collision lags the floor by a few tics** (async cooking): don't treat an actor
   resting on a moving sector as settled (corpses wait for the sector to stop and a second's rest).
+* **Input**: change controls in `DoomInput::Build`, then `-run=DoomContent -input -force` to rewrite
+  the assets (the game prefers them over its code-built set). New rebindable controls need a name in
+  `DoomInput::Mappables`. `FEnhancedActionKeyMapping`'s mappable settings are protected and set
+  through reflection (`MakeMappable`). The play-test can't press keys, but `Rebind` / `ResetBindings`
+  plus `QueryKeysMappedToAction` check the same path the menu uses.
 * **Line edits apply before `SpecialLines` is used**: `ADoomMapActor::ApplyEdits` rebuilds it after
   line edits; a line edit that changes textures copies a side the WAD shares between lines first.
 * **Editor screenshots**: `-ExecutePythonScript` quits the editor after its script; use
@@ -159,6 +164,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * Enhanced Input assets (`/Game/Doom/Input`, from `DoomInput::Build`) and the Controls rebind page;
   * the map checker (`DoomMapCheck`, Check Map, `-checkmap=`);
   * line edits (`ADoomLineEdit`) and the connections overlay in the editor viewport;
   * sleeping corpses and one-frame things (no movement, actor or sprite ticks at rest; one batched

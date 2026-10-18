@@ -768,13 +768,22 @@ void ADoomHUD::DrawMenu()
 	{
 		DrawPatchByName(T.Patch, T.X, T.Y, true);
 	}
+	if (M.Page == EMenuPage::Controls)
+	{
+		// no M_ graphic for it: the title in the menu font
+		const FString Title = TEXT("CONTROLS");
+		DrawText(Title, 160 - TextWidth(Title), 8, 2.f);
+	}
 	const FIntPoint O = M.Origin();
 	const TArray<FMenuRow> Rows = M.Rows(*W);
 	const FLinearColor Dim(0.5f, 0.5f, 0.5f, 1.f);
-	for (int32 i = 0; i < Rows.Num(); ++i)
+	// long pages (Controls) scroll to keep the selection in view
+	const int32 First = M.FirstVisibleRow(Rows.Num());
+	const int32 Last = FMath::Min(Rows.Num(), First + M.VisibleRows());
+	for (int32 i = First; i < Last; ++i)
 	{
 		const FMenuRow& R = Rows[i];
-		const float Y = O.Y + i * 16;
+		const float Y = O.Y + (i - First) * M.RowHeight();
 		if (M.IsSaveLoad())
 		{
 			// Doom's slot box: left cap, 24 middles, right cap, the description inside
@@ -803,6 +812,16 @@ void ADoomHUD::DrawMenu()
 		else
 		{
 			DrawText(R.Text, O.X, Y + 3, 1.f, R.bEnabled ? FLinearColor(0.9f, 0.15f, 0.1f) : Dim);
+			if (M.bCapturing && i == M.Item)
+			{
+				// waiting for the new key
+				const bool bOn = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
+				DrawText(bOn ? TEXT("PRESS A KEY (ESC: KEEP)") : TEXT(""), O.X + 136, Y + 3);
+			}
+			else if (!R.ValueText.IsEmpty())
+			{
+				DrawText(R.ValueText, O.X + 136, Y + 3);
+			}
 		}
 		if (R.Kind == FMenuRow::EKind::Toggle)
 		{
@@ -822,7 +841,15 @@ void ADoomHUD::DrawMenu()
 	}
 	// the blinking skull, 32 pixels left of the selected row
 	const bool bBlink = (int32)(GetWorld()->GetRealTimeSeconds() * Doom::TicRate / 8) & 1;
-	DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + M.Item * 16, true);
+	if (M.RowHeight() < 16)
+	{
+		// tight rows: a small arrow, the skull would cover its neighbours
+		DrawText(bBlink ? TEXT(">") : TEXT(""), O.X - 10, O.Y + 3 + (M.Item - First) * M.RowHeight());
+	}
+	else
+	{
+		DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + (M.Item - First) * M.RowHeight(), true);
+	}
 }
 
 void ADoomHUD::DrawLoading()
