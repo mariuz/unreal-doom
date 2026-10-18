@@ -326,11 +326,12 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 	else
 	{
 		// looks around every half second of game time (ST_STRAIGHTFACECOUNT), not every N frames, and
-		// with its own random numbers: the HUD must not change the game's random sequence
+		// with its own random numbers: the HUD must not change the game's random sequence. Derived from
+		// the tic (like vanilla's separate M_Random it repeats run to run, so screenshots stay exact)
 		if (FMath::Abs(W->GetTic() - FaceTic) >= Doom::TicRate / 2)
 		{
 			FaceTic = W->GetTic();
-			FaceIndex = FMath::RandRange(0, 2);
+			FaceIndex = FRandomStream((int32)(FaceTic * 2654435761u)).RandRange(0, 2);
 		}
 		Face = FString::Printf(TEXT("STFST%d%d"), Bracket, FaceIndex);
 	}

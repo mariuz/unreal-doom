@@ -235,7 +235,9 @@ void UDoomSpriteComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		UpdateVisual(Cam->GetCameraLocation());
 	}
 	// a finished corpse sleeps: no tick of its own, UDoomWorld faces it to the camera while it shows
-	if (bSleepWhenDone && bDone && !bLoop && bLevelBound && DoomWorld && !bSleeping)
+	// ... and so does a thing showing one frame for good
+	const bool bStill = (bSleepWhenDone && bDone && !bLoop) || (bSleepWhenStatic && Seq.Len() == 1);
+	if (bStill && bLevelBound && DoomWorld && !bSleeping)
 	{
 		bSleeping = true;
 		SetComponentTickEnabled(false);

@@ -97,6 +97,9 @@ void ADoomThing::InitThing(UDoomWorld* InWorld, const FDoomThingDef* InDef, floa
 	Sprite->Init(DoomWorld, Def->Sprite);
 	Sprite->DoomAngle = InDoomAngle;
 	Sprite->PlaySequence(Def->Idle, Def->IdleTics, true, (Def->Flags & EThingFlag::FullBright) || Def->bFullBrightIdle);
+	// a one-frame thing (most decorations and items) never animates: its sprite can sleep and be
+	// turned to the camera in UDoomWorld's batched pass; torches and glowing items keep ticking
+	Sprite->bSleepWhenStatic = true;
 	SnapToPlanes();
 
 	const bool bGlows = Def->LightColor.A > 0 || (Def->Flags & EThingFlag::FullBright);

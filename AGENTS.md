@@ -98,8 +98,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   responses explicitly on anything that must not stop monsters or missiles.
 * **Moving floors' collision lags the floor by a few tics** (async cooking): don't treat an actor
   resting on a moving sector as settled (corpses wait for the sector to stop and a second's rest).
-* **Corpses sleep** (`ADoomMonster::WakeCorpse`, `UDoomSpriteComponent::bSleepWhenDone`): anything
-  new that moves a corpse must wake it first.
+* **Corpses and one-frame things sleep** (`ADoomMonster::WakeCorpse`,
+  `UDoomSpriteComponent::bSleepWhenDone` / `bSleepWhenStatic`): anything new that moves a corpse
+  must wake it first; `PlaySequence` wakes a sprite. Keep the HUD deterministic (no `FMath::Rand`):
+  the classic screenshot is compared pixel for pixel.
 
 * **Game tables are `USTRUCT`s with `FString` fields** (`DoomInfo.h`).
   * Test for empty fields with `.IsEmpty()`. `*Def->Field` compiles but is always true.
@@ -153,8 +155,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
-  * sleeping corpses (no movement, actor or sprite ticks at rest; one batched facing pass), and
-    pickups no longer block monsters and missiles;
+  * sleeping corpses and one-frame things (no movement, actor or sprite ticks at rest; one batched
+    facing pass), and pickups no longer block monsters and missiles;
   * the audit's remaining vanilla differences: specials' timing and sounds, autoaim and the BFG,
     floatok, pain elemental and lost soul deaths, automap controls, INTERPIC for episode 4, Esc;
   * play-test fixes from an audit against vanilla 1.9, with `-playtest` (doors, lifts, teleports,
