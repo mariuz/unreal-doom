@@ -1449,13 +1449,56 @@ bool DoomContent::EditTest(const FString& InMapName)
 		Imp->DoomEdNum = 3003;
 		Imp->ThingType = TEXT("Baron");
 	}
+	// a line edit: the first DR door line loses its special, becomes impassable and gets a new
+	// front upper texture (its front side may be shared, so the edit must not touch other lines)
+	const int32 Connections = MapActor->NumConnectionLines();
+	int32 DoorLine = INDEX_NONE;
+	for (int32 i = 0; i < Map->Lines.Num() && DoorLine < 0; ++i)
+	{
+		if (Map->Lines[i].Special == 1 && Map->Lines[i].Side[0] != INDEX_NONE) DoorLine = i;
+	}
+	ADoomLineEdit* LineEdit = nullptr;
+	const FName NewTexture = DoomEditorData::Graphics() && DoomEditorData::Graphics()->TextureNames().Num() > 1 ? DoomEditorData::Graphics()->TextureNames()[1] : NAME_None;
+	if (DoorLine >= 0)
+	{
+		const FDoomLine& L = Map->Lines[DoorLine];
+		const FVector2f Mid = (Map->V(L.V1) + Map->V(L.V2)) * 0.5f;
+		LineEdit = World->SpawnActor<ADoomLineEdit>(ADoomLineEdit::StaticClass(), FTransform(Doom::ToUE(Mid, 32.f)), SP);
+		LineEdit->Line = DoorLine;
+		LineEdit->ReadFromLine();
+		LineEdit->bSpecial = true;
+		LineEdit->Special = 0;
+		LineEdit->bFlags = true;
+		LineEdit->bImpassable = true;
+		LineEdit->bFrontUpper = true;
+		LineEdit->FrontUpper = NewTexture;
+		LineEdit->SetActorLabel(TEXT("Door line made a wall"));
+		LineEdit->SetFolderPath(TEXT("Doom/Line Edits"));
+	}
 	MapActor->RebuildPreview();
 	const float NewFloor = MapActor->GetPreviewMap()->Sectors[Sec].Floor;
+	bool bLineOk = DoorLine >= 0;
+	FString LineReport = TEXT("no DR door line");
+	if (DoorLine >= 0)
+	{
+		const FDoomMap* After = MapActor->GetPreviewMap();
+		const FDoomLine& L = After->Lines[DoorLine];
+		const int32 FrontSide = L.Side[0];
+		int32 SharedBy = 0;
+		for (int32 i = 0; i < After->Lines.Num(); ++i)
+		{
+			SharedBy += i != DoorLine && (After->Lines[i].Side[0] == FrontSide || After->Lines[i].Side[1] == FrontSide);
+		}
+		bLineOk = L.Special == 0 && (L.Flags & DoomLineFlags::Blocking) && After->Sides[FrontSide].Upper == NewTexture
+			&& !After->SpecialLines.Contains(DoorLine) && SharedBy == 0;
+		LineReport = FString::Printf(TEXT("line %d: special %d, impassable %d, front upper %s, side shared by %d other lines"),
+			DoorLine, L.Special, (L.Flags & DoomLineFlags::Blocking) != 0, *After->Sides[FrontSide].Upper.ToString(), SharedBy);
+	}
 	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
-	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved;
-	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f, saved %s"),
-		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *TestPackage);
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines; saved %s"),
+		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections, *TestPackage);
 	return bPass;
 }
 

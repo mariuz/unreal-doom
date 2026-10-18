@@ -33,7 +33,7 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Patches.UMAPINFO` | `-patchtest` with `umapinfo.wad` | Level names, par time, music, sky and next map |
 | `DoomUE.Game.SaveLoad` | `-savetest` | On E1M1 with a door moving, corpses, awake monsters and a rocket and a homing tracer in flight: save, scramble the world, load; the state fingerprint matches the saved one |
 | `DoomUE.Game.ExitToNextMap` | `-exittest` | Two kills credited to the game state and the player state, the intermission, then E1M2 loaded in the background, with the counters reset and the shells carried over |
-| `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
+| `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, a line edit turns the first door line into an impassable wall with a new upper texture (without touching lines that shared its side), the connections overlay draws, and the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
 | `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
 | `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots` |
 

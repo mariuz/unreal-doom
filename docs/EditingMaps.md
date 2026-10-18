@@ -1,9 +1,9 @@
 # Editing Doom maps in the Unreal editor
 
 Every map in the WAD can become a normal Unreal level that you edit with the usual tools and
-play with **Play**. The walls and lines still come from the WAD, so change those in a Doom map
-editor. Here you edit what sits on top of them: the things, and the sectors' heights, light,
-flats, specials and tags.
+play with **Play**. The walls' shapes still come from the WAD, so draw new rooms in a Doom map
+editor. Here you edit everything on top of them: the things; the sectors' heights, light, flats,
+specials and tags; and the lines' specials, tags, flags and textures.
 
 ## Opening a map
 
@@ -21,6 +21,7 @@ flats, specials and tags.
 | **DoomMap** (`ADoomMapActor`) | `Doom` | Names the WAD map and draws it in the viewport. *Preview Modern* switches the preview to the lit materials, and *Show Preview* hides it |
 | **Doom Thing** markers (`ADoomThingMarker`) | `Doom/Monsters`, `Doom/Items`, `Doom/Decorations`, `Doom/Starts` | One per thing, drawn with its own sprite and an arrow for its facing |
 | **Doom Sector Edit** (`ADoomSectorEdit`) | `Doom/Sector Edits` | Overrides for the sector the actor stands in |
+| **Doom Line Edit** (`ADoomLineEdit`) | `Doom/Line Edits` | Overrides for the line it was placed by |
 
 ## Things
 
@@ -45,6 +46,33 @@ flats, specials and tags.
    example 9 secret, 7 nukage) and **Tag** (links the sector to line specials).
 4. The viewport preview rebuilds after each change.
 
+## Lines
+
+1. Look at the line in the viewport and press **Add Line Edit** on the DoomMap actor: it places a
+   *Doom Line Edit* on the line nearest the camera, reads the line's current values and labels
+   itself "Line N". Moving the actor makes it edit the line it now stands by.
+2. **Read From Line** copies the WAD's values into the fields again.
+3. Tick the values to override:
+   * **Special** (1 door, 11 exit, 62 lift, 97 teleporter...; 0 removes it) and **Tag** (the
+     sectors it works on);
+   * **Flags**, all together: *Impassable*, *Block Monsters*, *Secret* (one-sided on the automap,
+     monsters can't use it), *Block Sound*, *Not On Automap*, *Upper Unpegged*, *Lower Unpegged*;
+   * the **Front** and **Back** sides' *Upper*, *Middle* and *Lower* textures, from the WAD's list
+     (`-` for none). A side the WAD shares between several lines is copied first, so only this line
+     changes.
+4. The viewport preview rebuilds after each change.
+
+## What the specials do (viewport overlay)
+
+With **Show Connections** on the DoomMap actor (on by default), the preview draws:
+
+* a line from every trigger (switch, walk-over or shoot line) to the middle of each sector it tags,
+  drawn over the walls and coloured by what it does: doors blue, lifts and platforms cyan,
+  teleporters pink, crushers red, floors, ceilings and stairs orange, lights yellow;
+* the outlines of those sectors in the same colours (a manual door's sector behind the door line
+  too), secrets in magenta and damaging floors in green;
+* a red cross on any trigger whose tag matches no sector.
+
 ## Baked static meshes
 
 Importing a map also saves its static geometry (everything that never moves) as static mesh
@@ -65,7 +93,7 @@ under *Baked*, together with a signature of the geometry they were made from.
 **Play** (in the editor or standalone with the level's path) starts the level's map. The game:
 
 1. loads the WAD map,
-2. applies every sector edit,
+2. applies every sector edit and line edit,
 3. spawns the things from the markers,
 4. runs everything else, including lines, specials and the following maps, from the WAD.
 
