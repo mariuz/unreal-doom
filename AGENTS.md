@@ -159,6 +159,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * the map checker (`DoomMapCheck`, Check Map, `-checkmap=`);
   * line edits (`ADoomLineEdit`) and the connections overlay in the editor viewport;
   * sleeping corpses and one-frame things (no movement, actor or sprite ticks at rest; one batched
     facing pass), and pickups no longer block monsters and missiles;

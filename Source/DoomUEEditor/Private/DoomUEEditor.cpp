@@ -7,6 +7,13 @@
 #include "FileHelpers.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "Logging/MessageLog.h"
+#include "Logging/TokenizedMessage.h"
+#include "Misc/UObjectToken.h"
+#include "MessageLogModule.h"
+#include "Editor.h"
+#include "DoomMapCheck.h"
+#include "DoomUE.h"
 
 #define LOCTEXT_NAMESPACE "DoomUEEditor"
 
@@ -20,6 +27,48 @@ namespace
 		{
 			Item->SetCompletionState(bOk ? SNotificationItem::CS_Success : SNotificationItem::CS_Fail);
 		}
+	}
+
+	/** The map checker's findings on the "Doom Map Check" page of the Message Log: each with its actor
+	 *  (click to select it) and a "Go there" link that moves the viewport camera to the spot. */
+	void ReportMapCheck(ADoomMapActor* MapActor, const TArray<FDoomMapIssue>& Issues, const TArray<TWeakObjectPtr<AActor>>& Actors)
+	{
+		FMessageLog Log(TEXT("DoomMapCheck"));
+		Log.NewPage(FText::FromString(MapActor->MapName));
+		for (int32 i = 0; i < Issues.Num(); ++i)
+		{
+			const FDoomMapIssue& I = Issues[i];
+			const EMessageSeverity::Type Severity = I.Severity == FDoomMapIssue::ESeverity::Error ? EMessageSeverity::Error
+				: I.Severity == FDoomMapIssue::ESeverity::Warning ? EMessageSeverity::Warning : EMessageSeverity::Info;
+			TSharedRef<FTokenizedMessage> Message = FTokenizedMessage::Create(Severity);
+			if (Actors.IsValidIndex(i) && Actors[i].IsValid())
+			{
+				Message->AddToken(FUObjectToken::Create(Actors[i].Get()));
+			}
+			Message->AddToken(FTextToken::Create(FText::FromString(I.Text)));
+			if (I.Line != INDEX_NONE || I.Sector != INDEX_NONE || I.Thing != INDEX_NONE)
+			{
+				const FVector Where = Doom::ToUE(I.Where, I.Z);
+				Message->AddToken(FActionToken::Create(LOCTEXT("GoThere", "Go there"), LOCTEXT("GoThereTip", "Move the viewport camera to it"),
+					FOnActionTokenExecuted::CreateLambda([Where]()
+					{
+						if (GEditor)
+						{
+							GEditor->MoveViewportCamerasToBox(FBox(Where - FVector(300.f), Where + FVector(300.f)), true);
+						}
+					})));
+			}
+			Log.AddMessage(Message);
+		}
+		const int32 Errors = DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Error);
+		const int32 Warnings = DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Warning);
+		if (Issues.Num() == 0)
+		{
+			Log.Info(FText::Format(LOCTEXT("CheckClean", "{0}: no problems found"), FText::FromString(MapActor->MapName)));
+		}
+		Log.Open(EMessageSeverity::Info, true);
+		Notify(FText::Format(LOCTEXT("Checked", "{0}: {1} errors, {2} warnings (Message Log, Doom Map Check)"),
+			FText::FromString(MapActor->MapName), Errors, Warnings), Errors == 0);
 	}
 
 	/** Imports the map if it has no level yet, then opens its level. */
@@ -61,6 +110,20 @@ namespace
 		FToolMenuSection& Maps = Doom->AddSection(TEXT("Maps"), LOCTEXT("MapsSection", "Maps"));
 		Maps.AddSubMenu(TEXT("OpenMap"), LOCTEXT("OpenMap", "Open / Import Map"), LOCTEXT("OpenMapTip", "Open a WAD map as an editable level"),
 			FNewToolMenuDelegate::CreateStatic(&FillMapMenu));
+		Maps.AddMenuEntry(TEXT("CheckMap"), LOCTEXT("CheckMap", "Check Map"),
+			LOCTEXT("CheckMapTip", "List the open map's problems in the Message Log (tags with no sectors, missing textures, open sectors, locks without keys...)"), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]()
+			{
+				ADoomMapActor* MapActor = GEditor ? ADoomMapActor::Find(GEditor->GetEditorWorldContext().World()) : nullptr;
+				if (MapActor)
+				{
+					MapActor->CheckMap();
+				}
+				else
+				{
+					Notify(LOCTEXT("CheckNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
+				}
+			})));
 		FToolMenuSection& Content = Doom->AddSection(TEXT("Content"), LOCTEXT("ContentSection", "Generated content"));
 		Content.AddMenuEntry(TEXT("Regenerate"), LOCTEXT("Regenerate", "Regenerate Materials and Effects"),
 			LOCTEXT("RegenerateTip", "Rebuilds the Doom materials (long shader compile on the next run) and Niagara effects"), FSlateIcon(),
@@ -84,6 +147,9 @@ public:
 			{
 				DoomContent::Build(false); // only what is missing: materials, effects
 			});
+			FMessageLogModule& MessageLog = FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
+			MessageLog.RegisterLogListing(TEXT("DoomMapCheck"), LOCTEXT("MapCheckLog", "Doom Map Check"));
+			ADoomMapActor::CheckReportHook = &ReportMapCheck;
 			ADoomMapActor::BakeHook = [](ADoomMapActor* MapActor)
 			{
 				const bool bOk = DoomContent::BakeMapTiles(MapActor);
@@ -102,6 +168,7 @@ public:
 	virtual void ShutdownModule() override
 	{
 		ADoomMapActor::BakeHook = nullptr;
+		ADoomMapActor::CheckReportHook = nullptr;
 		if (UObjectInitialized() && UToolMenus::TryGet())
 		{
 			UToolMenus::UnregisterOwner(TEXT("DoomUEEditor"));

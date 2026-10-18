@@ -22,6 +22,7 @@
 #include "Misc/PackageName.h"
 #include "NiagaraSystem.h"
 #include "DoomMapActors.h"
+#include "DoomMapCheck.h"
 #include "HAL/FileManager.h"
 #include "DoomMap.h"
 #include "DoomGraphics.h"
@@ -1475,8 +1476,38 @@ bool DoomContent::EditTest(const FString& InMapName)
 		LineEdit->SetActorLabel(TEXT("Door line made a wall"));
 		LineEdit->SetFolderPath(TEXT("Doom/Line Edits"));
 	}
+	// ... and a tagged special pointed at a tag no sector has: the map checker must name that line
+	int32 TaggedLine = INDEX_NONE;
+	for (int32 i = 0; i < Map->Lines.Num() && TaggedLine < 0; ++i)
+	{
+		const int32 Sp = Map->Lines[i].Special;
+		if (i != DoorLine && Sp != 0 && Map->Lines[i].Tag != 0 && Sp != 11 && Sp != 51 && Sp != 52 && Sp != 124) TaggedLine = i;
+	}
+	ADoomLineEdit* BrokenTag = nullptr;
+	if (TaggedLine >= 0)
+	{
+		const FDoomLine& L = Map->Lines[TaggedLine];
+		BrokenTag = World->SpawnActor<ADoomLineEdit>(ADoomLineEdit::StaticClass(), FTransform(Doom::ToUE((Map->V(L.V1) + Map->V(L.V2)) * 0.5f, 32.f)), SP);
+		BrokenTag->Line = TaggedLine;
+		BrokenTag->bTag = true;
+		BrokenTag->Tag = 999;
+		BrokenTag->SetActorLabel(TEXT("Tag pointing at nothing"));
+	}
 	MapActor->RebuildPreview();
 	const float NewFloor = MapActor->GetPreviewMap()->Sectors[Sec].Floor;
+	TArray<TWeakObjectPtr<AActor>> IssueActors;
+	const TArray<FDoomMapIssue> Issues = MapActor->RunCheck(IssueActors);
+	bool bCheckerOk = TaggedLine < 0;
+	for (int32 i = 0; i < Issues.Num(); ++i)
+	{
+		bCheckerOk |= Issues[i].Line == TaggedLine && Issues[i].Text.Contains(TEXT("tag 999")) && IssueActors[i].Get() == BrokenTag;
+	}
+	DoomMapCheck::Log(MapName + TEXT("_Edit"), Issues);
+	if (BrokenTag)
+	{
+		World->EditorDestroyActor(BrokenTag, true); // not saved with the test level
+		MapActor->RebuildPreview();
+	}
 	bool bLineOk = DoorLine >= 0;
 	FString LineReport = TEXT("no DR door line");
 	if (DoorLine >= 0)
@@ -1496,9 +1527,10 @@ bool DoomContent::EditTest(const FString& InMapName)
 	}
 	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
-	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0;
-	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines; saved %s"),
-		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections, *TestPackage);
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && bCheckerOk;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines; the checker %s line %d's broken tag; saved %s"),
+		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections,
+		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, *TestPackage);
 	return bPass;
 }
 
@@ -1511,6 +1543,27 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		FString OutDir = FPaths::ProjectSavedDir() / TEXT("LyraExport");
 		FParse::Value(*Params, TEXT("-out="), OutDir);
 		return DoomContent::ExportLyraLevel(LyraMap, OutDir) ? 0 : 1;
+	}
+	// -checkmap=E1M1,E1M2 (or all): the map checker on the WAD's maps, to the log
+	FString CheckMaps;
+	if (FParse::Value(*Params, TEXT("-checkmap="), CheckMaps, false))
+	{
+		TArray<FString> Names;
+		if (CheckMaps.Equals(TEXT("all"), ESearchCase::IgnoreCase)) Names = DoomEditorData::MapNames();
+		else CheckMaps.ParseIntoArray(Names, TEXT(","));
+		for (const FString& Name : Names)
+		{
+			FDoomMap M;
+			if (DoomEditorData::Wad() && M.Load(*DoomEditorData::Wad(), Name.ToUpper()))
+			{
+				DoomMapCheck::Log(Name.ToUpper(), DoomMapCheck::Run(M, DoomEditorData::Graphics(), Name.ToUpper()));
+			}
+			else
+			{
+				UE_LOG(LogDoomContent, Error, TEXT("Checkmap: no map %s"), *Name);
+			}
+		}
+		return 0;
 	}
 	FString EditMap;
 	if (FParse::Value(*Params, TEXT("-edittest="), EditMap))
