@@ -456,6 +456,48 @@ void ADoomMapActor::DrawConnections(const FDoomMap& InMap)
 			Outline(s, ColorOf(SectorKind[s]));
 		}
 	}
+	// ghosts of where doors and lifts travel (Doom's rules: a door opens to the lowest neighbouring
+	// ceiling - 4, a lift lowers to the lowest neighbouring floor): the outline at that height, in a
+	// dimmer colour, with a post at each corner from the plane now to the plane then; drawn over the
+	// walls, since a lowered lift is under the floor and an open door's top inside the lintel
+	GhostLines = 0;
+	auto Ghost = [&](int32 Sector, float From, float To, const FLinearColor& C)
+	{
+		if (FMath::Abs(To - From) < 1.f)
+		{
+			return;
+		}
+		const FLinearColor Dim = C * 0.6f;
+		const FDoomSector& Sec = InMap.Sectors[Sector];
+		TSet<int32> Corners;
+		for (int32 L : Sec.Lines)
+		{
+			const FDoomLine& Li = InMap.Lines[L];
+			Lines.Emplace(Doom::ToUE(InMap.V(Li.V1), To), Doom::ToUE(InMap.V(Li.V2), To), Dim, 0.f, 1.5f * S, SDPG_Foreground);
+			++GhostLines;
+			Corners.Add(Li.V1);
+			Corners.Add(Li.V2);
+		}
+		for (int32 V : Corners)
+		{
+			Lines.Emplace(Doom::ToUE(InMap.V(V), From), Doom::ToUE(InMap.V(V), To), Dim, 0.f, 1.f * S, SDPG_Foreground);
+			++GhostLines;
+		}
+	};
+	for (int32 s = 0; s < InMap.Sectors.Num(); ++s)
+	{
+		const FDoomSector& Sec = InMap.Sectors[s];
+		if (SectorKind[s] == ESpecialKind::Door)
+		{
+			const float Open = InMap.LowestCeilingSurrounding(s) - 4.f;
+			if (Open > Sec.Ceiling) Ghost(s, Sec.Ceiling, Open, ColorOf(ESpecialKind::Door));
+		}
+		else if (SectorKind[s] == ESpecialKind::Lift)
+		{
+			const float Low = InMap.LowestFloorSurrounding(s);
+			if (Low < Sec.Floor) Ghost(s, Sec.Floor, Low, ColorOf(ESpecialKind::Lift));
+		}
+	}
 	Overlay->DrawLines(Lines);
 #endif
 }
