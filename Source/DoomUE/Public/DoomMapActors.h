@@ -26,6 +26,7 @@
 #include "GameFramework/Actor.h"
 #include "DoomLevel.h"
 #include "DoomMap.h"
+#include "DoomMapCheck.h"
 #include "DoomMapActors.generated.h"
 
 class UBillboardComponent;
@@ -81,6 +82,20 @@ public:
 	/** Adds a line edit actor on the line nearest the active viewport's camera. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void AddLineEdit();
+
+	/** Lists the map's problems in the Message Log ("Doom Map Check"): tags with no sectors,
+	 *  teleporters with no destination, missing and unknown textures, open sectors, locks without
+	 *  their key, things outside the map or too tall for it, no start or no exit... Clicking an entry
+	 *  selects its marker or edit actor, or moves the camera there. */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void CheckMap();
+
+	/** The checker on the preview map (edits applied); OutActors[i] is the marker or edit actor
+	 *  issue i concerns, if there is one. */
+	TArray<FDoomMapIssue> RunCheck(TArray<TWeakObjectPtr<AActor>>& OutActors) const;
+
+	/** Set by the editor module: shows the issues in the Message Log. */
+	static TFunction<void(ADoomMapActor*, const TArray<FDoomMapIssue>&, const TArray<TWeakObjectPtr<AActor>>&)> CheckReportHook;
 
 	/** Saves the static geometry, with the current sector edits, as static mesh tile assets. Do it
 	    again after editing sectors: the game ignores tiles that no longer match. */

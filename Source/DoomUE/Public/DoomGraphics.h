@@ -79,6 +79,8 @@ public:
 
 	/** SW1xxx <-> SW2xxx partner, or NAME_None. */
 	FName SwitchPartner(FName Name) const;
+	/** A wall texture defined in TEXTURE1/2 (the map checker's unknown names). */
+	bool HasTexture(FName Name) const { return TexDefs.Contains(Name); }
 
 	/**
 	 * Loading a map's pictures off the game thread, in three steps:

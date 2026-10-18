@@ -73,6 +73,27 @@ With **Show Connections** on the DoomMap actor (on by default), the preview draw
   too), secrets in magenta and damaging floors in green;
 * a red cross on any trigger whose tag matches no sector.
 
+## Checking a map
+
+**Check Map** (on the DoomMap actor, or **Doom > Check Map**) lists the map's problems, with your
+edits applied, on the *Doom Map Check* page of the Message Log. Clicking an entry's actor selects
+it (a thing's marker, a line or sector edit); **Go there** moves the camera to the spot.
+
+* **Errors**: a special whose tag no sector has; a teleporter with no destination in its sectors; a
+  door special on a one-sided line; an unknown texture name; a one-sided wall with no middle
+  texture; a sector that isn't closed or whose ceiling is below its floor; a thing outside the map;
+  a blue, yellow or red lock with no key of its colour on some skill; no player 1 start.
+* **Warnings**: a special with tag 0 (in Doom it works on every untagged sector); a missing lower
+  or upper texture where the floor or ceiling steps (maps sometimes leave these out on purpose); a
+  monster too tall for its room; a thing on no skill level; an unknown thing type; no exit line
+  (boss maps excepted).
+* **Notes**: switch textures on lines with no special (often decoration), tags with no special,
+  missing co-op starts.
+
+Headless: `UnrealEditor-Cmd DoomUE.uproject -run=DoomContent -checkmap=E1M1,E1M2` (or `all`; add
+`-iwad=freedoom2.wad` for another IWAD) writes the same list to the log. Freedoom's 68 maps have no
+errors; their warnings are missing textures.
+
 ## Baked static meshes
 
 Importing a map also saves its static geometry (everything that never moves) as static mesh

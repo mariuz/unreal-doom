@@ -103,6 +103,52 @@ TArray<FString> DoomEditorData::MapNames()
 // ------------------------------------------------------------------------------------------------
 
 TFunction<bool(ADoomMapActor*)> ADoomMapActor::BakeHook;
+TFunction<void(ADoomMapActor*, const TArray<FDoomMapIssue>&, const TArray<TWeakObjectPtr<AActor>>&)> ADoomMapActor::CheckReportHook;
+
+TArray<FDoomMapIssue> ADoomMapActor::RunCheck(TArray<TWeakObjectPtr<AActor>>& OutActors) const
+{
+	OutActors.Reset();
+	const UWorld* World = GetWorld();
+	if (!PreviewMap || !World)
+	{
+		return {};
+	}
+	const TArray<FDoomMapIssue> Issues = DoomMapCheck::Run(*PreviewMap, DoomEditorData::Graphics(), MapName);
+	// the actors behind the map data: markers in the order ApplyEdits made the things from them, and
+	// the line and sector edits by what they edit
+	TArray<AActor*> Markers;
+	if (bUseThingMarkers)
+	{
+		for (TActorIterator<ADoomThingMarker> It(const_cast<UWorld*>(World)); It; ++It) Markers.Add(*It);
+	}
+	TMap<int32, AActor*> LineEdits, SectorEdits;
+	for (TActorIterator<ADoomLineEdit> It(const_cast<UWorld*>(World)); It; ++It) LineEdits.Add(It->Line, *It);
+	for (TActorIterator<ADoomSectorEdit> It(const_cast<UWorld*>(World)); It; ++It) SectorEdits.Add(PreviewMap->SectorAt(Doom::ToDoom2D(It->GetActorLocation())), *It);
+	for (const FDoomMapIssue& I : Issues)
+	{
+		AActor* A = nullptr;
+		if (I.Thing != INDEX_NONE && Markers.IsValidIndex(I.Thing)) A = Markers[I.Thing];
+		else if (I.Line != INDEX_NONE) A = LineEdits.FindRef(I.Line);
+		else if (I.Sector != INDEX_NONE) A = SectorEdits.FindRef(I.Sector);
+		OutActors.Add(A);
+	}
+	return Issues;
+}
+
+void ADoomMapActor::CheckMap()
+{
+	if (!PreviewMap)
+	{
+		RebuildPreview();
+	}
+	TArray<TWeakObjectPtr<AActor>> Actors;
+	const TArray<FDoomMapIssue> Issues = RunCheck(Actors);
+	DoomMapCheck::Log(MapName, Issues);
+	if (CheckReportHook)
+	{
+		CheckReportHook(this, Issues, Actors);
+	}
+}
 
 void ADoomMapActor::BakeStaticMeshes()
 {

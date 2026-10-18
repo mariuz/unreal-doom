@@ -421,6 +421,14 @@ on tags that point at nothing. `-edittest` now also turns E1M1's first door line
 wall with a new texture and checks the overlay (222 lines on E1M1); playing the saved level applies
 the line edit.
 
+The map checker (`feature/map-checker`): **Check Map** on the DoomMap actor or in the Doom menu lists
+the map's problems with the edits applied on the Message Log's *Doom Map Check* page (errors: tags
+with no sector, teleporters with no destination, unknown textures, open sectors, locks with no key on
+some skill, no start...; warnings: tag 0, missing textures, monsters too tall for their room, no
+exit...), each selecting its actor or moving the camera there; `-run=DoomContent -checkmap=all`
+for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
+checker names that line.
+
 The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot; all steps pass or
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
@@ -434,9 +442,8 @@ Not done yet (roughly in priority order):
    attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
-2. **Easier level design** in the Unreal editor (today: things and sector overrides; walls, textures and line specials still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
+2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
    * **Ghosts of moving sectors** in the viewport: where doors open to and lifts lower to, next to the connections overlay (done: line edits and the overlay, see below).
-   * **A map checker** in the Message Log: tags pointing at nothing, triggers without a special, missing textures, open sectors, unreachable keys, skills without a player start; each entry selects its actor.
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
    * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.
    * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines, with floors triangulated directly instead of from BSP subsectors (or a bundled node builder).
@@ -447,7 +454,6 @@ Not done yet (roughly in priority order):
    * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
-   * **Line and sector specials on actors**: line specials and tags as editable actors (like the sector edits) would make whole maps scriptable from the editor.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **Sleeping monsters**: monsters that haven't woken only look every 4 tics but their movement ticks every frame. A tick interval, or no tick until they wake, and the Significance Manager by distance for awake ones.
