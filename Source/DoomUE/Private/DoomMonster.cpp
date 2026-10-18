@@ -116,6 +116,11 @@ void ADoomMonster::OnRep_NetCorpse()
 	{
 		MakeCorpse();
 	}
+	else if (!bNetCorpse && Sprite)
+	{
+		Sprite->bSleepWhenDone = false; // raised by an arch-vile on the server
+		Sprite->Wake();
+	}
 }
 
 void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, float InDoomAngle, bool bInAmbush)
@@ -355,6 +360,25 @@ void ADoomMonster::DoomTic()
 		break;
 	case EMonsterState::Dead:
 		++DeadTics;
+		// at rest on the floor for a second, with nothing moving its sector: nothing moves a corpse until
+		// its floor lowers or it rises again. (A moving floor's collision is cooked a few tics behind the
+		// floor itself; a corpse that slept on the lagging collision would hang in the air.)
+		if (!bCorpseAsleep && GetCharacterMovement()->IsMovingOnGround() && GetVelocity().IsNearlyZero(1.f)
+			&& !DoomWorld->IsSectorMoving(DoomWorld->SectorAt(GetActorLocation())))
+		{
+			++CorpseRestTics;
+		}
+		else
+		{
+			CorpseRestTics = 0;
+		}
+		if (!bCorpseAsleep && CorpseRestTics >= Doom::TicRate)
+		{
+			bCorpseAsleep = true;
+			GetCharacterMovement()->StopMovementImmediately();
+			GetCharacterMovement()->SetComponentTickEnabled(false);
+			SetActorTickEnabled(false);
+		}
 		break;
 	}
 }
@@ -686,6 +710,10 @@ bool ADoomMonster::CanBeRaised() const
 void ADoomMonster::Resurrect()
 {
 	Health = Def->Health;
+	if (HasAuthority())
+	{
+		bNetCorpse = false; // clients raise it too (OnRep_NetCorpse)
+	}
 	UCapsuleComponent* Cap = GetCapsuleComponent();
 	Cap->SetCollisionResponseToAllChannels(ECR_Block);
 	Cap->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
@@ -693,6 +721,8 @@ void ADoomMonster::Resurrect()
 	{
 		HitBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	}
+	Sprite->bSleepWhenDone = false;
+	WakeCorpse();
 	FString Reverse = Def->Death;
 	Reverse.ReverseString();
 	Sprite->PlaySequence(Reverse, 5, false, false);
@@ -1058,8 +1088,20 @@ void ADoomMonster::ShootSkull(float Angle, AActor* SoulTarget)
 	}
 }
 
+void ADoomMonster::WakeCorpse()
+{
+	if (bCorpseAsleep)
+	{
+		bCorpseAsleep = false;
+		GetCharacterMovement()->SetComponentTickEnabled(true);
+		SetActorTickEnabled(true);
+	}
+	Sprite->Wake(); // its sprite follows it while it moves, and sleeps again once it rests
+}
+
 void ADoomMonster::MakeCorpse()
 {
+	Sprite->bSleepWhenDone = true; // once the death frames are over (UDoomSpriteComponent)
 	if (HasAuthority())
 	{
 		bNetCorpse = true;
@@ -1100,6 +1142,9 @@ void ADoomMonster::DoomSerialize(FArchive& Ar)
 		}
 		else
 		{
+			// a corpse in the scrambled world may be alive in the save: tick again
+			Sprite->bSleepWhenDone = false;
+			WakeCorpse();
 			GetCharacterMovement()->Velocity = Velocity;
 		}
 		LastPos = StepStart = DoomPos();

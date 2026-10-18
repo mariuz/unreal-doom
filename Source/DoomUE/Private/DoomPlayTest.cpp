@@ -9,6 +9,7 @@
 #include "DoomPlayerController.h"
 #include "DoomMenu.h"
 #include "DoomHUD.h"
+#include "DoomSpriteComponent.h"
 #include "InputKeyEventArgs.h"
 #include "DoomMonster.h"
 #include "DoomUE.h"
@@ -639,7 +640,132 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
-	// --- 15 (last: it leaves the map). the intermission shows the vanilla par time ----------------
+	// --- 15. a corpse resting on a lift goes down with it (a sleeping corpse wakes when its floor drops)
+	{
+		struct FLiftCorpse { int32 Line = -1, Sector = -1, Special = 0; TWeakObjectPtr<ADoomMonster> M; bool bAsleep = false; float Low = 1e9f; float Gap = 1e9f; };
+		TSharedRef<FLiftCorpse> C = MakeShared<FLiftCorpse>();
+		// picked now: the lift step may use up a W1 lift line, and the renderer step reloads the map (so
+		// the step below looks the map up again rather than keep a pointer)
+		C->Line = FindLine({ 62, 88, 10, 21, 120, 121, 122, 123 }, false, true);
+		if (C->Line >= 0)
+		{
+			C->Special = Map->Lines[C->Line].Special;
+			C->Sector = Map->SectorsWithTag(Map->Lines[C->Line].Tag)[0];
+		}
+		Run->Steps.Add({ TEXT("liftcorpse"),
+			[W, C, Player](FString& Msg)
+			{
+				if (C->Line < 0) { Msg = TEXT("no lift line"); return false; }
+				FDoomMap* Map = W->GetMap();
+				Map->Lines[C->Line].Special = C->Special; // the lift step may have used it up
+				const FDoomSector& S = Map->Sectors[C->Sector];
+				if (W->SectorHasMover(C->Sector)) { Msg = TEXT("the lift is busy"); return false; }
+				C->M = W->SpawnMonster(3004, Doom::ToUE(S.Center, S.Floor), 0.f); // a zombieman on the lift
+				if (!C->M.IsValid()) { Msg = TEXT("could not spawn on the lift"); return false; }
+				UGameplayStatics::ApplyDamage(C->M.Get(), 1000.f, nullptr, nullptr, nullptr);
+				return true;
+			},
+			[W, C, Player](int32 Tics, FString& Msg)
+			{
+				if (!C->M.IsValid()) { Msg = TEXT("the corpse vanished"); return EStep::Fail; }
+				const FDoomSector& S = W->GetMap()->Sectors[C->Sector];
+				if (!C->bAsleep)
+				{
+					if (C->M->IsCorpseAsleep())
+					{
+						C->bAsleep = true;
+						W->ActivateSpecial(C->Line, 0, Player(), EActivation::Use, true); // down it goes
+					}
+					return Tics > 200 ? EStep::Fail : EStep::Running;
+				}
+				// while the lift waits at the bottom the corpse must come to lie on the floor, not float
+				// where the lift was (the gap at the bottom: its smallest value once it has fallen)
+				const float Feet = C->M->DoomZ();
+				if (W->SectorHasMover(C->Sector))
+				{
+					if (S.Floor < C->Low - 0.01f) { C->Low = S.Floor; C->Gap = Feet - S.Floor; }
+					else if (FMath::IsNearlyEqual(S.Floor, C->Low, 0.01f)) { C->Gap = FMath::Min(C->Gap, Feet - S.Floor); }
+				}
+				Msg = FString::Printf(TEXT("sector %d: corpse asleep %d, lowest floor %.0f, corpse settled %.1f units above it, floor now %.0f, corpse %.0f"),
+					C->Sector, C->bAsleep, C->Low, C->Gap, S.Floor, Feet);
+				if (W->SectorHasMover(C->Sector) && Tics < 400) return EStep::Running;
+				const bool bPass = C->Gap < 2.f && FMath::Abs(Feet - S.Floor) < 2.f;
+				C->M->Destroy();
+				return bPass ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+	// --- 16. corpses go to sleep (no movement, actor or sprite ticks) and still face the camera ----
+	{
+		struct FCorpses { int32 Dead = 0; TWeakObjectPtr<ADoomMonster> Near; float Yaw0 = 0; bool bMoved = false; int32 MovedTic = 0; };
+		TSharedRef<FCorpses> K = MakeShared<FCorpses>();
+		Run->Steps.Add({ TEXT("corpses"),
+			[W, K, GoHome, Player](FString& Msg)
+			{
+				GoHome();
+				ADoomPlayer* P = Player();
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (M.IsValid() && !M->IsDead()) UGameplayStatics::ApplyDamage(M.Get(), 100000.f, P->GetController(), P, nullptr);
+				}
+				return true;
+			},
+			[W, K, Player](int32 Tics, FString& Msg)
+			{
+				ADoomPlayer* P = Player();
+				int32 Dead = 0, MoveTicks = 0, ActorTicks = 0, SpriteTicks = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (!M.IsValid() || !M->IsDead()) continue;
+					++Dead;
+					MoveTicks += M->GetCharacterMovement()->IsComponentTickEnabled();
+					ActorTicks += M->IsActorTickEnabled();
+					SpriteTicks += M->Sprite->IsComponentTickEnabled();
+				}
+				if (Tics < 140) return EStep::Running; // death frames, falls and landings
+				if (!K->bMoved)
+				{
+					// the nearest corpse in view: step sideways and watch it turn to the new camera spot
+					float Best = 1e9f;
+					for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+					{
+						if (!M.IsValid() || !M->IsDead() || !M->Sprite->IsSleeping() || !M->Sprite->WasRecentlyRendered(0.2f)) continue;
+						const float D = FVector::Dist(M->GetActorLocation(), P->GetActorLocation());
+						if (D < Best) { Best = D; K->Near = M; }
+					}
+					K->Dead = Dead;
+					if (K->Near.IsValid())
+					{
+						K->Yaw0 = K->Near->Sprite->GetComponentRotation().Yaw;
+						const FVector Side = FRotationMatrix(FRotator(0, (K->Near->GetActorLocation() - P->GetActorLocation()).Rotation().Yaw, 0)).GetUnitAxis(EAxis::Y);
+						P->SetActorLocation(P->GetActorLocation() + Side * 48.f * Doom::Scale, true);
+					}
+					K->bMoved = true;
+					K->MovedTic = Tics;
+					Msg = FString::Printf(TEXT("%d corpses: movement ticks %d, actor ticks %d, sprite ticks %d, batched sprites %d"),
+						Dead, MoveTicks, ActorTicks, SpriteTicks, W->NumSleepingSprites());
+					return EStep::Running;
+				}
+				if (Tics - K->MovedTic < 4) return EStep::Running;
+				FString Facing = TEXT("no corpse in view to check facing");
+				bool bFacing = true;
+				if (K->Near.IsValid())
+				{
+					const float Yaw1 = K->Near->Sprite->GetComponentRotation().Yaw;
+					const float Want = (K->Near->GetActorLocation() - P->EyeLocation()).Rotation().Yaw;
+					bFacing = FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, Want)) < 3.f && FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, K->Yaw0)) > 1.f;
+					Facing = FString::Printf(TEXT("a sleeping corpse turned %.1f degrees to face the moved camera (off by %.1f)"),
+						FMath::FindDeltaAngleDegrees(K->Yaw0, Yaw1), FMath::FindDeltaAngleDegrees(Yaw1, Want));
+				}
+				Msg = FString::Printf(TEXT("%d corpses: movement ticks %d, actor ticks %d, sprite ticks %d, batched sprites %d; %s"),
+					Dead, MoveTicks, ActorTicks, SpriteTicks, W->NumSleepingSprites(), *Facing);
+				// a few may still be settling (a corpse that fell off a ledge); nearly all must sleep
+				const bool bSleeping = Dead > 0 && MoveTicks * 10 <= Dead && SpriteTicks * 10 <= Dead;
+				return bSleeping && bFacing ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+	// --- 17 (last: it leaves the map). the intermission shows the vanilla par time ----------------
 	Run->Steps.Add({ TEXT("intermission"),
 		[this, W](FString& Msg)
 		{

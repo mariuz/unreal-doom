@@ -100,6 +100,8 @@ first 11 steps failed on E1M1.
 | `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses |
 | `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
 | `lostsoul` | A killed lost soul plays its death frames, then vanishes |
+| `liftcorpse` | A corpse asleep on a lift goes down with it and settles on the lowered floor |
+| `corpses` | With every monster killed, 90% of the corpses (all, in practice) run no movement, actor or sprite tick, and a sleeping corpse still turns to face the camera when the player steps aside |
 | `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
 
 Keys pressed from the test (`InputKey`) reach the controller's own key handling (the prompts) but

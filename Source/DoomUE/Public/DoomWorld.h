@@ -96,10 +96,14 @@ public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Deinitialize() override;
 	// FTickableGameObject: on servers and standalone ADoomGameMode::Tick runs the clock; network
-	// clients run no game tics, only ClientTick (texture animation, replicated geometry, globals)
-	virtual void Tick(float DeltaTime) override { ClientTick(DeltaTime); }
+	// clients run no game tics, only ClientTick (texture animation, replicated geometry, globals);
+	// everyone turns the sleeping corpse sprites to the camera
+	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override { RETURN_QUICK_DECLARE_CYCLE_STAT(UDoomWorld, STATGROUP_Tickables); }
-	virtual bool IsTickable() const override { return Wad.IsValid() && IsNetClient(); }
+	virtual bool IsTickable() const override { return Wad.IsValid() && (IsNetClient() || SleepingSprites.Num() > 0); }
+	/** A corpse's sprite that stopped ticking (UDoomSpriteComponent::bSleepWhenDone). */
+	void AddSleepingSprite(class UDoomSpriteComponent* Sprite);
+	int32 NumSleepingSprites() const { return SleepingSprites.Num(); }
 
 	// --- networking ---------------------------------------------------------------------------
 	bool IsNetClient() const;
@@ -198,6 +202,8 @@ public:
 	bool RunSaveTest(FString* OutReport);
 	FString StateFingerprint() const;
 	int32 NumMovers() const { return Movers.Num(); }
+	/** A door, lift, floor or crusher is working on the sector (a corpse there stays awake). */
+	bool IsSectorMoving(int32 Sector) const { return SectorHasMover(Sector); }
 	void UnloadMap();
 
 	/** Level flow: forwards to ADoomGameMode, which owns exits, intermission and the next map. */
@@ -406,6 +412,9 @@ private:
 
 	TArray<TWeakObjectPtr<ADoomThing>> Things;
 	TArray<TWeakObjectPtr<ADoomMonster>> Monsters;
+	/** Corpse sprites that face the camera from Tick instead of their own tick: one loop instead of a
+	 *  tick function each, and only the ones rendered lately. */
+	TArray<TWeakObjectPtr<class UDoomSpriteComponent>> SleepingSprites;
 	TArray<TWeakObjectPtr<ADoomProjectile>> Projectiles;
 	TArray<FSectorMover> Movers;
 	TArray<FLightEffect> Lights;
