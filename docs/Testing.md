@@ -75,6 +75,7 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 `-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
 [EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
 -gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
+`-run=DoomContent -navtest=all` builds the monster paths for each map and counts what can walk to the start.
 `-run=DoomContent -wadtest=all` writes every map as a PWAD and reads it back; `-file=Saved/Maps/RND00003.wad
 -warp=E1M1 -playtest` plays an exported generated map (`-exportmap=RND00003`) as a PWAD.
 
@@ -101,9 +102,10 @@ first 11 steps failed on E1M1.
 | `flyer` | A cacodemon hit by the player is still flying a second later |
 | `target` | 3 s of plasma at a baron in the open (aim kept on it) takes over 100 health |
 | `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units in 5 s (the rest are shut in closets) |
+| `smartai` | SMART monsters (Unreal's AI framework, [AI.md](AI.md)): every live monster gets the AI controller with its Behavior Tree running, perception senses the player, and 70% of the monsters that can walk to the player close in by 64+ units or get it in sight in 10 s (`-smartbaseline` measures CLASSIC monsters instead) |
 | `automap` | With the map closed, the walls in view become known, beyond the player's own sector; then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |
 | `quitprompt` | A left click on the quit prompt cancels it |
-| `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses |
+| `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses; the Options page scrolls to its last row (`playtest_options.png`) |
 | `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
 | `lostsoul` | A killed lost soul plays its death frames, then vanishes |
 | `liftcorpse` | A corpse asleep on a lift goes down with it and settles on the lowered floor |

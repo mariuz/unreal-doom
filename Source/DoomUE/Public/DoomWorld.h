@@ -10,6 +10,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "DoomMap.h"
 #include "DoomMapGen.h"
+#include "DoomAI.h"
 #include "DoomInfo.h"
 #include "DoomWad.h"
 #include "DoomGraphics.h"
@@ -263,6 +264,12 @@ public:
 	int32 GetTic() const { return Flow().LevelTic; }
 	int32 GetSkill() const { return Skill; }
 	bool IsModern() const { return bModern; }
+	/** Monster AI: SMART (Unreal's AI framework picks where monsters go, DoomAI.h) or CLASSIC. */
+	bool IsSmartAI() const { return bSmartAI; }
+	/** Switches every monster now and the ones spawned later. */
+	void SetSmartAI(bool bOn);
+	/** Monster paths over the current map (built the first time they're asked for). */
+	const FDoomNav& GetNav() const;
 	/** Niagara bursts spawned so far (tests). */
 	int32 GetParticleBursts() const { return ParticleBursts; }
 	/** The phase this machine shows: the game state's, or Menu while this player's menu is open in a
@@ -429,6 +436,9 @@ private:
 	FDoomLevelFlow LocalFlow; // only used without an ADoomGameState
 	int32 Skill = 3;
 	bool bModern = false;
+	bool bSmartAI = false;
+	mutable FDoomNav Nav;
+	mutable bool bNavBuilt = false;
 	bool bNoParticles = false; // -noparticles
 	int32 ParticleBursts = 0;
 	// networking

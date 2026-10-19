@@ -65,6 +65,12 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	bool bAutoAim = true;
 
+	/** Monster AI (Options > Monster AI): SMART lets Unreal's AI framework (Behavior Tree, EQS, AI
+	 *  Perception) choose where monsters go; their attacks, damage and frames stay Doom's. CLASSIC is
+	 *  Doom's own A_Chase. -smartai / -classicai override it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Game")
+	bool bSmartMonsters = false;
+
 	/** Pickup and door messages at the top of the screen (Options > Messages). */
 	UPROPERTY(Config, EditAnywhere, Category = "Game")
 	bool bShowMessages = true;

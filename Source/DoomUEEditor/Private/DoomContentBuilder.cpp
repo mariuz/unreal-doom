@@ -25,6 +25,7 @@
 #include "DoomMapCheck.h"
 #include "DoomMapGen.h"
 #include "DoomWadWriter.h"
+#include "DoomAI.h"
 #include "DoomWad.h"
 #include "DoomInput.h"
 #include "HAL/FileManager.h"
@@ -819,10 +820,34 @@ bool DoomContent::BuildInput(bool bOverwrite)
 	return bOk;
 }
 
+bool DoomContent::BuildAI(bool bOverwrite)
+{
+	const FString TreePath = FString(DoomAI::AssetFolder) + TEXT("BT_DoomMonster.BT_DoomMonster");
+	if (!bOverwrite && LoadObject<UObject>(nullptr, *TreePath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+	{
+		UE_LOG(LogDoomContent, Log, TEXT("Doom AI assets already exist"));
+		return true;
+	}
+	UE_LOG(LogDoomContent, Display, TEXT("Generating the Doom monster AI (blackboard, behavior tree, EQS queries) in %s"), DoomAI::AssetFolder);
+	FDoomAIAssets AI;
+	DoomAI::Build([](UClass* Class, FName Name)
+	{
+		UPackage* Pkg = MakePackage(Name.ToString(), DoomAI::AssetFolder);
+		return NewObject<UObject>(Pkg, Class, Name, RF_Public | RF_Standalone | RF_Transactional);
+	}, AI);
+	bool bOk = true;
+	for (UObject* Asset : AI.All())
+	{
+		bOk &= Asset && Save(Asset);
+	}
+	return bOk;
+}
+
 bool DoomContent::Build(bool bForce, bool bMaterials, bool bEffects)
 {
 	BuildGameData(false);
 	BuildInput(false);
+	BuildAI(false);
 	bool bEffectsOk = true;
 	if (bEffects && (bForce || !EffectsExist()))
 	{
@@ -1770,6 +1795,45 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		return Failed ? 1 : 0;
 	}
+	// -navtest=E1M1,RND00003 (or all): monster paths (FDoomNav) from every monster to player 1's start
+	FString NavTest;
+	if (FParse::Value(*Params, TEXT("-navtest="), NavTest, false))
+	{
+		TArray<FString> Names;
+		if (NavTest.Equals(TEXT("all"), ESearchCase::IgnoreCase)) Names = DoomEditorData::MapNames();
+		else NavTest.ParseIntoArray(Names, TEXT(","));
+		for (const FString& Raw : Names)
+		{
+			const FString Name = Raw.ToUpper();
+			FDoomMap M;
+			if (!GetMap(Name, M)) continue;
+			FDoomNav Nav;
+			const double T0 = FPlatformTime::Seconds();
+			Nav.Build(M);
+			const double BuildMs = (FPlatformTime::Seconds() - T0) * 1000.0;
+			FVector2f Start = FVector2f::ZeroVector;
+			for (const FDoomMapThing& T : M.Things) if (T.Type == 1) Start = T.P;
+			int32 Monsters = 0, Reached = 0, Isolated = 0;
+			double PathMs = 0;
+			TArray<FVector2f> Path;
+			FString Fails;
+			for (const FDoomMapThing& T : M.Things)
+			{
+				const FDoomThingDef* Def = DoomInfo::FindThing(T.Type);
+				if (!Def || !(Def->Flags & EThingFlag::CountKill)) continue;
+				++Monsters;
+				const double T1 = FPlatformTime::Seconds();
+				const bool bOk = Nav.FindPath(M, T.P, Start, Def->Radius, Def->Height, (Def->Flags & EThingFlag::Float) != 0, Path);
+				PathMs += (FPlatformTime::Seconds() - T1) * 1000.0;
+				Reached += bOk ? 1 : 0;
+				if (!bOk && Fails.Len() < 600) Fails += FString::Printf(TEXT(" %s(%.0f,%.0f ss %d)"), *Def->Name, T.P.X, T.P.Y, M.SubsectorAt(T.P));
+			}
+			UE_LOG(LogDoomContent, Display, TEXT("Navtest %s: %d portals built in %.1f ms; from the start %d of %d subsectors joined, %d walkable (imp); %d of %d monsters can walk to the start (%.2f ms a path); no way:%s"),
+				*Name, Nav.NumPortals(), BuildMs, Nav.CountReachable(M, Start, false, 20, 56), M.Subsectors.Num(), Nav.CountReachable(M, Start, true, 20, 56),
+				Reached, Monsters, Monsters ? PathMs / Monsters : 0.0, *Fails.Left(300));
+		}
+		return 0;
+	}
 	// -gentest=N[,first seed]: N generated maps through the map checker; each must have no errors
 	FString GenTest;
 	if (FParse::Value(*Params, TEXT("-gentest="), GenTest, false))
@@ -1895,6 +1959,11 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		UE_LOG(LogDoomContent, Display, TEXT("Bake tiles: %d maps of %s, %d failed"), Names.Num(), *DoomEditorData::WadSet(), Failed);
 		return Failed ? 1 : 0;
+	}
+	// -ai [-force]: the SMART monsters' blackboard, behavior tree and EQS queries as assets
+	if (FParse::Param(*Params, TEXT("ai")))
+	{
+		return DoomContent::BuildAI(Params.Contains(TEXT("-force"))) ? 0 : 1;
 	}
 	// -input [-force]: the input actions and mapping contexts as assets
 	if (Params.Contains(TEXT("-input")))

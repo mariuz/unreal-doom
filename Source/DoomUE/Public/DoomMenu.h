@@ -55,7 +55,7 @@ public:
 	FIntPoint Origin() const;
 	/** 16, as in Doom; the Controls page packs its long list tighter and scrolls. */
 	int32 RowHeight() const { return Page == EMenuPage::Controls ? 10 : 16; }
-	int32 VisibleRows() const { return Page == EMenuPage::Controls ? 15 : 100; }
+	int32 VisibleRows() const { return Page == EMenuPage::Controls ? 15 : Page == EMenuPage::Options ? 10 : 100; }
 	/** The first row shown (the Controls page scrolls to keep the selection in view). */
 	int32 FirstVisibleRow(int32 NumRows) const { return FMath::Clamp(Item - VisibleRows() / 2, 0, FMath::Max(0, NumRows - VisibleRows())); }
 	TArray<FDoomEpisode> Episodes(UDoomWorld& W) const;
