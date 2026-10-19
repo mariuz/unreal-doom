@@ -2414,13 +2414,7 @@ void UDoomWorld::NoiseAlert(AActor* Target, const FVector& Where)
 
 DoomMapGen::FOptions UDoomWorld::GenOptions(uint32 Seed) const
 {
-	DoomMapGen::FOptions O;
-	O.Seed = Seed;
-	O.bDoom2 = Wad.IsValid() && Wad->IsDoom2();
-	// -genrooms=N: bigger or smaller generated maps; otherwise the seed varies the size a little
-	static const int32 Rooms = [] { int32 N = 0; FParse::Value(FCommandLine::Get(), TEXT("-genrooms="), N); return N; }();
-	O.Rooms = Rooms > 0 ? Rooms : 8 + (int32)(Seed % 5);
-	return O;
+	return DoomMapGen::DefaultOptions(Seed, Wad.IsValid() && Wad->IsDoom2());
 }
 
 FString UDoomWorld::MusicForMap(const FString& MapName) const

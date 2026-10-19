@@ -45,7 +45,7 @@ class DOOMUE_API ADoomMapActor : public ADoomLevel
 public:
 	ADoomMapActor();
 
-	/** The WAD map this level edits (E1M1, MAP01...). */
+	/** The WAD map this level edits (E1M1, MAP01...), or a generated one (RND0002A). */
 	UPROPERTY(EditAnywhere, Category = "Doom")
 	FString MapName = TEXT("E1M1");
 
@@ -89,6 +89,22 @@ public:
 	 *  selects its marker or edit actor, or moves the camera there. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void CheckMap();
+
+	/** Writes the map with this level's edits (sector and line edits, thing markers) as a PWAD that
+	 *  any Doom port or editor opens: Saved/Maps/<MapName>.wad unless ExportPath says otherwise. */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void ExportWad();
+
+	/** Where Export WAD writes (empty: Saved/Maps/<MapName>.wad). */
+	UPROPERTY(EditAnywhere, Category = "Doom|Export")
+	FString ExportPath;
+
+	/** The map slot in the PWAD (empty: MapName; a generated map goes in as MAP01 or E1M1). */
+	UPROPERTY(EditAnywhere, Category = "Doom|Export")
+	FString ExportSlot;
+
+	/** The map from the WAD or the generator, with this level's edits applied. */
+	bool LoadEditedMap(FDoomMap& Out) const;
 
 	/** The checker on the preview map (edits applied); OutActors[i] is the marker or edit actor
 	 *  issue i concerns, if there is one. */
