@@ -22,6 +22,7 @@
 #include "DoomPlayerState.h"
 #include "DoomMusic.h"
 #include "DoomMapGen.h"
+#include "Perception/AISense_Hearing.h"
 #include "DoomDehacked.h"
 #include "Misc/FileHelper.h"
 #include "Components/AudioComponent.h"
@@ -245,6 +246,8 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 	bModern = Settings->bModernRenderer;
 	if (FParse::Param(FCommandLine::Get(), TEXT("modern"))) bModern = true;
 	if (FParse::Param(FCommandLine::Get(), TEXT("classic"))) bModern = false;
+	bSmartAI = Settings->bSmartMonsters || FParse::Param(FCommandLine::Get(), TEXT("smartai"));
+	if (FParse::Param(FCommandLine::Get(), TEXT("classicai"))) bSmartAI = false;
 	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
 	bDeathmatchParam = FParse::Param(FCommandLine::Get(), TEXT("deathmatch"));
 	UE_LOG(LogDoom, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
@@ -377,6 +380,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	}
 	UnloadMap();
 	Map = MakeUnique<FDoomMap>();
+	bNavBuilt = false;
 	uint32 GenSeed = 0;
 	if (DoomMapGen::ParseName(MapName, GenSeed))
 	{
@@ -2356,8 +2360,35 @@ void UDoomWorld::Teleport(AActor* Actor, int32 LineIndex, int32 Side)
 	}
 }
 
+void UDoomWorld::SetSmartAI(bool bOn)
+{
+	bSmartAI = bOn;
+	for (const TWeakObjectPtr<ADoomMonster>& M : Monsters)
+	{
+		if (M.IsValid()) M->SetSmartAI(bOn);
+	}
+	UE_LOG(LogDoom, Log, TEXT("Monster AI: %s"), bOn ? TEXT("SMART (Behavior Tree, EQS, perception)") : TEXT("CLASSIC"));
+}
+
+const FDoomNav& UDoomWorld::GetNav() const
+{
+	if (!bNavBuilt && Map.IsValid())
+	{
+		const double T0 = FPlatformTime::Seconds();
+		Nav.Build(*Map);
+		bNavBuilt = true;
+		UE_LOG(LogDoom, Log, TEXT("%s: monster paths over %d subsectors, %d portals, in %.1f ms"), *Map->Name, Map->Subsectors.Num(), Nav.NumPortals(), (FPlatformTime::Seconds() - T0) * 1000.0);
+	}
+	return Nav;
+}
+
 void UDoomWorld::NoiseAlert(AActor* Target, const FVector& Where)
 {
+	// SMART monsters also hear it through Unreal's AI perception (awake ones follow the sound)
+	if (bSmartAI)
+	{
+		UAISense_Hearing::ReportNoiseEvent(this, Where, 1.f, Target);
+	}
 	// Flood the sound through open two-sided lines; a sound-blocking line may be crossed once.
 	const int32 Start = SectorAt(Where);
 	if (Start < 0)

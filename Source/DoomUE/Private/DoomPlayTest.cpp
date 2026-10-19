@@ -4,6 +4,8 @@
 // have (a lift, a teleporter) are skipped. Screenshots land in Saved/Screenshots/.../playtest_*.png.
 #include "DoomGameMode.h"
 #include "DoomWorld.h"
+#include "DoomAI.h"
+#include "BrainComponent.h"
 #include "DoomMap.h"
 #include "DoomPlayer.h"
 #include "DoomPlayerController.h"
@@ -476,6 +478,84 @@ void ADoomGameMode::StartPlayTest()
 	}
 
 
+	// --- 9b. SMART monsters: AI controllers run the Behavior Tree, perception senses the player, and
+	// the ones that can walk to the player close in along FDoomNav paths or get it in sight ----------
+	{
+		struct FSmart
+		{
+			TMap<TWeakObjectPtr<ADoomMonster>, float> StartWalk; // path length to the player at the start
+			TSet<TWeakObjectPtr<ADoomMonster>> Saw;
+			bool bWasSmart = false;
+		};
+		TSharedRef<FSmart> C = MakeShared<FSmart>();
+		auto WalkTo = [](const ADoomMonster* M, const FVector2f& To)
+		{
+			TArray<FVector2f> Path;
+			const UDoomWorld* DW = M->GetDoomWorld();
+			if (!DW->GetNav().FindPath(*DW->GetMap(), M->DoomPos(), To, M->Def->Radius, M->Def->Height, (M->Def->Flags & EThingFlag::Float) != 0, Path)) return -1.f;
+			float Len = 0;
+			FVector2f Prev = M->DoomPos();
+			for (const FVector2f& P : Path) { Len += FVector2f::Distance(Prev, P); Prev = P; }
+			return Len;
+		};
+		Run->Steps.Add({ TEXT("smartai"),
+			[W, C, GoHome, Player, WalkTo](FString& Msg)
+			{
+				GoHome();
+				ADoomPlayer* P = Player();
+				P->bGodMode = true;
+				C->bWasSmart = W->IsSmartAI();
+				// -smartbaseline: the same measure with CLASSIC monsters, to compare
+				W->SetSmartAI(!FParse::Param(FCommandLine::Get(), TEXT("smartbaseline")));
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (!M.IsValid() || M->IsDead() || M->Def->Speed <= 0) continue;
+					M->Target = P;
+					M->StartState(EMonsterState::Chase);
+					const float Walk = WalkTo(M.Get(), P->DoomPos());
+					if (Walk >= 0) C->StartWalk.Add(M, Walk);
+				}
+				if (C->StartWalk.Num() == 0) { Msg = TEXT("no monster can walk to the player"); return false; }
+				return true;
+			},
+			[W, C, Player, WalkTo](int32 Tics, FString& Msg)
+			{
+				ADoomPlayer* P = Player();
+				for (const TPair<TWeakObjectPtr<ADoomMonster>, float>& E : C->StartWalk)
+				{
+					if (E.Key.IsValid() && !E.Key->IsDead() && W->CheckSight(E.Key.Get(), P)) C->Saw.Add(E.Key);
+				}
+				if (Tics < 350) return EStep::Running;
+				int32 Controllers = 0, Running = 0, Sensed = 0, Alive = 0, Engaged = 0, Closer = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (!M.IsValid() || M->IsDead()) continue;
+					const ADoomAIController* AI = Cast<ADoomAIController>(M->GetController());
+					Controllers += AI ? 1 : 0;
+					Running += AI && AI->GetBrainComponent() && AI->GetBrainComponent()->IsRunning() ? 1 : 0;
+					Sensed += AI ? AI->NumSensed : 0;
+				}
+				for (const TPair<TWeakObjectPtr<ADoomMonster>, float>& E : C->StartWalk)
+				{
+					if (!E.Key.IsValid() || E.Key->IsDead()) continue;
+					++Alive;
+					const float Now = WalkTo(E.Key.Get(), P->DoomPos());
+					const bool bCloser = Now >= 0 && Now < E.Value - 64.f;
+					Closer += bCloser ? 1 : 0;
+					Engaged += (bCloser || C->Saw.Contains(E.Key) || E.Value < 128.f) ? 1 : 0;
+				}
+				int32 Live = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters()) Live += M.IsValid() && !M->IsDead() ? 1 : 0;
+				Msg = FString::Printf(TEXT("%d of %d live monsters have the AI controller (%d trees running), %d perception events; of %d that can walk to the player, %d closed in by 64+ units and %d closed in or saw the player in 10 s"),
+					Controllers, Live, Running, Sensed, Alive, Closer, Engaged);
+				const bool bBaseline = !W->IsSmartAI();
+				if (!C->bWasSmart) W->SetSmartAI(false);
+				if (bBaseline) { Msg = TEXT("CLASSIC baseline: ") + Msg; return EStep::Pass; }
+				const bool bOk = Controllers == Live && Running == Live && Sensed > 0 && Alive > 0 && Engaged * 10 >= Alive * 7;
+				return bOk ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
 	// --- 10. the automap learns the walls in view while it is closed -----------------------------
 	Run->Steps.Add({ TEXT("automap"),
 		[W, Map, GoHome](FString& Msg)
@@ -565,8 +645,12 @@ void ADoomGameMode::StartPlayTest()
 				W->SetModern(!X->bModern);
 				return true;
 			},
-			[W, X](int32 Tics, FString& Msg)
+			[W, X, Shot](int32 Tics, FString& Msg)
 			{
+				// the Options page itself (playtest_options.png): every row fits above the status bar
+				if (Tics < 10) W->Menu.Item = 10; // CONTROLS, the last row: the page scrolls to it
+				if (Tics == 10) Shot(TEXT("options"));
+				if (Tics < 14) return EStep::Running;
 				ADoomPlayer* P = W->GetPlayer();
 				int32 Dead = 0;
 				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters()) Dead += M.IsValid() && M->IsDead();
@@ -834,7 +918,7 @@ void ADoomGameMode::StartPlayTest()
 					B->bOk &= Has(EKeys::F) && !Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl);
 					// the Controls page as the player sees it, on the Fire row
 					W->Menu.Open(*W, EMenuPage::Options);
-					W->Menu.Item = 9;
+					W->Menu.Item = 10; // CONTROLS
 					W->Menu.Select(*W);
 					W->Menu.Item = DoomInput::Mappables().IndexOfByPredicate([](const DoomInput::FMappable& M) { return M.Name == TEXT("Fire"); });
 					const TArray<FMenuRow> Rows = W->Menu.Rows(*W);

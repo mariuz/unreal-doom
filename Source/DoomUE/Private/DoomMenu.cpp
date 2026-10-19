@@ -110,6 +110,7 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("WARP TO: < %s >"), Maps.IsValidIndex(WarpIndex) ? *Maps[WarpIndex] : TEXT("-")) });
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("COLORS: %s"), S->bPaletteExact ? TEXT("EXACT") : TEXT("SMOOTH")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTER AI: %s"), W.IsSmartAI() ? TEXT("SMART") : TEXT("CLASSIC")) });
 		R.Add({ EKind::Choice, FString(), TEXT("CONTROLS") });
 		break;
 	}
@@ -382,6 +383,7 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 			break;
 		}
 		case 8: S->bPaletteExact = !S->bPaletteExact; break;
+		case 9: W.SetSmartAI(!W.IsSmartAI()); S->bSmartMonsters = W.IsSmartAI(); break;
 		default: bChanged = false; break;
 		}
 	}
@@ -453,7 +455,7 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8)))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8 || Item == 9)))
 	{
 		Adjust(W, 1);
 		return;
@@ -509,7 +511,7 @@ void FDoomMenu::Activate(UDoomWorld& W)
 	case EMenuPage::Options:
 		if (Item == 0) Push(W, EMenuPage::EndGame);
 		else if (Item == 4) Push(W, EMenuPage::Sound);
-		else if (Item == 9) Push(W, EMenuPage::Controls);
+		else if (Item == 10) Push(W, EMenuPage::Controls);
 		else if (Item == 7 && W.GetWad()->MapNames().IsValidIndex(WarpIndex))
 		{
 			Stack.Reset();

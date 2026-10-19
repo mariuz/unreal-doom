@@ -92,7 +92,33 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UBoxComponent> HitBox;
 
+	// SMART mode (Options > Monster AI): an ADoomAIController's Behavior Tree picks where to walk;
+	// Doom's own code still decides when to attack (see DoomAI.h)
+	/** Switches between Doom's own A_Chase (false) and the AI controller (true). */
+	void SetSmartAI(bool bOn);
+	bool IsSmart() const { return bSmart; }
+	enum class ESmartMove : uint8 { None, Moving, Arrived, Failed };
+	/** Starts walking to Goal (Doom 2D) on an FDoomNav path; false if there is no way there. */
+	bool SetSmartGoal(const FVector2f& Goal, float AcceptRadius);
+	void ClearSmartGoal();
+	ESmartMove GetSmartMove() const { return SmartMove; }
+	FVector2f GetSmartGoal() const { return SmartGoal; }
+	UDoomWorld* GetDoomWorld() const { return DoomWorld; }
+
 private:
+	bool bSmart = false;
+	ESmartMove SmartMove = ESmartMove::None;
+	TArray<FVector2f> SmartPath;
+	int32 SmartIndex = 0;
+	FVector2f SmartGoal = FVector2f::ZeroVector;
+	float SmartAccept = 32.f;
+	FVector2f SmartDir = FVector2f::ZeroVector;
+	int32 SmartStuck = 0;
+	/** One A_Chase step along the path. */
+	void SmartStep();
+	/** Another monster stands between us and the target (SMART monsters hold their fire). */
+	bool FriendInLineOfFire() const;
+
 	void Look();
 	void Chase();
 	void FaceTarget();

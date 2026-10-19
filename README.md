@@ -186,6 +186,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/Testing.md](docs/Testing.md): the automation tests (maps and node formats, DeHackEd /
   Boom / UMAPINFO patches, save and load, level exits, map editing, screenshot comparisons), run
   from the Session Frontend or with `Tools/run_tests.bat` in CI.
+* [docs/AI.md](docs/AI.md): SMART monsters (Options > Monster AI): an AI controller with
+  perception, a Behavior Tree and EQS queries choose where monsters go, over paths through the
+  map's subsectors; Doom's code still decides the attacks.
 * [docs/Multiplayer.md](docs/Multiplayer.md): co-op and deathmatch for up to 4 players: how to
   host and join, the rules, what replicates, and the two-process `-nettest`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
@@ -434,6 +437,14 @@ some skill, no start...; warnings: tag 0, missing textures, monsters too tall fo
 exit...), each selecting its actor or moving the camera there; `-run=DoomContent -checkmap=all`
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
+
+SMART monsters (`feature/smart-ai`): **Options > Monster AI** (or `-smartai`) hands monsters to
+Unreal's AI framework: `ADoomAIController` with AI Perception (sight, hearing), a Behavior Tree
+(`/Game/Doom/AI/BT_DoomMonster`: take cover when hurt, charge, find a firing position with EQS, hunt,
+investigate), and paths over the map's subsectors that keep Doom's step, ledge and door rules. Doom
+still decides when monsters attack and what the attacks do; they hold fire when another monster is in
+the way. In the play-test, SMART monsters reach the player more often than CLASSIC ones: 15 of 15
+against 11 of 16 on RND00005, and 12 of 12 against 3 of 11 on RND00001. See [docs/AI.md](docs/AI.md).
 
 PWAD export (`feature/pwad-export`): **Export WAD** on the DoomMap actor (or `-run=DoomContent
 -exportmap=`) writes a map with the level's edits, or a generated map, in Doom's binary format with

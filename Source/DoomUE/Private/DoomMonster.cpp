@@ -8,6 +8,8 @@
 #include "DoomSpriteComponent.h"
 #include "DoomUE.h"
 #include "AIController.h"
+#include "BrainComponent.h"
+#include "DoomAI.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
@@ -173,6 +175,10 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 	Sprite->SetSector(DoomWorld->SectorAt(GetActorLocation()));
 	LastPos = StepStart = DoomPos();
 	ReactionTime = DoomWorld->GetSkill() >= 5 ? 0 : 8;
+	if (HasAuthority() && DoomWorld->IsSmartAI())
+	{
+		SetSmartAI(true);
+	}
 
 	if (DoomWorld->IsModern() && Def->LightColor.A > 0)
 	{
@@ -231,7 +237,8 @@ void ADoomMonster::Tick(float DeltaSeconds)
 	}
 	if (State == EMonsterState::Chase && MoveDir != DirNone)
 	{
-		const FVector2f D = DirVector(MoveDir);
+		// SMART: straight along the path, not in Doom's eight directions
+		const FVector2f D = (bSmart && SmartMove == ESmartMove::Moving && !SmartDir.IsNearlyZero()) ? SmartDir : DirVector(MoveDir);
 		FVector Input(D.X, -D.Y, 0);
 		if ((Def->Flags & EThingFlag::Float) && FloatGoalTics > 0)
 		{
@@ -728,6 +735,13 @@ void ADoomMonster::Resurrect()
 	Sprite->PlaySequence(Reverse, 5, false, false);
 	State = EMonsterState::Raising;
 	Target.Reset();
+	if (bSmart)
+	{
+		if (const AAIController* C = Cast<AAIController>(Controller); C && C->GetBrainComponent())
+		{
+			C->GetBrainComponent()->RestartLogic();
+		}
+	}
 	if (Def->Flags & EThingFlag::Float)
 	{
 		GetCharacterMovement()->SetMovementMode(MOVE_Flying);
@@ -798,14 +812,20 @@ void ADoomMonster::Chase()
 		StartState(EMonsterState::Melee);
 		return;
 	}
-	if (!Def->Attack.IsEmpty() && (DoomWorld->GetSkill() >= 5 || MoveCount <= 0) && CheckMissileRange())
+	if (!Def->Attack.IsEmpty() && (DoomWorld->GetSkill() >= 5 || MoveCount <= 0) && CheckMissileRange() && !(bSmart && FriendInLineOfFire()))
 	{
 		StartState(EMonsterState::Missile);
 		bJustAttacked = true;
 		return;
 	}
 
-	if (--MoveCount < 0 || !TryWalk(MoveDir))
+	if (bSmart && SmartMove == ESmartMove::Moving)
+	{
+		// the tree's path; MoveCount still paces the missile attacks as in A_Chase
+		if (--MoveCount < 0) MoveCount = MonsterRand() & 15;
+		SmartStep();
+	}
+	else if (--MoveCount < 0 || !TryWalk(MoveDir))
 	{
 		NewChaseDir();
 	}
@@ -1013,9 +1033,134 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 	return Damage;
 }
 
+void ADoomMonster::SetSmartAI(bool bOn)
+{
+	bSmart = bOn;
+	ClearSmartGoal();
+	if (!HasAuthority() || !GetWorld() || IsActorBeingDestroyed())
+	{
+		return;
+	}
+	UClass* Want = bOn ? ADoomAIController::StaticClass() : AAIController::StaticClass();
+	if (Controller && Controller->GetClass() == Want)
+	{
+		return;
+	}
+	if (AController* Old = Controller)
+	{
+		Old->UnPossess();
+		Old->Destroy();
+	}
+	AIControllerClass = Want;
+	SpawnDefaultController();
+	if (IsDead())
+	{
+		if (const AAIController* C = Cast<AAIController>(Controller); C && C->GetBrainComponent())
+		{
+			C->GetBrainComponent()->StopLogic(TEXT("dead"));
+		}
+	}
+}
+
+bool ADoomMonster::SetSmartGoal(const FVector2f& Goal, float AcceptRadius)
+{
+	const FDoomMap* Map = DoomWorld ? DoomWorld->GetMap() : nullptr;
+	if (!Map || !Def)
+	{
+		return false;
+	}
+	TArray<FVector2f> Path;
+	if (!DoomWorld->GetNav().FindPath(*Map, DoomPos(), Goal, Def->Radius, Def->Height, (Def->Flags & EThingFlag::Float) != 0, Path))
+	{
+		SmartMove = ESmartMove::Failed;
+		return false;
+	}
+	SmartPath = MoveTemp(Path);
+	SmartIndex = 0;
+	SmartGoal = Goal;
+	SmartAccept = AcceptRadius;
+	SmartMove = ESmartMove::Moving;
+	SmartStuck = 0;
+	StepStart = DoomPos();
+	return true;
+}
+
+void ADoomMonster::ClearSmartGoal()
+{
+	SmartMove = ESmartMove::None;
+	SmartPath.Reset();
+	SmartIndex = 0;
+	SmartDir = FVector2f::ZeroVector;
+}
+
+void ADoomMonster::SmartStep()
+{
+	const FVector2f Pos = DoomPos();
+	const float Moved = FVector2f::Distance(Pos, StepStart);
+	StepStart = Pos;
+	const float Reach = FMath::Max(Def->Radius, 16.f);
+	while (SmartIndex < SmartPath.Num() - 1 && FVector2f::Distance(Pos, SmartPath[SmartIndex]) < Reach)
+	{
+		++SmartIndex;
+	}
+	if (!SmartPath.IsValidIndex(SmartIndex) || FVector2f::Distance(Pos, SmartGoal) < SmartAccept)
+	{
+		SmartMove = ESmartMove::Arrived;
+		SmartDir = FVector2f::ZeroVector;
+		MoveDir = DirNone;
+		return;
+	}
+	SmartDir = (SmartPath[SmartIndex] - Pos).GetSafeNormal();
+	if (SmartDir.IsNearlyZero())
+	{
+		return;
+	}
+	// the nearest of Doom's eight directions: the monster turns to face it as in A_Chase
+	MoveDir = (FMath::RoundToInt(FMath::RadiansToDegrees(FMath::Atan2(SmartDir.Y, SmartDir.X)) / 45.f) + 8) % 8;
+	if (Moved < Def->Speed * 0.25f)
+	{
+		// blocked: maybe a door to open; after a while the tree thinks again
+		DoomWorld->TryMonsterUse(this, Pos, Pos + SmartDir * (Def->Radius + 24.f));
+		if (++SmartStuck > 16)
+		{
+			SmartMove = ESmartMove::Failed;
+			SmartDir = FVector2f::ZeroVector;
+		}
+	}
+	else
+	{
+		SmartStuck = 0;
+	}
+}
+
+bool ADoomMonster::FriendInLineOfFire() const
+{
+	if (!Target.IsValid())
+	{
+		return false;
+	}
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomFriendlyFire), false, this);
+	Q.AddIgnoredActor(Target.Get());
+	FHitResult Hit;
+	if (!GetWorld()->LineTraceSingleByObjectType(Hit, EyeLocation(), Target->GetActorLocation(), FCollisionObjectQueryParams(ECC_DoomMonster), Q))
+	{
+		return false;
+	}
+	const ADoomMonster* M = Cast<ADoomMonster>(Hit.GetActor());
+	return M && !M->IsDead();
+}
+
 void ADoomMonster::Die(AActor* Killer, bool bGib)
 {
 	State = EMonsterState::Dying;
+	if (bSmart)
+	{
+		ClearSmartGoal();
+		if (const AAIController* C = Cast<AAIController>(Controller); C && C->GetBrainComponent())
+		{
+			C->GetBrainComponent()->StopLogic(TEXT("dead"));
+		}
+	}
 	LastTarget = Target; // a dying pain elemental's souls go after whoever it was fighting
 	Target.Reset();
 	MoveDir = DirNone;

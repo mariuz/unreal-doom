@@ -28,6 +28,8 @@ namespace DoomContent
 	/** Saves the input actions and mapping contexts (DoomInput::Build) in /Game/Doom/Input when missing
 	 *  (or always with bOverwrite): editable in the editor, cooked into packaged games. */
 	bool BuildInput(bool bOverwrite);
+	/** The SMART monsters' blackboard, behavior tree and EQS queries in /Game/Doom/AI. */
+	bool BuildAI(bool bOverwrite);
 	/** Logs a Niagara system's lightweight emitters and their module properties (-dumpniagara=Path). */
 	void DumpNiagara(const FString& Path);
 	/** Saves a WAD map as an editable level (/Game/Doom/Maps/<MAP>): map actor, thing markers. */

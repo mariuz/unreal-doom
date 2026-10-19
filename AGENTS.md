@@ -15,7 +15,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
   `ADoomLevel` builds the geometry. See [docs/Architecture.md](docs/Architecture.md).
 * `Source/DoomUEEditor`: the editor module. `-run=DoomContent` generates materials, effects and the
   game-table asset, and imports maps; the automation tests live in `Private/Tests`.
-* `docs/`: Architecture, Testing, Multiplayer, EditingMaps, Lyra. Keep them current with changes.
+* `docs/`: Architecture, Testing, Multiplayer, EditingMaps, Lyra, AI. Keep them current with changes.
 * `Tools/`: `run_tests.bat`, test-WAD generators, the Lyra export scripts and plugin.
 * The roadmap is the "Not done yet" list at the end of the README.
 
@@ -112,6 +112,12 @@ Tools/run_tests.bat DoomUE -NullRHI
   must wake it first; `PlaySequence` wakes a sprite. Keep the HUD deterministic (no `FMath::Rand`):
   the classic screenshot is compared pixel for pixel.
 
+* **Unity builds merge source files:** a new file regroups them, and names in anonymous namespaces
+  or file-level statics then clash with another file's (`Walls`, `Fire`, `IsManualDoor` so far).
+  Give them file-specific names.
+* **The Options page's rows are numbered by hand** in `FDoomMenu` (`Rows`, `Adjust`, `Select`,
+  `Activate`) and in the play-test's `rebind` step. Adding a row shifts the ones after it. The page
+  scrolls past 10 rows.
 * **Game tables are `USTRUCT`s with `FString` fields** (`DoomInfo.h`).
   * Test for empty fields with `.IsEmpty()`. `*Def->Field` compiles but is always true.
   * Compare names with `.Equals()`.
@@ -164,6 +170,11 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * SMART monsters (`DoomAI.h`, [docs/AI.md](docs/AI.md)): AI controller, perception, Behavior Tree and EQS
+    assets in `/Game/Doom/AI` (`-run=DoomContent -ai`), `FDoomNav` paths, the `smartai` play-test step;
+  * PWAD export (`DoomWadWriter`, Export WAD, `-exportmap`, `-wadtest`);
+  * the random map generator (`DoomMapGen`, `RND<seed>` maps, RANDOM MAP, `-gentest`);
+  * the node builder (`FDoomMap::Rebuild`, `-nodetest`, `-buildnodes`);
   * Enhanced Input assets (`/Game/Doom/Input`, from `DoomInput::Build`) and the Controls rebind page;
   * the map checker (`DoomMapCheck`, Check Map, `-checkmap=`);
   * line edits (`ADoomLineEdit`) and the connections overlay in the editor viewport;
