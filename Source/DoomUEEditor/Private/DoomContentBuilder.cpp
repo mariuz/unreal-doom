@@ -1570,6 +1570,68 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		FParse::Value(*Params, TEXT("-out="), OutDir);
 		return DoomContent::ExportLyraLevel(LyraMap, OutDir) ? 0 : 1;
 	}
+	// -nodetest=E1M1,E1M2 (or all): the node builder against the WAD's own nodes: the same total area,
+	// and the same sector at points sampled over the map
+	FString NodeMaps;
+	if (FParse::Value(*Params, TEXT("-nodetest="), NodeMaps, false))
+	{
+		TArray<FString> Names;
+		if (NodeMaps.Equals(TEXT("all"), ESearchCase::IgnoreCase)) Names = DoomEditorData::MapNames();
+		else NodeMaps.ParseIntoArray(Names, TEXT(","));
+		int32 Failed = 0;
+		for (const FString& Raw : Names)
+		{
+			const FString Name = Raw.ToUpper();
+			FDoomMap Orig;
+			if (!DoomEditorData::Wad() || !Orig.Load(*DoomEditorData::Wad(), Name))
+			{
+				UE_LOG(LogDoomContent, Error, TEXT("Nodetest: no map %s"), *Name);
+				++Failed;
+				continue;
+			}
+			FDoomMap Built = Orig;
+			const double T0 = FPlatformTime::Seconds();
+			const bool bBuilt = Built.Rebuild();
+			const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+			const double AreaOrig = Orig.SubsectorArea(), AreaBuilt = Built.SubsectorArea();
+			FRandomStream Rng(1234);
+			int32 Samples = 0, Agree = 0;
+			for (int32 k = 0; k < 20000; ++k)
+			{
+				const FVector2f Pt(Rng.FRandRange(Orig.Bounds.Min.X, Orig.Bounds.Max.X), Rng.FRandRange(Orig.Bounds.Min.Y, Orig.Bounds.Max.Y));
+				// only points well inside a sector (not on a line) are comparable
+				bool bNearLine = false;
+				for (int32 L = 0; L < Orig.Lines.Num() && !bNearLine; ++L) bNearLine = Orig.DistanceToLine(Pt, L) < 1.f;
+				if (bNearLine) continue;
+				// and only points inside the map: in the void either BSP may name any sector
+				const int32 Ss = Orig.SubsectorAt(Pt);
+				if (!Orig.Subsectors.IsValidIndex(Ss)) continue;
+				const TArray<FVector2f>& Poly = Orig.Subsectors[Ss].Polygon;
+				bool bInside = Poly.Num() >= 3;
+				int32 Sign = 0;
+				for (int32 v = 0; v < Poly.Num() && bInside; ++v)
+				{
+					const FVector2f E = Poly[(v + 1) % Poly.Num()] - Poly[v], Q = Pt - Poly[v];
+					const float C = E.X * Q.Y - E.Y * Q.X;
+					const int32 Sv = C > 0.f ? 1 : (C < 0.f ? -1 : 0);
+					if (Sv != 0 && Sign != 0 && Sv != Sign) bInside = false;
+					if (Sv != 0) Sign = Sv;
+				}
+				if (!bInside) continue;
+				++Samples;
+				Agree += Orig.SectorAt(Pt) == Built.SectorAt(Pt);
+			}
+			const double AreaErr = FMath::Abs(AreaBuilt - AreaOrig) / FMath::Max(AreaOrig, 1.0);
+			const double Disagree = Samples ? 1.0 - (double)Agree / Samples : 1.0;
+			// sectors are what matter; the outside of the map has no defined sector (either BSP may say anything)
+			const bool bPass = bBuilt && AreaErr < 0.001 && Disagree < 0.02;
+			Failed += bPass ? 0 : 1;
+			UE_LOG(LogDoomContent, Display, TEXT("Nodetest %s %s: %s in %.0f ms, %d subsectors (WAD %d), area %.0f (WAD %.0f), same sector at %d of %d points (%.2f%% differ)"),
+				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Built.NodesFormat, Ms, Built.Subsectors.Num(), Orig.Subsectors.Num(), AreaBuilt, AreaOrig,
+				Agree, Samples, Disagree * 100.0);
+		}
+		return Failed ? 1 : 0;
+	}
 	// -checkmap=E1M1,E1M2 (or all): the map checker on the WAD's maps, to the log
 	FString CheckMaps;
 	if (FParse::Value(*Params, TEXT("-checkmap="), CheckMaps, false))

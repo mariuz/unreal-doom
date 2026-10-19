@@ -435,6 +435,10 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+The node builder (`feature/node-builder`): `FDoomMap::Rebuild()` builds a map's segs, subsectors and
+nodes from its lines and sectors alone; `-run=DoomContent -nodetest=all` checks it against all 68
+Freedoom maps' own nodes (same area and sectors), and `-buildnodes` plays on the rebuilt nodes.
+
 The overlay also shows where doors open to and lifts lower to: a dimmer outline at that height with
 corner posts, drawn over the walls (E1M1: 136 such lines); `-edittest` checks they're drawn.
 
@@ -461,7 +465,7 @@ Not done yet (roughly in priority order):
 2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
    * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.
-   * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines, with floors triangulated directly instead of from BSP subsectors (or a bundled node builder).
+   * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines. The node builder it needs is in (`FDoomMap::Rebuild`, `-nodetest`, see [docs/EditingMaps.md](docs/EditingMaps.md)).
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
    * **Gamepad rebinding and per-platform mappings**: the Controls page rebinds keyboard and mouse; the gamepad's buttons are fixed, and there is one mapping set for every platform.

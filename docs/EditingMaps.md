@@ -97,6 +97,21 @@ Headless: `UnrealEditor-Cmd DoomUE.uproject -run=DoomContent -checkmap=E1M1,E1M2
 `-iwad=freedoom2.wad` for another IWAD) writes the same list to the log. Freedoom's 68 maps have no
 errors; their warnings are missing textures.
 
+## The node builder
+
+`FDoomMap::Rebuild()` makes a map's BSP (segs, subsectors and nodes) from its lines and sectors
+alone, in the vanilla style: segs are the lines' sides, split where a partition crosses them, and a
+convex set of segs becomes a subsector (no minisegs; the subsector polygons are clipped from the
+partitions, as for a WAD's own nodes). The partition is the seg line with the fewest splits, then the
+best balance, from up to 96 candidates per node. It is what generated maps and new geometry drawn
+in the editors are built with; E1M1 takes about 35 ms.
+
+* `-run=DoomContent -nodetest=all` (add `-iwad=freedoom2.wad`) rebuilds every map's nodes and
+  compares them with the WAD's: the total floor area within 0.1% and the same sector at sampled
+  points inside the map. All 68 Freedoom maps pass (E1M1: 6,713,392 against 6,712,686).
+* `-buildnodes` in a `-game` run plays every map on the rebuilt nodes; `-warp=E1M1 -playtest
+  -buildnodes` passes.
+
 ## Baked static meshes
 
 Importing a map also saves its static geometry (everything that never moves) as static mesh

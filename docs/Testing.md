@@ -72,6 +72,9 @@ The command-line switches (`-savetest`, `-exittest`, `-patchtest`, `-maptest`, `
 still work for a quick look in a standalone `-game` run. The automation tests share their code:
 `UDoomWorld::RunSaveTest`, `FDoomMap::SubsectorArea` and `DoomContent::EditTest`.
 
+`-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
+[EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes.
+
 ## The scripted play-test
 
 `-playtest` (with `-warp`) plays the interactive features through, one step after another, and

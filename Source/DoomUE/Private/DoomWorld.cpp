@@ -381,6 +381,12 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 		Map.Reset();
 		return false;
 	}
+	// -buildnodes: play on the port's own node builder instead of the WAD's nodes (its test)
+	static const bool bBuildNodes = FParse::Param(FCommandLine::Get(), TEXT("buildnodes"));
+	if (bBuildNodes && Map->Rebuild())
+	{
+		UE_LOG(LogDoom, Log, TEXT("%s: nodes rebuilt by the node builder (%s): %d subsectors, %d nodes"), *Map->Name, *Map->NodesFormat, Map->Subsectors.Num(), Map->Nodes.Num());
+	}
 	// new level: the game state's counters and every player's share start from zero (a network
 	// client only mirrors the server's record)
 	if (!IsNetClient())
