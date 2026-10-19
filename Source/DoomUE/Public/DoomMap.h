@@ -115,6 +115,15 @@ public:
 	/** Lines with a special, for walk-over checks. */
 	TArray<int32> SpecialLines;
 
+	/** Builds the BSP from the lines and sectors alone, as a node builder does (DoomNodeBuilder.cpp):
+	 *  segs (lines cut where a partition crosses them), convex subsectors and nodes, root last.
+	 *  For maps made or reshaped by the generator and the editors; replaces any loaded nodes. */
+	bool BuildNodes();
+	/** After vertices, lines, sides or sectors changed: new nodes, then everything derived from the
+	 *  geometry (line and sector links, bounds, subsector polygons). False if the geometry can't make
+	 *  a BSP (no lines). */
+	bool Rebuild();
+
 	FVector2f V(int32 Index) const { return Vertices[Index]; }
 
 	int32 SubsectorAt(const FVector2f& P) const;

@@ -819,10 +819,10 @@ void ADoomGameMode::StartPlayTest()
 				case 0:
 				{
 					const TArray<ADoomPlayerController::FBinding> Bindings = PC->GetBindings();
-					const ADoomPlayerController::FBinding* Fire = Bindings.FindByPredicate([](const ADoomPlayerController::FBinding& X) { return X.Name == TEXT("Fire"); });
-					B->bOk &= Bindings.Num() == DoomInput::Mappables().Num() && Fire && Fire->Keys.Num() == 2;
+					const ADoomPlayerController::FBinding* FireRow = Bindings.FindByPredicate([](const ADoomPlayerController::FBinding& X) { return X.Name == TEXT("Fire"); });
+					B->bOk &= Bindings.Num() == DoomInput::Mappables().Num() && FireRow && FireRow->Keys.Num() == 2;
 					B->Report = FString::Printf(TEXT("%d controls listed, Fire on [%s] (keys in play: %s)"), Bindings.Num(),
-						Fire ? *FString::JoinBy(Fire->Keys, TEXT(" "), [](const FKey& K) { return K.ToString(); }) : TEXT("-"), *FireKeys());
+						FireRow ? *FString::JoinBy(FireRow->Keys, TEXT(" "), [](const FKey& K) { return K.ToString(); }) : TEXT("-"), *FireKeys());
 					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl);
 					B->bOk &= PC->Rebind(TEXT("Fire"), EKeys::F);
 					break;
