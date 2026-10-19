@@ -24,6 +24,8 @@
 #include "DoomMapActors.h"
 #include "DoomMapCheck.h"
 #include "DoomMapGen.h"
+#include "DoomWadWriter.h"
+#include "DoomWad.h"
 #include "DoomInput.h"
 #include "HAL/FileManager.h"
 #include "DoomMap.h"
@@ -1552,12 +1554,23 @@ bool DoomContent::EditTest(const FString& InMapName)
 		LineReport = FString::Printf(TEXT("line %d: special %d, impassable %d, front upper %s, side shared by %d other lines"),
 			DoorLine, L.Special, (L.Flags & DoomLineFlags::Blocking) != 0, *After->Sides[FrontSide].Upper.ToString(), SharedBy);
 	}
+	// Export WAD: the edits travel in the PWAD (the raised floor, the walled-up door, the markers' things)
+	const FString WadPath = FPaths::ProjectSavedDir() / TEXT("Test") / MapName + TEXT("_Edit.wad");
+	MapActor->ExportPath = WadPath;
+	MapActor->ExportWad();
+	MapActor->ExportPath.Reset();
+	FDoomWad Exported;
+	FDoomMap Back;
+	const bool bExportRead = Exported.AddFile(WadPath) && (Exported.Finalize(), Back.Load(Exported, MapName));
+	const FDoomMap* Edited = MapActor->GetPreviewMap();
+	const bool bExportOk = bExportRead && Edited && Back.Sectors.IsValidIndex(Sec) && FMath::IsNearlyEqual(Back.Sectors[Sec].Floor, NewFloor)
+		&& Back.Things.Num() == Edited->Things.Num() && (DoorLine < 0 || (Back.Lines[DoorLine].Special == 0 && Back.Sides[Back.Lines[DoorLine].Side[0]].Upper == NewTexture));
 	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
-	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk;
-	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; saved %s"),
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk && bExportOk;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; exported %s (%d things); saved %s"),
 		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections, Ghosts,
-		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, *TestPackage);
+		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, bExportOk ? TEXT("and read back") : TEXT("WRONG"), bExportRead ? Back.Things.Num() : -1, *TestPackage);
 	return bPass;
 }
 
@@ -1633,6 +1646,130 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		return Failed ? 1 : 0;
 	}
+	// a WAD map or a generated one (RND<seed>), for the export switches
+	auto GetMap = [](const FString& Name, FDoomMap& Out)
+	{
+		uint32 Seed = 0;
+		if (DoomMapGen::ParseName(Name, Seed))
+		{
+			const DoomMapGen::FOptions O = DoomMapGen::DefaultOptions(Seed, DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2());
+			return DoomMapGen::Generate(O, DoomEditorData::Graphics(), Out);
+		}
+		return DoomEditorData::Wad() && Out.Load(*DoomEditorData::Wad(), Name);
+	};
+	// -exportmap=RND0002A[,MAP01] [-out=path.wad]: a map as a PWAD (Saved/Maps/<name>.wad by default);
+	// a generated map goes in as MAP01 (Doom 2) or E1M1 unless a slot is given
+	FString ExportArg;
+	if (FParse::Value(*Params, TEXT("-exportmap="), ExportArg, false))
+	{
+		TArray<FString> Parts;
+		ExportArg.ParseIntoArray(Parts, TEXT(","));
+		const FString Name = Parts.Num() ? Parts[0].ToUpper() : FString();
+		uint32 Seed = 0;
+		const bool bGen = DoomMapGen::ParseName(Name, Seed);
+		const FString Slot = Parts.Num() > 1 ? Parts[1].ToUpper()
+			: bGen ? FString(DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")) : Name;
+		FString OutPath;
+		if (!FParse::Value(*Params, TEXT("-out="), OutPath))
+		{
+			OutPath = FPaths::ProjectSavedDir() / TEXT("Maps") / Name + TEXT(".wad");
+		}
+		FDoomMap M;
+		FString Note;
+		if (!GetMap(Name, M) || !DoomWadWriter::SaveMap(M, Slot, OutPath, &Note))
+		{
+			UE_LOG(LogDoomContent, Error, TEXT("Exportmap: could not export %s"), *Name);
+			return 1;
+		}
+		UE_LOG(LogDoomContent, Display, TEXT("Exportmap %s -> %s as %s: %s"), *Name, *FPaths::ConvertRelativePathToFull(OutPath), *Slot, *Note);
+		return 0;
+	}
+	// -wadtest=E1M1,RND00003 (or all): each map written as a PWAD and read back: the same lines,
+	// sides, sectors and things, the same sectors at sampled points, the map checker no worse
+	FString WadTest;
+	if (FParse::Value(*Params, TEXT("-wadtest="), WadTest, false))
+	{
+		TArray<FString> Names;
+		if (WadTest.Equals(TEXT("all"), ESearchCase::IgnoreCase)) Names = DoomEditorData::MapNames();
+		else WadTest.ParseIntoArray(Names, TEXT(","));
+		int32 Failed = 0;
+		for (const FString& Raw : Names)
+		{
+			const FString Name = Raw.ToUpper();
+			FDoomMap Orig;
+			if (!GetMap(Name, Orig))
+			{
+				UE_LOG(LogDoomContent, Error, TEXT("Wadtest: no map %s"), *Name);
+				++Failed;
+				continue;
+			}
+			const FString Path = FPaths::ProjectSavedDir() / TEXT("Test") / FString::Printf(TEXT("wadtest_%s.wad"), *Name);
+			FString Note;
+			FDoomWad Back;
+			FDoomMap Read;
+			const bool bWritten = DoomWadWriter::SaveMap(Orig, Name, Path, &Note);
+			const bool bRead = bWritten && Back.AddFile(Path) && (Back.Finalize(), Read.Load(Back, Name));
+			bool bSame = bRead && Read.Lines.Num() == Orig.Lines.Num() && Read.Sides.Num() == Orig.Sides.Num()
+				&& Read.Sectors.Num() == Orig.Sectors.Num() && Read.Things.Num() == Orig.Things.Num();
+			for (int32 i = 0; bSame && i < Orig.Lines.Num(); ++i)
+			{
+				const FDoomLine& A = Orig.Lines[i];
+				const FDoomLine& B = Read.Lines[i];
+				bSame = A.Special == B.Special && A.Tag == B.Tag && A.Side[0] == B.Side[0] && A.Side[1] == B.Side[1]
+					&& (A.Flags & ~DoomLineFlags::Mapped) == B.Flags;
+			}
+			for (int32 i = 0; bSame && i < Orig.Sides.Num(); ++i)
+			{
+				const FDoomSide& A = Orig.Sides[i];
+				const FDoomSide& B = Read.Sides[i];
+				bSame = A.Sector == B.Sector && A.Upper == B.Upper && A.Lower == B.Lower && A.Middle == B.Middle;
+			}
+			for (int32 i = 0; bSame && i < Orig.Sectors.Num(); ++i)
+			{
+				const FDoomSector& A = Orig.Sectors[i];
+				const FDoomSector& B = Read.Sectors[i];
+				bSame = A.Floor == B.Floor && A.Ceiling == B.Ceiling && A.FloorPic == B.FloorPic && A.CeilingPic == B.CeilingPic
+					&& A.Light == B.Light && A.Special == B.Special && A.Tag == B.Tag;
+			}
+			int32 Samples = 0, Agree = 0;
+			if (bRead)
+			{
+				FRandomStream Rng(99);
+				for (int32 k = 0; k < 5000; ++k)
+				{
+					const FVector2f Pt(Rng.FRandRange(Orig.Bounds.Min.X, Orig.Bounds.Max.X), Rng.FRandRange(Orig.Bounds.Min.Y, Orig.Bounds.Max.Y));
+					const int32 Ss = Orig.SubsectorAt(Pt);
+					if (!Orig.Subsectors.IsValidIndex(Ss)) continue;
+					bool bNear = false;
+					for (int32 L = 0; L < Orig.Lines.Num() && !bNear; ++L) bNear = Orig.DistanceToLine(Pt, L) < 2.f;
+					if (bNear) continue;
+					// inside the original subsector (either winding)
+					const TArray<FVector2f>& Poly = Orig.Subsectors[Ss].Polygon;
+					int32 Sign = 0;
+					bool bInside = Poly.Num() >= 3;
+					for (int32 v = 0; v < Poly.Num() && bInside; ++v)
+					{
+						const FVector2f E = Poly[(v + 1) % Poly.Num()] - Poly[v], Q = Pt - Poly[v];
+						const float C = E.X * Q.Y - E.Y * Q.X;
+						const int32 Sv = C > 0.f ? 1 : (C < 0.f ? -1 : 0);
+						if (Sv && Sign && Sv != Sign) bInside = false;
+						if (Sv) Sign = Sv;
+					}
+					if (!bInside) continue;
+					++Samples;
+					Agree += Orig.SectorAt(Pt) == Read.SectorAt(Pt);
+				}
+			}
+			const int32 ErrOrig = DoomMapCheck::Count(DoomMapCheck::Run(Orig, DoomEditorData::Graphics(), Name), FDoomMapIssue::ESeverity::Error);
+			const int32 ErrRead = bRead ? DoomMapCheck::Count(DoomMapCheck::Run(Read, DoomEditorData::Graphics(), Name), FDoomMapIssue::ESeverity::Error) : -1;
+			const double AreaErr = bRead ? FMath::Abs(Read.SubsectorArea() - Orig.SubsectorArea()) / FMath::Max(Orig.SubsectorArea(), 1.0) : 1.0;
+			const bool bPass = bSame && Samples > 0 && Agree >= Samples * 0.998 && ErrRead <= ErrOrig && AreaErr < 0.002;
+			Failed += bPass ? 0 : 1;
+			UE_LOG(LogDoomContent, Display, TEXT("Wadtest %s %s: %s; read back %s, same records %d, same sector at %d of %d points, area off %.3f%%, checker errors %d (was %d)"),
+				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Note, bRead ? TEXT("ok") : TEXT("FAILED"), bSame ? 1 : 0, Agree, Samples, AreaErr * 100.0, ErrRead, ErrOrig);
+		}
+		return Failed ? 1 : 0;
+	}
 	// -gentest=N[,first seed]: N generated maps through the map checker; each must have no errors
 	FString GenTest;
 	if (FParse::Value(*Params, TEXT("-gentest="), GenTest, false))
@@ -1645,10 +1782,7 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		double TotalMs = 0;
 		for (int32 k = 0; k < Count; ++k)
 		{
-			DoomMapGen::FOptions O;
-			O.Seed = First + k;
-			O.Rooms = 8 + (int32)(O.Seed % 5);
-			O.bDoom2 = DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2();
+			const DoomMapGen::FOptions O = DoomMapGen::DefaultOptions(First + k, DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2());
 			FDoomMap M;
 			DoomMapGen::FReport R;
 			const double T0 = FPlatformTime::Seconds();

@@ -435,6 +435,10 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+PWAD export (`feature/pwad-export`): **Export WAD** on the DoomMap actor (or `-run=DoomContent
+-exportmap=`) writes a map with the level's edits, or a generated map, in Doom's binary format with
+fresh nodes, so it plays in any port; `-wadtest=all` checks the round trip.
+
 The random map generator (`feature/map-generator`): **RANDOM MAP** in New Game, or
 `-warp=RND0002A` for a seed. It makes rooms and corridors with stairs, doors, up to three keyed doors
 (each key reachable first), pillars, platforms, nukage, sky rooms, an exit switch, and monsters and
@@ -470,7 +474,6 @@ Not done yet (roughly in priority order):
    rampage face after holding fire 2 s with any weapon.
 2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
-   * **Export to a WAD**: the level's things, sector edits and line edits written into a PWAD, so the edits work in any Doom port.
    * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines. The node builder it needs is in (`FDoomMap::Rebuild`, `-nodetest`, see [docs/EditingMaps.md](docs/EditingMaps.md)).
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:

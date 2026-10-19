@@ -35,6 +35,11 @@ namespace DoomMapGen
 		DOOMUE_API FString ToString() const;
 	};
 
+	/** The options a map name stands for: the seed varies the size (8-12 rooms) unless -genrooms=N
+	 *  says otherwise. The game, the editor and the commandlets all use this, so a name always makes
+	 *  the same map. */
+	DOOMUE_API FOptions DefaultOptions(uint32 Seed, bool bDoom2);
+
 	/** RND plus the seed's low 20 bits in hex. */
 	DOOMUE_API FString NameForSeed(uint32 Seed);
 	/** Whether a map name is a generated one, and its seed. */

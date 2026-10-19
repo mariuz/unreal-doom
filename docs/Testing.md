@@ -75,6 +75,8 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 `-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
 [EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
 -gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
+`-run=DoomContent -wadtest=all` writes every map as a PWAD and reads it back; `-file=Saved/Maps/RND00003.wad
+-warp=E1M1 -playtest` plays an exported generated map (`-exportmap=RND00003`) as a PWAD.
 
 ## The scripted play-test
 

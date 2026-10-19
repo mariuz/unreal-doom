@@ -112,6 +112,25 @@ in the editors are built with; E1M1 takes about 35 ms.
 * `-buildnodes` in a `-game` run plays every map on the rebuilt nodes; `-warp=E1M1 -playtest
   -buildnodes` passes.
 
+## Saving maps as PWADs
+
+**Export WAD** on the DoomMap actor writes the map with the level's edits as a PWAD that any Doom
+port or editor opens. The edits are the sector and line edits, and the thing markers.
+
+* **Where:** `Saved/Maps/<MapName>.wad` unless **Export Path** says otherwise. The map goes in its
+  own slot, or **Export Slot**'s; a generated map goes in as MAP01 or E1M1.
+* **Format:** Doom's binary map format (`DoomWadWriter`): THINGS, LINEDEFS, SIDEDEFS, VERTEXES, SEGS,
+  SSECTORS, NODES, SECTORS, REJECT (all zero) and BLOCKMAP.
+* **Nodes:** fresh, from the node builder, on whole-unit vertices; split vertices are rounded as
+  vanilla node builders round them.
+* **Headless:** `-run=DoomContent -exportmap=RND0002A[,MAP01] [-out=path.wad]`.
+* **Playing it:** `-file=path.wad -warp=E1M1`, here or in another port.
+* **Tests:**
+  * `-run=DoomContent -wadtest=all` (or `E1M1,RND00003`) writes each map and reads it back: the same
+    lines, sides, sectors and things, the same sector at sampled points, no new checker errors. All
+    36 Freedoom 1 maps and generated maps pass.
+  * `-edittest` exports the edited E1M1 and checks that the edits are in the PWAD.
+
 ## Generated maps
 
 `DoomMapGen::Generate` (`DoomMapGen.h`) makes a playable map from a seed:

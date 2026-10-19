@@ -516,7 +516,8 @@ void ADoomGameMode::StartPlayTest()
 				if (L.FrontSector != Here && L.BackSector != Here) ++Away;
 			}
 			Msg = FString::Printf(TEXT("%d lines known after 20 tics with the map closed, %d of them away from the player's sector"), Seen, Away);
-			return Seen >= 10 && Away > 0 ? EStep::Pass : EStep::Fail; // the old code learned nothing with the map closed
+			// the old code learned nothing with the map closed; a generated start room has only ~7 lines
+			return Seen >= 5 && Away > 0 ? EStep::Pass : EStep::Fail;
 		} });
 
 	// --- 11. a stray click on the quit prompt cancels it (only Y, Enter or A confirm) ------------

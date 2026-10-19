@@ -51,19 +51,19 @@ namespace
 		bool bZ = false;              // not straight: gentler stairs
 	};
 
-	const TCHAR* const Walls[] = { TEXT("STARTAN3"), TEXT("STARTAN2"), TEXT("STARG3"), TEXT("STARGR1"), TEXT("BROWN1"), TEXT("BROWN96"),
+	const TCHAR* const GenWalls[] = { TEXT("STARTAN3"), TEXT("STARTAN2"), TEXT("STARG3"), TEXT("STARGR1"), TEXT("BROWN1"), TEXT("BROWN96"),
 		TEXT("BROWNGRN"), TEXT("COMPSPAN"), TEXT("GRAY1"), TEXT("GRAY4"), TEXT("METAL1"), TEXT("ICKWALL3"), TEXT("TEKWALL4"), TEXT("BRONZE1"),
 		TEXT("STONE2"), TEXT("STONE3"), TEXT("CEMENT7"), TEXT("BRICK7"), TEXT("SILVER1"), TEXT("MARBLE1"), TEXT("SLADWALL"), TEXT("GSTONE1"),
 		TEXT("TEKGREN1"), TEXT("PIPE4"), TEXT("SHAWN2") };
-	const TCHAR* const Floors[] = { TEXT("FLOOR4_8"), TEXT("FLOOR5_1"), TEXT("FLOOR5_2"), TEXT("FLOOR0_1"), TEXT("FLOOR0_3"), TEXT("FLOOR7_1"),
+	const TCHAR* const GenFloors[] = { TEXT("FLOOR4_8"), TEXT("FLOOR5_1"), TEXT("FLOOR5_2"), TEXT("FLOOR0_1"), TEXT("FLOOR0_3"), TEXT("FLOOR7_1"),
 		TEXT("FLAT5_4"), TEXT("FLAT14"), TEXT("FLAT1"), TEXT("FLAT5"), TEXT("FLOOR1_1"), TEXT("FLOOR3_3"), TEXT("FLAT1_1"), TEXT("MFLR8_1") };
-	const TCHAR* const Ceilings[] = { TEXT("CEIL3_5"), TEXT("CEIL5_1"), TEXT("CEIL3_3"), TEXT("TLITE6_4"), TEXT("TLITE6_1"), TEXT("FLAT2"),
+	const TCHAR* const GenCeilings[] = { TEXT("CEIL3_5"), TEXT("CEIL5_1"), TEXT("CEIL3_3"), TEXT("TLITE6_4"), TEXT("TLITE6_1"), TEXT("FLAT2"),
 		TEXT("CEIL1_1"), TEXT("CEIL3_4"), TEXT("FLAT18") };
-	const TCHAR* const OutdoorFloors[] = { TEXT("GRASS1"), TEXT("MFLR8_4"), TEXT("RROCK19"), TEXT("FLAT10"), TEXT("FLOOR6_2"), TEXT("GRNROCK"), TEXT("MFLR8_3") };
-	const TCHAR* const Steps[] = { TEXT("STEP6"), TEXT("STEP1"), TEXT("STEP2"), TEXT("STEP4"), TEXT("STEP5") };
-	const TCHAR* const SmallDoors[] = { TEXT("DOOR3"), TEXT("DOOR1") };
-	const TCHAR* const BigDoors[] = { TEXT("BIGDOOR2"), TEXT("BIGDOOR1"), TEXT("BIGDOOR4") };
-	const TCHAR* const ExitSwitches[] = { TEXT("SW1EXIT"), TEXT("SW1STRTN"), TEXT("SW1COMP"), TEXT("SW1BRN1"), TEXT("SW1GRAY") };
+	const TCHAR* const GenOutdoorFloors[] = { TEXT("GRASS1"), TEXT("MFLR8_4"), TEXT("RROCK19"), TEXT("FLAT10"), TEXT("FLOOR6_2"), TEXT("GRNROCK"), TEXT("MFLR8_3") };
+	const TCHAR* const GenSteps[] = { TEXT("STEP6"), TEXT("STEP1"), TEXT("STEP2"), TEXT("STEP4"), TEXT("STEP5") };
+	const TCHAR* const GenSmallDoors[] = { TEXT("DOOR3"), TEXT("DOOR1") };
+	const TCHAR* const GenBigDoors[] = { TEXT("BIGDOOR2"), TEXT("BIGDOOR1"), TEXT("BIGDOOR4") };
+	const TCHAR* const GenExitSwitches[] = { TEXT("SW1EXIT"), TEXT("SW1STRTN"), TEXT("SW1COMP"), TEXT("SW1BRN1"), TEXT("SW1GRAY") };
 
 	struct FGen
 	{
@@ -350,9 +350,9 @@ namespace
 				S.Kind = EKind::Room;
 				S.Room = i;
 				S.Floor = R.Floor;
-				S.Wall = Pick(Walls, false);
+				S.Wall = Pick(GenWalls, false);
 				S.Step = StepTex;
-				S.FloorPic = R.bOutdoor ? Pick(OutdoorFloors, true, FName(TEXT("FLOOR4_8"))) : Pick(Floors, true);
+				S.FloorPic = R.bOutdoor ? Pick(GenOutdoorFloors, true, FName(TEXT("FLOOR4_8"))) : Pick(GenFloors, true);
 				if (R.bOutdoor)
 				{
 					S.Ceiling = R.Floor + 256;
@@ -363,7 +363,7 @@ namespace
 				{
 					static const int32 CeilHeights[] = { 128, 144, 160, 192, 224 };
 					S.Ceiling = R.Floor + CeilHeights[Rng.RandRange(0, UE_ARRAY_COUNT(CeilHeights) - 1)];
-					S.CeilingPic = Pick(Ceilings, true);
+					S.CeilingPic = Pick(GenCeilings, true);
 					static const int16 Lights[] = { 144, 160, 176, 192, 208, 224 };
 					S.Light = Lights[Rng.RandRange(0, UE_ARRAY_COUNT(Lights) - 1)];
 					const float F = Rng.FRand();
@@ -393,7 +393,7 @@ namespace
 				S.Wall = CorridorWall;
 				S.Step = StepTex;
 				S.Light = FMath::Min<int16>(RoomS.Light, 176);
-				S.DoorTex = L.Width >= 4 ? Pick(BigDoors, false) : Pick(SmallDoors, false);
+				S.DoorTex = L.Width >= 4 ? Pick(GenBigDoors, false) : Pick(GenSmallDoors, false);
 				S.Lock = L.Lock;
 				static const TCHAR* const LockTracks[] = { TEXT("DOORTRAK"), TEXT("DOORBLU"), TEXT("DOORYEL"), TEXT("DOORRED") };
 				S.Track = L.Lock && Exists(FName(LockTracks[L.Lock]), false) ? FName(LockTracks[L.Lock]) : Track;
@@ -471,7 +471,7 @@ namespace
 					}
 					else
 					{
-						S.FloorPic = Pick(Floors, true);
+						S.FloorPic = Pick(GenFloors, true);
 						S.Light = FMath::Min<int16>(RoomS.Light + 16, 255);
 					}
 					R.Platform = AddSector(S);
@@ -922,7 +922,7 @@ namespace
 		{
 			FDoomLine& L = Out.Lines[Li];
 			L.Special = 11; // S1 exit
-			Out.Sides[L.Side[0]].Middle = First(ExitSwitches, false);
+			Out.Sides[L.Side[0]].Middle = First(GenExitSwitches, false);
 		}
 	};
 }
@@ -931,6 +931,16 @@ FString DoomMapGen::FReport::ToString() const
 {
 	return FString::Printf(TEXT("%d rooms, %d corridors (%d doors, %d keys), %d monsters, %d items, %d attempt(s)"),
 		Rooms, Links, Doors, Keys, Monsters, Items, Attempts);
+}
+
+DoomMapGen::FOptions DoomMapGen::DefaultOptions(uint32 Seed, bool bDoom2)
+{
+	FOptions O;
+	O.Seed = Seed;
+	O.bDoom2 = bDoom2;
+	static const int32 Rooms = [] { int32 N = 0; FParse::Value(FCommandLine::Get(), TEXT("-genrooms="), N); return N; }();
+	O.Rooms = Rooms > 0 ? Rooms : 8 + (int32)(Seed % 5);
+	return O;
 }
 
 FString DoomMapGen::NameForSeed(uint32 Seed)
@@ -960,10 +970,10 @@ bool DoomMapGen::Generate(const FOptions& Options, const FDoomGraphics* Gfx, FDo
 	{
 		FGen Gen(Options, Gfx, (int32)(Options.Seed * 7919u + Attempt * 104729u + 17u));
 		Gen.Report.Attempts = Attempt + 1;
-		Gen.CorridorWall = Gen.Pick(Walls, false);
-		Gen.CorridorFloor = Gen.Pick(Floors, true);
-		Gen.CorridorCeiling = Gen.Pick(Ceilings, true);
-		Gen.StepTex = Gen.First(Steps, false);
+		Gen.CorridorWall = Gen.Pick(GenWalls, false);
+		Gen.CorridorFloor = Gen.Pick(GenFloors, true);
+		Gen.CorridorCeiling = Gen.Pick(GenCeilings, true);
+		Gen.StepTex = Gen.First(GenSteps, false);
 		Gen.Track = Gen.First({ TEXT("DOORTRAK") }, false);
 		Gen.Layout();
 		for (FLink& L : Gen.Links) Gen.MakePath(L);

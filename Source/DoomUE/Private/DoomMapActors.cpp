@@ -1,4 +1,6 @@
 #include "DoomMapActors.h"
+#include "DoomMapGen.h"
+#include "DoomWadWriter.h"
 #include "DoomWad.h"
 #include "DoomGraphics.h"
 #include "DoomInfo.h"
@@ -133,6 +135,45 @@ TArray<FDoomMapIssue> ADoomMapActor::RunCheck(TArray<TWeakObjectPtr<AActor>>& Ou
 		OutActors.Add(A);
 	}
 	return Issues;
+}
+
+bool ADoomMapActor::LoadEditedMap(FDoomMap& Out) const
+{
+	FDoomWad* W = DoomEditorData::Wad();
+	if (!W)
+	{
+		return false;
+	}
+	uint32 GenSeed = 0;
+	const bool bLoaded = DoomMapGen::ParseName(MapName, GenSeed)
+		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), DoomEditorData::Graphics(), Out)
+		: Out.Load(*W, MapName);
+	if (bLoaded)
+	{
+		ApplyEdits(Out);
+	}
+	return bLoaded;
+}
+
+void ADoomMapActor::ExportWad()
+{
+	FDoomMap M;
+	if (!LoadEditedMap(M))
+	{
+		UE_LOG(LogDoom, Error, TEXT("Export WAD: no map %s"), *MapName);
+		return;
+	}
+	uint32 GenSeed = 0;
+	const bool bGenerated = DoomMapGen::ParseName(MapName, GenSeed);
+	const FString Slot = !ExportSlot.IsEmpty() ? ExportSlot.ToUpper()
+		: bGenerated ? FString(DoomEditorData::Wad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")) : MapName.ToUpper();
+	const FString Path = !ExportPath.IsEmpty() ? ExportPath : FPaths::ProjectSavedDir() / TEXT("Maps") / MapName.ToUpper() + TEXT(".wad");
+	FString Note;
+	if (DoomWadWriter::SaveMap(M, Slot, Path, &Note))
+	{
+		UE_LOG(LogDoom, Display, TEXT("Export WAD: %s as %s in %s (%s). Play it with -file=\"%s\" -warp=%s"),
+			*MapName, *Slot, *FPaths::ConvertRelativePathToFull(Path), *Note, *FPaths::ConvertRelativePathToFull(Path), *Slot);
+	}
 }
 
 void ADoomMapActor::CheckMap()
@@ -297,7 +338,11 @@ void ADoomMapActor::RebuildPreview()
 		return;
 	}
 	PreviewMap = MakeUnique<FDoomMap>();
-	if (!PreviewMap->Load(*W, MapName))
+	uint32 GenSeed = 0;
+	const bool bLoaded = DoomMapGen::ParseName(MapName, GenSeed)
+		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), G, *PreviewMap)
+		: PreviewMap->Load(*W, MapName);
+	if (!bLoaded)
 	{
 		UE_LOG(LogDoom, Warning, TEXT("No map %s in the WAD"), *MapName);
 		PreviewMap.Reset();
