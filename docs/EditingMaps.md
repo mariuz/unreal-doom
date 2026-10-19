@@ -112,6 +112,48 @@ in the editors are built with; E1M1 takes about 35 ms.
 * `-buildnodes` in a `-game` run plays every map on the rebuilt nodes; `-warp=E1M1 -playtest
   -buildnodes` passes.
 
+## Generated maps
+
+`DoomMapGen::Generate` (`DoomMapGen.h`) makes a playable map from a seed:
+
+* **Layout:** 8-12 rooms (`-genrooms=N` for 4-24) on a grid of cells, joined by a random tree of
+  corridors, plus a few loops. The exit is in the room furthest from the start.
+* **Keys:** up to three keyed doors (blue, yellow, red) on the way to the exit. Each key lies in a
+  room reachable before its door, preferably a side room. Loops never join rooms on different sides
+  of a keyed door.
+* **Rooms:** floors differ by up to 64 units, and the corridors climb them in steps of 24 or less.
+  Rooms get some outdoor (sky) ceilings, blinking and glowing lights, pillars, raised platforms and
+  nukage pools. Corridors get doors and wide `BIGDOOR` doors.
+* **The exit:** a lit alcove with the exit switch.
+* **Things:**
+  * player and deathmatch starts;
+  * monsters that get tougher further from the start, thinned out on the easier skills (Doom 2's
+    chaingunners, hell knights and revenants on Doom 2 IWADs);
+  * the shotgun at the start, then the chaingun, super shotgun, rocket launcher and plasma gun;
+  * ammo for the weapons found so far, health, armour and barrels.
+* **Textures:** chosen from the IWAD's own textures and flats.
+* **Geometry:** the layout is painted on 32-unit tiles, and the lines are the edges between tiles
+  of different sectors, so every sector is closed. Door faces are fronted by the room or corridor,
+  so they open from both sides. The node builder makes the BSP.
+* **Validation:** before a map is accepted, a walk from the start (steps of 24 or less, 56 units of
+  headroom, doors opened as keys are found) must reach every key and the exit. A layout that fails
+  is retried with the next sub-seed.
+
+**Playing:**
+
+* A generated map is named `RND` plus five hex digits of its seed: `-warp=RND0002A` plays one.
+* **RANDOM MAP** in New Game picks a new seed.
+* Saves and network clients regenerate the map from its name.
+* The exit leads to the next seed.
+* The map borrows one of the IWAD's songs.
+
+**Testing:** `-run=DoomContent -gentest=100[,first seed]` generates maps and runs each through the
+map checker; add `-gendump` for `Saved/Gen/<name>.txt` (lines, sectors, things) to plot.
+
+* 100 seeds pass on Freedoom 1 and 2 with no errors and no warnings, every one on its first attempt,
+  in 3-8 ms each, with 15-25 BSP splits.
+* `-warp=RND00002 -playtest` passes (lifts and teleporters skipped).
+
 ## Baked static meshes
 
 Importing a map also saves its static geometry (everything that never moves) as static mesh

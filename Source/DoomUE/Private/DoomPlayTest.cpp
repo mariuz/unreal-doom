@@ -873,6 +873,9 @@ void ADoomGameMode::StartPlayTest()
 			Msg = FString::Printf(TEXT("%s par %d s (vanilla E1M1 30, MAP01 30), intermission tic %d"), *W->GetMapName(), Par, W->Flow().IntermissionTic);
 			if (Tics == 170) Shot(TEXT("intermission"));
 			if (Tics < 175) return EStep::Running;
+			// a generated map has no par time, and the intermission leaves it out
+			uint32 Seed = 0;
+			if (DoomMapGen::ParseName(W->GetMapName(), Seed)) return Par < 0 ? EStep::Pass : EStep::Fail;
 			return Par > 0 ? EStep::Pass : EStep::Fail;
 		} });
 

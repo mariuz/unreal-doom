@@ -73,7 +73,8 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 `UDoomWorld::RunSaveTest`, `FDoomMap::SubsectorArea` and `DoomContent::EditTest`.
 
 `-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
-[EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes.
+[EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
+-gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
 
 ## The scripted play-test
 
