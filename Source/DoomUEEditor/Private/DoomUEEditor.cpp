@@ -13,6 +13,8 @@
 #include "MessageLogModule.h"
 #include "Editor.h"
 #include "DoomMapCheck.h"
+#include "Containers/Ticker.h"
+#include "EngineUtils.h"
 #include "DoomEditor.h"
 #include "DoomUE.h"
 
@@ -125,6 +127,22 @@ namespace
 					Notify(LOCTEXT("CheckNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
 				}
 			})));
+		Maps.AddMenuEntry(TEXT("EditInDoomBuilder"), LOCTEXT("EditInDoomBuilder", "Edit in Doom Builder"),
+			LOCTEXT("EditInDoomBuilderTip", "Open the map in Ultimate Doom Builder (an IWAD map is exported with this level's edits as a PWAD first); saving there updates this level"), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]()
+			{
+				ADoomMapActor* MapActor = GEditor ? ADoomMapActor::Find(GEditor->GetEditorWorldContext().World()) : nullptr;
+				if (MapActor)
+				{
+					MapActor->EditInDoomBuilder();
+					Notify(FText::Format(LOCTEXT("EditingIn", "{0}: editing {1}; saves there reload here"), FText::FromString(MapActor->MapName),
+						FText::FromString(FPaths::GetCleanFilename(DoomEditorData::MapSource(MapActor->MapName)))), true);
+				}
+				else
+				{
+					Notify(LOCTEXT("EditNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
+				}
+			})));
 		Maps.AddMenuEntry(TEXT("PlayMapEditor"), LOCTEXT("PlayMapEditor", "Play in the Map Editor"),
 			LOCTEXT("PlayMapEditorTip", "Play In Editor with Doom's map editor open over the game: draw sectors, place things, edit properties, undo, generate random maps and save PWADs (DoomEdit in the console toggles it)"), FSlateIcon(),
 			FUIAction(FExecuteAction::CreateLambda([]()
@@ -173,11 +191,29 @@ public:
 				FToolMenuOwnerScoped Owner(TEXT("DoomUEEditor"));
 				RegisterMenus();
 			}));
+			// the round trip with a Doom editor: a WAD saved there reloads here, and the open level's
+			// preview follows (its markers and edits stay)
+			WatchTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
+			{
+				if (GEditor && !GEditor->IsPlaySessionInProgress() && DoomEditorData::ReloadIfChanged())
+				{
+					UWorld* World = GEditor->GetEditorWorldContext().World();
+					for (TActorIterator<ADoomMapActor> It(World); It; ++It)
+					{
+						It->RebuildPreview();
+						Notify(FText::Format(LOCTEXT("WadReloaded", "{0} changed on disk: {1} reloaded"),
+							FText::FromString(FPaths::GetCleanFilename(DoomEditorData::MapSource(It->MapName))), FText::FromString(It->MapName)), true);
+					}
+				}
+				return true;
+			}), 1.5f);
 		}
 	}
+	FTSTicker::FDelegateHandle WatchTicker;
 
 	virtual void ShutdownModule() override
 	{
+		FTSTicker::GetCoreTicker().RemoveTicker(WatchTicker);
 		ADoomMapActor::BakeHook = nullptr;
 		ADoomMapActor::CheckReportHook = nullptr;
 		if (UObjectInitialized() && UToolMenus::TryGet())

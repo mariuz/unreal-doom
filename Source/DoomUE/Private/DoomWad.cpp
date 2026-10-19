@@ -51,6 +51,7 @@ bool FDoomWad::AddFile(const FString& Path)
 		Lumps.Add(L);
 	}
 	Files.Add(MoveTemp(Bytes));
+	Paths.Add(Path);
 	UE_LOG(LogDoom, Log, TEXT("Added %s: %d lumps"), *Path, Count);
 	return true;
 }
