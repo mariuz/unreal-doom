@@ -23,6 +23,7 @@
 #include "NiagaraSystem.h"
 #include "DoomMapActors.h"
 #include "DoomMapCheck.h"
+#include "DoomMapGen.h"
 #include "DoomInput.h"
 #include "HAL/FileManager.h"
 #include "DoomMap.h"
@@ -1630,6 +1631,68 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Built.NodesFormat, Ms, Built.Subsectors.Num(), Orig.Subsectors.Num(), AreaBuilt, AreaOrig,
 				Agree, Samples, Disagree * 100.0);
 		}
+		return Failed ? 1 : 0;
+	}
+	// -gentest=N[,first seed]: N generated maps through the map checker; each must have no errors
+	FString GenTest;
+	if (FParse::Value(*Params, TEXT("-gentest="), GenTest, false))
+	{
+		TArray<FString> Parts;
+		GenTest.ParseIntoArray(Parts, TEXT(","));
+		const int32 Count = Parts.Num() > 0 ? FCString::Atoi(*Parts[0]) : 20;
+		const int32 First = Parts.Num() > 1 ? FCString::Atoi(*Parts[1]) : 1;
+		int32 Failed = 0, Warnings = 0;
+		double TotalMs = 0;
+		for (int32 k = 0; k < Count; ++k)
+		{
+			DoomMapGen::FOptions O;
+			O.Seed = First + k;
+			O.Rooms = 8 + (int32)(O.Seed % 5);
+			O.bDoom2 = DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2();
+			FDoomMap M;
+			DoomMapGen::FReport R;
+			const double T0 = FPlatformTime::Seconds();
+			const bool bOk = DoomMapGen::Generate(O, DoomEditorData::Graphics(), M, &R);
+			const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+			TotalMs += Ms;
+			const FString Name = DoomMapGen::NameForSeed(O.Seed);
+			if (!bOk)
+			{
+				++Failed;
+				UE_LOG(LogDoomContent, Display, TEXT("Gentest %s FAIL: no map"), *Name);
+				continue;
+			}
+			const TArray<FDoomMapIssue> Issues = DoomMapCheck::Run(M, DoomEditorData::Graphics(), Name);
+			const int32 Errors = DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Error);
+			Warnings += DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Warning);
+			Failed += Errors ? 1 : 0;
+			UE_LOG(LogDoomContent, Display, TEXT("Gentest %s %s: %s in %.0f ms; %d sectors, %d lines, %d subsectors"),
+				*Name, Errors ? TEXT("FAIL") : TEXT("PASS"), *R.ToString(), Ms, M.Sectors.Num(), M.Lines.Num(), M.Subsectors.Num());
+			if (Errors || Params.Contains(TEXT("-genlog")))
+			{
+				DoomMapCheck::Log(Name, Issues);
+			}
+			// -gendump: the map's lines, sectors and things as text (Saved/Gen/<name>.txt) for plots
+			if (Params.Contains(TEXT("-gendump")))
+			{
+				FString Txt;
+				for (const FDoomLine& L : M.Lines)
+				{
+					Txt += FString::Printf(TEXT("L %.0f %.0f %.0f %.0f %d %d %d\n"), M.V(L.V1).X, M.V(L.V1).Y, M.V(L.V2).X, M.V(L.V2).Y,
+						L.BackSector != INDEX_NONE ? 1 : 0, L.Special, L.FrontSector);
+				}
+				for (const FDoomSector& S : M.Sectors)
+				{
+					Txt += FString::Printf(TEXT("S %.0f %.0f %s\n"), S.Floor, S.Ceiling, *S.FloorPic.ToString());
+				}
+				for (const FDoomMapThing& T : M.Things)
+				{
+					Txt += FString::Printf(TEXT("T %.0f %.0f %d\n"), T.P.X, T.P.Y, T.Type);
+				}
+				FFileHelper::SaveStringToFile(Txt, *(FPaths::ProjectSavedDir() / TEXT("Gen") / Name + TEXT(".txt")));
+			}
+		}
+		UE_LOG(LogDoomContent, Display, TEXT("Gentest: %d of %d maps without errors, %d warnings, %.0f ms a map"), Count - Failed, Count, Warnings, Count ? TotalMs / Count : 0.0);
 		return Failed ? 1 : 0;
 	}
 	// -checkmap=E1M1,E1M2 (or all): the map checker on the WAD's maps, to the log

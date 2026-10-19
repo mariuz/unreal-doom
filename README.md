@@ -435,6 +435,12 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+The random map generator (`feature/map-generator`): **RANDOM MAP** in New Game, or
+`-warp=RND0002A` for a seed. It makes rooms and corridors with stairs, doors, up to three keyed doors
+(each key reachable first), pillars, platforms, nukage, sky rooms, an exit switch, and monsters and
+weapons that build up towards the exit. Every map is checked walkable from the start to the exit
+before it is used. See [docs/EditingMaps.md](docs/EditingMaps.md#generated-maps).
+
 The node builder (`feature/node-builder`): `FDoomMap::Rebuild()` builds a map's segs, subsectors and
 nodes from its lines and sectors alone; `-run=DoomContent -nodetest=all` checks it against all 68
 Freedoom maps' own nodes (same area and sectors), and `-buildnodes` plays on the rebuilt nodes.

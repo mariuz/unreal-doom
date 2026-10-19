@@ -44,6 +44,9 @@ TArray<FDoomEpisode> FDoomMenu::Episodes(UDoomWorld& W) const
 		}
 	}
 	Out.Append(Infos.Episodes);
+	// a map from the generator, on a new seed each time (its exit leads to the next seed)
+	const uint32 Seed = (uint32)(FPlatformTime::Cycles64() % 0xFFFFF) + 1;
+	Out.Add({ DoomMapGen::NameForSeed(Seed), FString(), TEXT("RANDOM MAP") });
 	return Out;
 }
 

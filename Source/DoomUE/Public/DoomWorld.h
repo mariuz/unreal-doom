@@ -9,6 +9,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "DoomMap.h"
+#include "DoomMapGen.h"
 #include "DoomInfo.h"
 #include "DoomWad.h"
 #include "DoomGraphics.h"
@@ -217,6 +218,10 @@ public:
 	const FDoomMapInfo* MapInfo(const FString& MapName) const { return MapInfos.Find(MapName); }
 	/** "E1M1: Hangar": UMAPINFO label and name, else the WAD's DEHACKED level name, else the lump. */
 	FString LevelTitle(const FString& MapName) const;
+	/** The music lump for a map (a generated map borrows one of the IWAD's songs). */
+	FString MusicForMap(const FString& MapName) const;
+	/** The generator's options for a seed: this IWAD's game, -genrooms. */
+	DoomMapGen::FOptions GenOptions(uint32 Seed) const;
 	/** Runs a linedef special on a tag as if a line had been triggered (UMAPINFO boss actions). */
 	bool ExecuteSpecial(int32 Special, int32 Tag);
 

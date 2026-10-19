@@ -107,6 +107,11 @@ FString ADoomGameMode::NextMapName(bool bSecret) const
 		return FString();
 	}
 	const FString& M = W->Flow().CurrentMap;
+	uint32 GenSeed = 0;
+	if (DoomMapGen::ParseName(M, GenSeed))
+	{
+		return DoomMapGen::NameForSeed(GenSeed + 1); // generated maps go on for ever
+	}
 	if (const FDoomMapInfo* Info = W->MapInfo(M))
 	{
 		if (Info->bEndGame)
@@ -155,7 +160,8 @@ void ADoomGameMode::ExitLevel(bool bSecret)
 	FDoomLevelFlow& Flow = W->Flow();
 	Flow.bSecretExit = bSecret;
 	Flow.PendingMap = NextMapName(bSecret);
-	if (!Flow.PendingMap.IsEmpty() && W->GetWad()->FindLump(Flow.PendingMap) == INDEX_NONE)
+	uint32 GenSeed = 0;
+	if (!Flow.PendingMap.IsEmpty() && !DoomMapGen::ParseName(Flow.PendingMap, GenSeed) && W->GetWad()->FindLump(Flow.PendingMap) == INDEX_NONE)
 	{
 		Flow.PendingMap.Reset();
 	}
