@@ -95,6 +95,15 @@ public:
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void ExportWad();
 
+	/**
+	 * Opens the map in Ultimate Doom Builder (Project Settings > Doom > Doom Builder). A map that is
+	 * still the IWAD's is first exported with this level's edits as Saved/Maps/<MapName>.wad, which
+	 * joins the project's PWADs. Whenever the PWAD is saved there, the level's preview (and Play)
+	 * picks the change up; markers and edits stay.
+	 */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void EditInDoomBuilder();
+
 	/** Where Export WAD writes (empty: Saved/Maps/<MapName>.wad). */
 	UPROPERTY(EditAnywhere, Category = "Doom|Export")
 	FString ExportPath;
@@ -398,4 +407,13 @@ namespace DoomEditorData
 	DOOMUE_API FString WadSet();
 	DOOMUE_API FDoomGraphics* Graphics();
 	DOOMUE_API TArray<FString> MapNames();
+	/** Reads the WADs again (after a PWAD changed, or the list did). */
+	DOOMUE_API void Reload();
+	/** Reloads when a WAD's file changed on disk since it was read (a Doom editor saved it). */
+	DOOMUE_API bool ReloadIfChanged();
+	/** The file a map comes from (its last definition), or empty. */
+	DOOMUE_API FString MapSource(const FString& MapName);
+	DOOMUE_API bool IsFromIWAD(const FString& MapName);
+	/** Adds a PWAD to the project's list (Project Settings > Doom > PWADs) and reloads. */
+	DOOMUE_API void UsePwad(const FString& Path);
 }

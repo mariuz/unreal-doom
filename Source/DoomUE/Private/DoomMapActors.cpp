@@ -36,6 +36,7 @@ namespace
 		TUniquePtr<FDoomGraphics> Gfx;
 		FString WadSet;
 		bool bTried = false;
+		TArray<FDateTime> Stamps; // of Wad's files when they were read
 	};
 
 	FEditorWad& EditorWad()
@@ -43,6 +44,7 @@ namespace
 		static FEditorWad E;
 		if (!E.bTried)
 		{
+			E = FEditorWad();
 			E.bTried = true;
 			const UDoomSettings* Settings = GetDefault<UDoomSettings>();
 			auto Resolve = [](const FString& Name)
@@ -71,6 +73,7 @@ namespace
 			if (E.Wad->IsValid())
 			{
 				E.Gfx = MakeUnique<FDoomGraphics>(*E.Wad);
+				for (const FString& F : E.Wad->FilePaths()) E.Stamps.Add(IFileManager::Get().GetTimeStamp(*F));
 			}
 			else
 			{
@@ -92,6 +95,70 @@ namespace
 }
 
 FDoomWad* DoomEditorData::Wad() { return EditorWad().Wad.Get(); }
+
+void DoomEditorData::Reload()
+{
+	FEditorWad& E = EditorWad();
+	E.bTried = false;
+	EditorWad();
+}
+
+bool DoomEditorData::ReloadIfChanged()
+{
+	FEditorWad& E = EditorWad();
+	if (!E.Wad)
+	{
+		return false;
+	}
+	const TArray<FString>& Files = E.Wad->FilePaths();
+	bool bChanged = false;
+	for (int32 i = 0; i < Files.Num() && i < E.Stamps.Num(); ++i)
+	{
+		const FDateTime Now = IFileManager::Get().GetTimeStamp(*Files[i]);
+		// a file still being written waits for the next look
+		bChanged |= Now != E.Stamps[i] && (FDateTime::UtcNow() - Now).GetTotalSeconds() > 0.5;
+	}
+	if (!bChanged)
+	{
+		return false;
+	}
+	FEditorWad Old = MoveTemp(E);
+	E.bTried = false;
+	EditorWad();
+	if (!E.Wad)
+	{
+		E = MoveTemp(Old); // unreadable for now (half written?): keep the old and try again later
+		return false;
+	}
+	UE_LOG(LogDoom, Log, TEXT("Reloaded the editor's WADs (%s changed on disk)"), *FString::Join(Files, TEXT(", ")));
+	return true;
+}
+
+FString DoomEditorData::MapSource(const FString& MapName)
+{
+	const FDoomWad* W = Wad();
+	const int32 Lump = W ? W->FindLump(MapName.ToUpper()) : INDEX_NONE;
+	return Lump != INDEX_NONE ? W->FilePaths()[W->Lump(Lump).FileIndex] : FString();
+}
+
+bool DoomEditorData::IsFromIWAD(const FString& MapName)
+{
+	const FDoomWad* W = Wad();
+	const int32 Lump = W ? W->FindLump(MapName.ToUpper()) : INDEX_NONE;
+	return Lump != INDEX_NONE && W->Lump(Lump).FileIndex == 0;
+}
+
+void DoomEditorData::UsePwad(const FString& Path)
+{
+	UDoomSettings* S = GetMutableDefault<UDoomSettings>();
+	const FString Full = FPaths::ConvertRelativePathToFull(Path);
+	if (!S->PWADs.ContainsByPredicate([&](const FString& P) { return FPaths::IsSamePath(FPaths::ConvertRelativePathToFull(P), Full); }))
+	{
+		S->PWADs.Add(Full);
+		S->SaveConfig();
+	}
+	Reload();
+}
 FString DoomEditorData::WadSet() { return EditorWad().WadSet; }
 FDoomGraphics* DoomEditorData::Graphics() { return EditorWad().Gfx.Get(); }
 
@@ -174,6 +241,37 @@ void ADoomMapActor::ExportWad()
 		UE_LOG(LogDoom, Display, TEXT("Export WAD: %s as %s in %s (%s). Play it with -file=\"%s\" -warp=%s"),
 			*MapName, *Slot, *FPaths::ConvertRelativePathToFull(Path), *Note, *FPaths::ConvertRelativePathToFull(Path), *Slot);
 	}
+}
+
+void ADoomMapActor::EditInDoomBuilder()
+{
+	uint32 Seed = 0;
+	if (DoomMapGen::ParseName(MapName, Seed) || DoomEditorData::IsFromIWAD(MapName))
+	{
+		// edit a PWAD, never the IWAD: this level's map, edits and all, becomes one
+		const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("Maps") / MapName.ToUpper() + TEXT(".wad"));
+		const FString OldPath = ExportPath, OldSlot = ExportSlot;
+		ExportPath = Path;
+		ExportSlot = MapName.ToUpper();
+		ExportWad();
+		ExportPath = OldPath;
+		ExportSlot = OldSlot;
+		if (!FPaths::FileExists(Path))
+		{
+			return;
+		}
+		DoomEditorData::UsePwad(Path);
+	}
+	const FString Source = DoomEditorData::MapSource(MapName);
+	const FString Builder = GetDefault<UDoomSettings>()->DoomBuilderPath.FilePath;
+	if (Builder.IsEmpty() || !FPaths::FileExists(Builder))
+	{
+		UE_LOG(LogDoom, Display, TEXT("Edit in Doom Builder: open %s (map %s) in your Doom editor; set Project Settings > Doom > Doom Builder Path to launch it from here. Saving there updates this level."), *Source, *MapName.ToUpper());
+		return;
+	}
+	const FString Args = FString::Printf(TEXT("\"%s\" -map %s"), *Source, *MapName.ToUpper());
+	FPlatformProcess::CreateProc(*Builder, *Args, true, false, false, nullptr, 0, nullptr, nullptr);
+	UE_LOG(LogDoom, Display, TEXT("Edit in Doom Builder: %s %s"), *Builder, *Args);
 }
 
 void ADoomMapActor::CheckMap()

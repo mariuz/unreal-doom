@@ -175,6 +175,29 @@ in the editors are built with; E1M1 takes about 35 ms.
 * `-buildnodes` in a `-game` run plays every map on the rebuilt nodes; `-warp=E1M1 -playtest
   -buildnodes` passes.
 
+## The round trip with a Doom editor
+
+**Edit in Doom Builder** (on the DoomMap actor, or **Doom > Edit in Doom Builder**) opens the level's
+map in Ultimate Doom Builder, for what Unreal doesn't do well: new wall shapes, splitting sectors,
+texture alignment.
+
+* **An IWAD map** is first exported with the level's edits as `Saved/Maps/<MAP>.wad`, which joins
+  the project's PWADs (Project Settings > Doom > PWADs). The IWAD is never written.
+* **The editor:** set Project Settings > Doom > **Doom Builder Path** to `Builder.exe`, and it is
+  launched with the PWAD and `-map <MAP>`. Without it, the log says which file to open.
+* **Saving there** is noticed within a couple of seconds: the editor's WADs reload
+  (`DoomEditorData::ReloadIfChanged`), and the level's preview is rebuilt with a notification.
+  Play uses the PWAD too.
+* **The level's own edits stay in charge:**
+  * thing markers replace the PWAD's THINGS;
+  * sector edits keep their sectors' values.
+
+  Line edits name lines by number, so after adding or removing lines in Doom Builder, check them
+  (Check Map helps).
+* **Tested by `-edittest`:** the exported PWAD becomes the map's source. An outside save changes
+  another sector's floor and light, the reload shows it, and the markers and the edited sector stay
+  as they were.
+
 ## Saving maps as PWADs
 
 **Export WAD** on the DoomMap actor writes the map with the level's edits as a PWAD that any Doom

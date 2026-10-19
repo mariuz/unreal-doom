@@ -19,6 +19,8 @@ public:
 	bool AddFile(const FString& Path);
 
 	int32 NumLumps() const { return Lumps.Num(); }
+	/** The files added, in order (0 is the IWAD). */
+	const TArray<FString>& FilePaths() const { return Paths; }
 	const FWadLump& Lump(int32 Index) const { return Lumps[Index]; }
 
 	/** Last lump with this name (PWADs win), or INDEX_NONE. */
@@ -45,6 +47,7 @@ public:
 
 private:
 	TArray<TArray<uint8>> Files;
+	TArray<FString> Paths;
 	TArray<FWadLump> Lumps;
 	TMap<FName, int32> LastByName;
 	TArray<TArray<FColor>> Palettes;

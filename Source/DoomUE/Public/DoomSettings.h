@@ -23,6 +23,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "WAD")
 	TArray<FString> PWADs;
 
+	/** Ultimate Doom Builder (Builder.exe), for the DoomMap actor's Edit in Doom Builder. */
+	UPROPERTY(Config, EditAnywhere, Category = "WAD", meta = (FilePathFilter = "exe"))
+	FFilePath DoomBuilderPath;
+
 	/** Map to start on; empty shows the title screen. */
 	UPROPERTY(Config, EditAnywhere, Category = "Game")
 	FString StartMap;

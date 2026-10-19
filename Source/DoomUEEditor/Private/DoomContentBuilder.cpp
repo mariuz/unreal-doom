@@ -27,6 +27,7 @@
 #include "DoomWadWriter.h"
 #include "DoomAI.h"
 #include "DoomWad.h"
+#include "DoomSettings.h"
 #include "DoomInput.h"
 #include "HAL/FileManager.h"
 #include "DoomMap.h"
@@ -1590,12 +1591,44 @@ bool DoomContent::EditTest(const FString& InMapName)
 	const FDoomMap* Edited = MapActor->GetPreviewMap();
 	const bool bExportOk = bExportRead && Edited && Back.Sectors.IsValidIndex(Sec) && FMath::IsNearlyEqual(Back.Sectors[Sec].Floor, NewFloor)
 		&& Back.Things.Num() == Edited->Things.Num() && (DoorLine < 0 || (Back.Lines[DoorLine].Special == 0 && Back.Sides[Back.Lines[DoorLine].Side[0]].Upper == NewTexture));
+	// the round trip with a Doom editor: the PWAD joins the WADs, a save "there" (another sector's
+	// floor and light changed, written over the file) reloads, and the preview shows it with the
+	// level's markers still in charge of the things
+	const int32 EditedThings = Edited ? Edited->Things.Num() : -1; // the preview map is replaced below
+	bool bRoundTrip = false;
+	FString RoundTrip = TEXT("not run");
+	if (bExportRead)
+	{
+		UDoomSettings* Settings = GetMutableDefault<UDoomSettings>();
+		const TArray<FString> OldPwads = Settings->PWADs;
+		DoomEditorData::UsePwad(WadPath);
+		const bool bSource = FPaths::IsSamePath(DoomEditorData::MapSource(MapName), FPaths::ConvertRelativePathToFull(WadPath));
+		int32 Other = INDEX_NONE;
+		for (int32 s = 0; s < Back.Sectors.Num() && Other == INDEX_NONE; ++s) if (s != Sec) Other = s;
+		FDoomMap Changed = Back;
+		Changed.Sectors[Other].Floor += 32.f;
+		Changed.Sectors[Other].Light = 99;
+		DoomWadWriter::SaveMap(Changed, MapName, WadPath);
+		IFileManager::Get().SetTimeStamp(*WadPath, FDateTime::UtcNow() - FTimespan::FromSeconds(2));
+		const bool bReloaded = DoomEditorData::ReloadIfChanged();
+		MapActor->RebuildPreview();
+		const FDoomMap* After = MapActor->GetPreviewMap();
+		bRoundTrip = bSource && bReloaded && After && After->Sectors[Other].Floor == Back.Sectors[Other].Floor + 32.f && After->Sectors[Other].Light == 99
+			&& After->Things.Num() == EditedThings && FMath::IsNearlyEqual(After->Sectors[Sec].Floor, NewFloor);
+		RoundTrip = FString::Printf(TEXT("source %s, reloaded %d, sector %d floor %.0f -> %.0f light %d, things %d, edited sector %d floor %.0f"),
+			bSource ? TEXT("the PWAD") : TEXT("WRONG"), bReloaded, Other, Back.Sectors[Other].Floor, After ? After->Sectors[Other].Floor : -1.f,
+			After ? After->Sectors[Other].Light : -1, After ? After->Things.Num() : -1, Sec, After ? After->Sectors[Sec].Floor : -1.f);
+		Settings->PWADs = OldPwads;
+		Settings->SaveConfig();
+		DoomEditorData::Reload();
+		MapActor->RebuildPreview();
+	}
 	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
-	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk && bExportOk;
-	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; exported %s (%d things); saved %s"),
+	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk && bExportOk && bRoundTrip;
+	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; exported %s (%d things); round trip: %s; saved %s"),
 		bPass ? TEXT("PASS") : TEXT("FAIL"), PreviewComponents, Markers, Sec, OldFloor, NewFloor, *LineReport, Connections, Ghosts,
-		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, bExportOk ? TEXT("and read back") : TEXT("WRONG"), bExportRead ? Back.Things.Num() : -1, *TestPackage);
+		bCheckerOk ? TEXT("found") : TEXT("missed"), TaggedLine, bExportOk ? TEXT("and read back") : TEXT("WRONG"), bExportRead ? Back.Things.Num() : -1, *RoundTrip, *TestPackage);
 	return bPass;
 }
 
