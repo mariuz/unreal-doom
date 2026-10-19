@@ -97,6 +97,69 @@ Headless: `UnrealEditor-Cmd DoomUE.uproject -run=DoomContent -checkmap=E1M1,E1M2
 `-iwad=freedoom2.wad` for another IWAD) writes the same list to the log. Freedoom's 68 maps have no
 errors; their warnings are missing textures.
 
+## The map editor (in the game and in Play In Editor)
+
+A Doom map editor runs over the game itself:
+
+* **Opening it:** **MAP EDITOR** in the main menu, `DoomEdit` in the console, `-mapeditor` on the
+  command line, or **Doom > Play in the Map Editor** in the Unreal editor, which starts Play In
+  Editor with the map editor open.
+* **What it edits:** the map being played (a new random map if none is), with an imported level's
+  own edits applied.
+* **The view:** a top-down map (Slate: `SDoomMapView`) under UMG panels built in C++
+  (`UDoomEditorWidget`): a toolbar, the selection's properties and a status line.
+
+**Modes and keys:**
+
+| Mode | What it does |
+|---|---|
+| **1 Things** | Select, drag, edit type, angle and skill flags; **T** or a double-click adds the chosen type at the cursor |
+| **2 Sectors** | Select; edit floor, ceiling, light, special, tag and flats; delete |
+| **3 Lines** | Select; edit special, tag, flags, the textures of both sides and the front offsets (a side shared with other lines is copied first) |
+| **4 Vertices** | Select, drag, edit X / Y |
+| **D Draw sector** | Click the corners; click the first one again, double-click or press Enter to close |
+
+Drawn sectors (`DoomMapEdit::DrawSector`) may lie:
+
+* in the void;
+* inside a sector: their walls are then two-sided to it, and they start as a copy of it;
+* against existing walls: those walls become openings between the two sectors.
+
+Corners that land on lines split them.
+
+Other keys and actions:
+
+* Ctrl+Z / Ctrl+Y undo and redo (100 steps).
+* Del deletes.
+* **G** cycles the grid (1, 8, 16, 32, 64).
+* The wheel zooms and the right mouse button pans.
+* **Tab** switches to the 3D view: fly with WASD, Q / E and Shift, look with the right mouse
+  button, and click to pick.
+* **Check map** runs the map checker and goes to the first problem.
+* **Save WAD** (Ctrl+S) writes `Saved/Maps/<map>.wad`.
+* **Random map** asks the generator for a new map; **New room** starts a new map from one room.
+* **F5 Play** closes the editor and plays the edited map from the camera's spot.
+
+**How edits reach the level:**
+
+* The game's clock stays stopped while editing.
+* Every edit rebuilds the BSP with the node builder (when geometry changed) and reloads the level
+  from the edited map (`UDoomWorld::LoadEditedMap`). Doors close and monsters return to their
+  places.
+* Edits live as long as the session. Save a WAD to keep them: a saved game reloads the map by its
+  name, so it starts from the original.
+
+**Testing:** `-warp=E1M1 -editortest` (also on generated maps) drives the editor through its API:
+
+* raise a floor;
+* draw a sector inside the start room and raise it;
+* draw a room against a wall, which becomes an opening that a monster path crosses;
+* place an imp, and undo and redo;
+* check the map, save and read back the WAD;
+* play.
+
+Screenshots: `editor_2d.png`, `editor_3d.png`. All 10 steps pass on E1M1 and RND00005.
+
 ## The node builder
 
 `FDoomMap::Rebuild()` makes a map's BSP (segs, subsectors and nodes) from its lines and sectors

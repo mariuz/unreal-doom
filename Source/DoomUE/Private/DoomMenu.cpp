@@ -1,5 +1,6 @@
 #include "DoomMenu.h"
 #include "DoomWorld.h"
+#include "DoomEditor.h"
 #include "DoomGraphics.h"
 #include "DoomPlayer.h"
 #include "DoomSettings.h"
@@ -78,6 +79,7 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 			R.Add({ EKind::Action, TEXT("M_RDTHIS"), TEXT("READ THIS!") });
 		}
 		R.Add({ EKind::Action, TEXT("M_QUITG"), TEXT("QUIT GAME") });
+		R.Add({ EKind::Choice, FString(), TEXT("MAP EDITOR") }); // last, so Doom's own rows keep their places
 		break;
 	case EMenuPage::Episode:
 		for (const FDoomEpisode& E : Episodes(W))
@@ -482,6 +484,14 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		return;
 	case EMenuPage::Main:
 	{
+		if (Item == Rows(W).Num() - 1)
+		{
+			// MAP EDITOR: the map being played, or a new random one
+			Stack.Reset();
+			Close(W);
+			if (UDoomMapEditor* E = W.GetWorld()->GetSubsystem<UDoomMapEditor>()) E->Open();
+			return;
+		}
 		const bool bDoom2 = W.GetWad()->IsDoom2();
 		// rows: new game, options, load, save, [read this], quit
 		int32 Action = Item;

@@ -438,6 +438,13 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+The map editor (`feature/map-editor`): **MAP EDITOR** in the main menu, `DoomEdit`, or **Doom > Play
+in the Map Editor** in the Unreal editor opens a Doom map editor over the game: a top-down view with
+UMG panels to select and edit things, sectors, lines and vertices, draw new sectors (in the void,
+inside others, or against walls that become openings), undo, check the map, fly a 3D camera,
+generate random maps and save PWADs. Every edit rebuilds the nodes and reloads the level. See
+[docs/EditingMaps.md](docs/EditingMaps.md#the-map-editor-in-the-game-and-in-play-in-editor).
+
 SMART monsters (`feature/smart-ai`): **Options > Monster AI** (or `-smartai`) hands monsters to
 Unreal's AI framework: `ADoomAIController` with AI Perception (sight, hearing), a Behavior Tree
 (`/Game/Doom/AI/BT_DoomMonster`: take cover when hurt, charge, find a firing position with EQS, hunt,
@@ -485,7 +492,7 @@ Not done yet (roughly in priority order):
    rampage face after holding fire 2 s with any weapon.
 2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
    * **Live round trip with a Doom editor**: reload the map into the open level when the PWAD changes (saved in Ultimate Doom Builder), keeping the markers and edits; a menu entry opening the map in that editor.
-   * **New geometry drawn in Unreal** (the biggest): a polygon tool for sectors and lines. The node builder it needs is in (`FDoomMap::Rebuild`, `-nodetest`, see [docs/EditingMaps.md](docs/EditingMaps.md)).
+   * **New geometry in the editor viewport itself**: the map editor draws sectors over a running game (in Play In Editor too). Drawing them in the Unreal editor's viewport, saved into the level as edits, is still to do.
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
    * **Gamepad rebinding and per-platform mappings**: the Controls page rebinds keyboard and mouse; the gamepad's buttons are fixed, and there is one mapping set for every platform.

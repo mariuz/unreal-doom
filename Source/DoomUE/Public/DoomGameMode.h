@@ -45,6 +45,10 @@ public:
 	UFUNCTION(Exec)
 	void DoomMap(const FString& MapName);
 
+	/** Console: DoomEdit (the map editor, DoomEditor.h) */
+	UFUNCTION(Exec)
+	void DoomEdit();
+
 	/** Console: DoomGod */
 	UFUNCTION(Exec)
 	void DoomGod();

@@ -179,6 +179,9 @@ public:
 
 	/** Loads a map and places the player. Inventory carries over unless bPistolStart. */
 	bool LoadMap(const FString& MapName, bool bPistolStart, bool bForSaveGame = false);
+	/** Loads a map the map editor made or changed (its name stays; the level's own edits are not
+	 *  applied again): the level, things and players start afresh from it. */
+	bool LoadEditedMap(const FDoomMap& Edited);
 	/**
 	 * Starts loading a map behind the loading screen and returns at once. The map's pictures are
 	 * decoded and its geometry generated on worker threads, and the game thread creates textures
@@ -437,6 +440,7 @@ private:
 	int32 Skill = 3;
 	bool bModern = false;
 	bool bSmartAI = false;
+	TUniquePtr<FDoomMap> PendingEdited;
 	mutable FDoomNav Nav;
 	mutable bool bNavBuilt = false;
 	bool bNoParticles = false; // -noparticles
