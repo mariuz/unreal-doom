@@ -105,6 +105,8 @@ Tools/run_tests.bat DoomUE -NullRHI
   plus `QueryKeysMappedToAction` check the same path the menu uses.
 * **Line edits apply before `SpecialLines` is used**: `ADoomMapActor::ApplyEdits` rebuilds it after
   line edits; a line edit that changes textures copies a side the WAD shares between lines first.
+* **`Shot showui` in Play In Editor captures the whole editor window**: don't use it (privacy);
+  use the game's own screenshots (`-editortest`, `-playtest`) in `-game` runs.
 * **Editor screenshots**: `-ExecutePythonScript` quits the editor after its script; use
   `-ExecCmds="py script.py"` and `HighResShot` from a Slate post-tick callback timed by elapsed time.
 * **Corpses and one-frame things sleep** (`ADoomMonster::WakeCorpse`,
@@ -170,6 +172,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * the map editor (`DoomEditor.h`, `DoomMapEdit.h`, `-editortest`, Doom > Play in the Map Editor);
   * SMART monsters (`DoomAI.h`, [docs/AI.md](docs/AI.md)): AI controller, perception, Behavior Tree and EQS
     assets in `/Game/Doom/AI` (`-run=DoomContent -ai`), `FDoomNav` paths, the `smartai` play-test step;
   * PWAD export (`DoomWadWriter`, Export WAD, `-exportmap`, `-wadtest`);

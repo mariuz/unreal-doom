@@ -13,6 +13,7 @@
 #include "MessageLogModule.h"
 #include "Editor.h"
 #include "DoomMapCheck.h"
+#include "DoomEditor.h"
 #include "DoomUE.h"
 
 #define LOCTEXT_NAMESPACE "DoomUEEditor"
@@ -122,6 +123,16 @@ namespace
 				else
 				{
 					Notify(LOCTEXT("CheckNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
+				}
+			})));
+		Maps.AddMenuEntry(TEXT("PlayMapEditor"), LOCTEXT("PlayMapEditor", "Play in the Map Editor"),
+			LOCTEXT("PlayMapEditorTip", "Play In Editor with Doom's map editor open over the game: draw sectors, place things, edit properties, undo, generate random maps and save PWADs (DoomEdit in the console toggles it)"), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]()
+			{
+				if (GEditor && !GEditor->IsPlaySessionInProgress())
+				{
+					UDoomMapEditor::bOpenOnNextPlay = true;
+					GEditor->RequestPlaySession(FRequestPlaySessionParams());
 				}
 			})));
 		FToolMenuSection& Content = Doom->AddSection(TEXT("Content"), LOCTEXT("ContentSection", "Generated content"));

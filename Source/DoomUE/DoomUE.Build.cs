@@ -8,9 +8,9 @@ public class DoomUE : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags",
 			"ProceduralMeshComponent", "DeveloperSettings", "AudioMixer", "AudioExtensions", "AIModule", "GameplayTasks",
-			"MeshDescription", "StaticMeshDescription", "Niagara", "NetCore"
+			"MeshDescription", "StaticMeshDescription", "Niagara", "NetCore", "UMG", "Slate", "SlateCore"
 		});
-		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Slate", "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI" });
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
 	}
 }

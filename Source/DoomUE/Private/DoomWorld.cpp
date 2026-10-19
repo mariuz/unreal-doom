@@ -366,6 +366,14 @@ bool UDoomWorld::LoadMap(const FString& MapName, bool bPistolStart, bool bForSav
 	return true;
 }
 
+bool UDoomWorld::LoadEditedMap(const FDoomMap& Edited)
+{
+	PendingEdited = MakeUnique<FDoomMap>(Edited);
+	const bool bOk = LoadMap(Edited.Name, false, false);
+	PendingEdited.Reset();
+	return bOk;
+}
+
 bool UDoomWorld::LoadMapAsync(const FString& MapName, bool bPistolStart)
 {
 	return BeginLoad(MapName, bPistolStart, false);
@@ -379,10 +387,15 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 		return false;
 	}
 	UnloadMap();
-	Map = MakeUnique<FDoomMap>();
 	bNavBuilt = false;
+	const bool bEdited = PendingEdited.IsValid();
+	Map = bEdited ? MoveTemp(PendingEdited) : MakeUnique<FDoomMap>();
 	uint32 GenSeed = 0;
-	if (DoomMapGen::ParseName(MapName, GenSeed))
+	if (bEdited)
+	{
+		// the map editor's map, as it stands (LoadEditedMap)
+	}
+	else if (DoomMapGen::ParseName(MapName, GenSeed))
 	{
 		// a generated map: the same seed makes the same map (saves, network clients)
 		if (!DoomMapGen::Generate(GenOptions(GenSeed), Gfx.Get(), *Map))
@@ -398,7 +411,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	}
 	// -buildnodes: play on the port's own node builder instead of the WAD's nodes (its test)
 	static const bool bBuildNodes = FParse::Param(FCommandLine::Get(), TEXT("buildnodes"));
-	if (bBuildNodes && Map->Rebuild())
+	if (bBuildNodes && !bEdited && Map->Rebuild())
 	{
 		UE_LOG(LogDoom, Log, TEXT("%s: nodes rebuilt by the node builder (%s): %d subsectors, %d nodes"), *Map->Name, *Map->NodesFormat, Map->Subsectors.Num(), Map->Nodes.Num());
 	}
@@ -420,7 +433,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	}
 	LoadedSerial = Flow().LevelSerial;
 	// an imported Unreal level for this map brings its sector edits and thing markers
-	if (const ADoomMapActor* Edits = ADoomMapActor::Find(GetWorld()))
+	if (const ADoomMapActor* Edits = bEdited ? nullptr : ADoomMapActor::Find(GetWorld()))
 	{
 		if (Edits->MapName.Equals(Flow().CurrentMap, ESearchCase::IgnoreCase))
 		{

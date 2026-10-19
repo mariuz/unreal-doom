@@ -1,5 +1,6 @@
 #include "DoomGameMode.h"
 #include "DoomWorld.h"
+#include "DoomEditor.h"
 #include "DoomPlayer.h"
 #include "DoomPlayerController.h"
 #include "DoomHUD.h"
@@ -97,6 +98,14 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 		}
 	}
 	W->UpdateMaterialGlobals(Accumulator / Doom::TicSeconds);
+}
+
+void ADoomGameMode::DoomEdit()
+{
+	if (UDoomMapEditor* E = GetWorld()->GetSubsystem<UDoomMapEditor>())
+	{
+		E->Toggle();
+	}
 }
 
 FString ADoomGameMode::NextMapName(bool bSecret) const
@@ -685,6 +694,18 @@ void ADoomGameMode::StartPlay()
 			}
 			UE_LOG(LogDoom, Display, TEXT("Killtype %d: killed %d, active movers %d"), KillType, Killed, W->NumMovers());
 		}, 2.f, false);
+	}
+
+	// -editortest: the map editor's scripted test; -mapeditor: open the editor once the map is up
+	if (FParse::Param(FCommandLine::Get(), TEXT("editortest")) && W->GetMap())
+	{
+		DoomEditorTest::Start(GetWorld());
+	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("mapeditor")) || UDoomMapEditor::bOpenOnNextPlay)
+	{
+		UDoomMapEditor::bOpenOnNextPlay = false;
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [this]() { DoomEdit(); }, 0.5f, false);
 	}
 
 	// -playtest: doors, lifts, splash damage, weapons, monsters (needs -warp); PASS/FAIL per step
