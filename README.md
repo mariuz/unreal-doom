@@ -522,4 +522,4 @@ Not done yet (roughly in priority order):
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Sector, fullbright and fuzz as Custom Primitive Data would let every sprite share one material and draw in batches.
-   * **Moving sectors**: a moving door or lift dirties its chunk, which regenerates its mesh every tic. Doors and lifts as separate components moved by transform (or World Position Offset) would regenerate nothing; check in Insights whether it matters.
+   * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.

@@ -79,6 +79,9 @@ public:
 
 	/** Upload the sector light levels (call when any changed). */
 	void UpdateSectorLights();
+	/** Time spent regenerating moved chunks, and how many (-perftest). */
+	double FlushSeconds = 0;
+	int64 ChunksRegenerated = 0;
 	/** Animated flats and walls (every tic; changes textures every 8 tics). */
 	void AnimateTextures(int32 Tic);
 

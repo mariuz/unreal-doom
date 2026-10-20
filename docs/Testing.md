@@ -76,8 +76,9 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 [EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
 -gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
 `-perftest` (with `-warp`) measures the game thread's frame time, sight checks (and how many REJECT
-answers), effects made and reused, and ticking monsters: 8 s with the monsters waiting, 8 s with all of
-them awake and the player firing the chaingun.
+answers), effects made and reused, moved chunks regenerated (and their time), and ticking monsters:
+8 s with the monsters waiting, 4 s with every door and lift moving, 8 s with all of them awake and
+the player firing the chaingun.
 `-perfbaseline` turns the performance work off for comparison.
 `-run=DoomContent -navtest=all` builds the monster paths for each map and counts what can walk to the start.
 `-warp=E1M1 -editortest` runs the map editor's scripted test ([EditingMaps.md](EditingMaps.md#the-map-editor-in-the-game-and-in-play-in-editor)).
