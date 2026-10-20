@@ -961,15 +961,22 @@ void ADoomGameMode::StartPlayTest()
 					B->Report += FString::Printf(TEXT("; the menu row reads \"%s  %s\""), Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].Text : TEXT("?"),
 						Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].ValueText : TEXT("?"));
 					Shot(TEXT("controls"));
+					// the gamepad's fire button, from the right trigger to the left
+					B->bOk &= PC->Rebind(TEXT("PadFire"), EKeys::Gamepad_LeftTrigger);
 					break;
 				}
 				case 2:
+				{
+					B->Report += FString::Printf(TEXT("; PAD FIRE on LT: %s"), *FireKeys());
+					B->bOk &= Has(EKeys::Gamepad_LeftTrigger) && !Has(EKeys::Gamepad_RightTrigger) && Has(EKeys::F);
 					W->Menu.Close(*W);
 					PC->ResetBindings();
 					break;
+				}
 				case 3:
 					B->Report += FString::Printf(TEXT("; after reset: %s"), *FireKeys());
-					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl) && !Has(EKeys::F);
+					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl) && !Has(EKeys::F)
+						&& Has(EKeys::Gamepad_RightTrigger) && !Has(EKeys::Gamepad_LeftTrigger);
 					Msg = B->Report;
 					return B->bOk ? EStep::Pass : EStep::Fail;
 				}

@@ -65,6 +65,8 @@ namespace DoomInput
 	{
 		FName Name;
 		const TCHAR* Label;
+		/** A gamepad button's binding (its row takes only gamepad buttons; the keyboard rows none). */
+		bool bGamepad = false;
 	};
 	/** Every rebindable control, in menu order. */
 	DOOMUE_API const TArray<FMappable>& Mappables();

@@ -287,6 +287,13 @@ void FDoomMenu::CaptureKey(UDoomWorld& W, const FKey& Key)
 		return;
 	}
 	const TArray<DoomInput::FMappable>& Controls = DoomInput::Mappables();
+	if (Controls.IsValidIndex(Item) && Key.IsGamepadKey() != Controls[Item].bGamepad)
+	{
+		// a gamepad row takes a gamepad button, a keyboard row a key or mouse button: keep waiting
+		bCapturing = true;
+		W.PlaySound(TEXT("OOF"), nullptr);
+		return;
+	}
 	ADoomPlayerController* PC = Cast<ADoomPlayerController>(UGameplayStatics::GetPlayerController(W.GetWorld(), 0));
 	if (PC && Controls.IsValidIndex(Item) && PC->Rebind(Controls[Item].Name, Key))
 	{

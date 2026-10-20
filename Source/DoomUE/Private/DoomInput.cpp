@@ -36,6 +36,13 @@ namespace
 		{ TEXT("AutomapGrid"), TEXT("MAP GRID") },
 		{ TEXT("QuickSave"), TEXT("QUICK SAVE") },
 		{ TEXT("QuickLoad"), TEXT("QUICK LOAD") },
+		// the gamepad's buttons (the sticks move and look, and stay as they are)
+		{ TEXT("PadFire"), TEXT("PAD FIRE"), true },
+		{ TEXT("PadUse"), TEXT("PAD USE / OPEN"), true },
+		{ TEXT("PadRun"), TEXT("PAD RUN"), true },
+		{ TEXT("PadNextWeapon"), TEXT("PAD NEXT WEAPON"), true },
+		{ TEXT("PadPrevWeapon"), TEXT("PAD PREVIOUS WEAPON"), true },
+		{ TEXT("PadAutomap"), TEXT("PAD AUTOMAP"), true },
 	};
 
 	/** Marks a mapping player-mappable. FEnhancedActionKeyMapping keeps these protected (they're set in
@@ -181,14 +188,15 @@ void DoomInput::Build(TFunctionRef<UObject*(UClass*, FName)> New, FDoomInputObje
 	Turn(EKeys::Right, false, TEXT("TurnRight"));
 	Map(G, Out.Fire, EKeys::LeftMouseButton, TEXT("Fire"));
 	Map(G, Out.Fire, EKeys::LeftControl, TEXT("Fire"));
-	Map(G, Out.Fire, EKeys::Gamepad_RightTrigger);
+	Map(G, Out.Fire, EKeys::Gamepad_RightTrigger, TEXT("PadFire"));
 	Map(G, Out.Use, EKeys::E, TEXT("Use"));
 	Map(G, Out.Use, EKeys::SpaceBar, TEXT("Use"));
 	Map(G, Out.Use, EKeys::RightMouseButton, TEXT("Use"));
-	Map(G, Out.Use, EKeys::Gamepad_FaceButton_Bottom);
+	Map(G, Out.Use, EKeys::Gamepad_FaceButton_Bottom, TEXT("PadUse"));
 	Map(G, Out.Run, EKeys::LeftShift, TEXT("Run"));
+	Map(G, Out.Run, EKeys::Gamepad_LeftThumbstick, TEXT("PadRun"));
 	Map(G, Out.Automap, EKeys::Tab, TEXT("Automap"));
-	Map(G, Out.Automap, EKeys::Gamepad_Special_Left);
+	Map(G, Out.Automap, EKeys::Gamepad_Special_Left, TEXT("PadAutomap"));
 	// the automap's keys (they do nothing while it is closed): = and - zoom, F follow, 0 the whole map,
 	// M mark, C clear the marks, G grid; the arrows pan when follow mode is off (the pan context)
 	Map(G, Out.AutomapZoom, EKeys::Equals, TEXT("AutomapZoomIn"));
@@ -201,9 +209,9 @@ void DoomInput::Build(TFunctionRef<UObject*(UClass*, FName)> New, FDoomInputObje
 	Map(G, Out.AutomapClear, EKeys::C, TEXT("AutomapClear"));
 	Map(G, Out.AutomapGrid, EKeys::G, TEXT("AutomapGrid"));
 	Map(G, Out.NextWeapon, EKeys::MouseScrollDown, TEXT("NextWeapon"));
-	Map(G, Out.NextWeapon, EKeys::Gamepad_RightShoulder);
+	Map(G, Out.NextWeapon, EKeys::Gamepad_RightShoulder, TEXT("PadNextWeapon"));
 	Map(G, Out.PrevWeapon, EKeys::MouseScrollUp, TEXT("PrevWeapon"));
-	Map(G, Out.PrevWeapon, EKeys::Gamepad_LeftShoulder);
+	Map(G, Out.PrevWeapon, EKeys::Gamepad_LeftShoulder, TEXT("PadPrevWeapon"));
 	const FKey Digits[7] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven };
 	for (int32 i = 0; i < 7; ++i)
 	{
@@ -298,6 +306,14 @@ FString DoomInput::KeyLabel(const FKey& Key)
 		{ EKeys::Equals.GetFName(), TEXT("=") }, { EKeys::Hyphen.GetFName(), TEXT("-") }, { EKeys::Add.GetFName(), TEXT("KP +") },
 		{ EKeys::Subtract.GetFName(), TEXT("KP -") }, { EKeys::Enter.GetFName(), TEXT("ENTER") }, { EKeys::Tab.GetFName(), TEXT("TAB") },
 		{ EKeys::BackSpace.GetFName(), TEXT("BACKSPACE") },
+		{ EKeys::Gamepad_FaceButton_Bottom.GetFName(), TEXT("PAD A") }, { EKeys::Gamepad_FaceButton_Right.GetFName(), TEXT("PAD B") },
+		{ EKeys::Gamepad_FaceButton_Left.GetFName(), TEXT("PAD X") }, { EKeys::Gamepad_FaceButton_Top.GetFName(), TEXT("PAD Y") },
+		{ EKeys::Gamepad_LeftShoulder.GetFName(), TEXT("PAD LB") }, { EKeys::Gamepad_RightShoulder.GetFName(), TEXT("PAD RB") },
+		{ EKeys::Gamepad_LeftTrigger.GetFName(), TEXT("PAD LT") }, { EKeys::Gamepad_RightTrigger.GetFName(), TEXT("PAD RT") },
+		{ EKeys::Gamepad_Special_Left.GetFName(), TEXT("PAD BACK") }, { EKeys::Gamepad_Special_Right.GetFName(), TEXT("PAD START") },
+		{ EKeys::Gamepad_LeftThumbstick.GetFName(), TEXT("PAD L3") }, { EKeys::Gamepad_RightThumbstick.GetFName(), TEXT("PAD R3") },
+		{ EKeys::Gamepad_DPad_Up.GetFName(), TEXT("PAD UP") }, { EKeys::Gamepad_DPad_Down.GetFName(), TEXT("PAD DOWN") },
+		{ EKeys::Gamepad_DPad_Left.GetFName(), TEXT("PAD LEFT") }, { EKeys::Gamepad_DPad_Right.GetFName(), TEXT("PAD RIGHT") },
 	};
 	if (const TCHAR* const* S = Short.Find(Key.GetFName()))
 	{
