@@ -39,6 +39,9 @@ public:
 	 *  maps); a floor lowering under it, or a resurrection, starts them again. */
 	void WakeCorpse();
 	bool IsCorpseAsleep() const { return bCorpseAsleep; }
+	/** A monster waiting for the player sleeps like a corpse until it wakes or its floor moves. */
+	void WakeIdle();
+	bool IsIdleAsleep() const { return bIdleAsleep; }
 
 	/** Vanilla mobjinfo mass, for knockback. */
 	static float MonsterMass(const FDoomThingDef* D);
@@ -134,6 +137,8 @@ private:
 	/** The target when it died (a pain elemental's souls go after it). */
 	TWeakObjectPtr<AActor> LastTarget;
 	bool bCorpseAsleep = false;
+	bool bIdleAsleep = false;
+	int32 IdleRestTics = 0;
 	int32 CorpseRestTics = 0;
 	void NewChaseDir();
 	void StartState(EMonsterState S);

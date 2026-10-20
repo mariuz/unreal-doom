@@ -202,6 +202,7 @@ bool FDoomMap::Rebuild()
 		S.Lines.Reset();
 		S.Subsectors.Reset();
 	}
+	Reject.Reset(); // the geometry may have changed: every sector may see every other
 	if (!BuildNodes())
 	{
 		return false;

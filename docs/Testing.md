@@ -75,6 +75,9 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 `-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
 [EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
 -gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
+`-perftest` (with `-warp`) measures the game thread's frame time, sight checks (and how many REJECT
+answers) and ticking monsters: 8 s with the monsters waiting, 8 s with all of them awake.
+`-perfbaseline` turns the performance work off for comparison.
 `-run=DoomContent -navtest=all` builds the monster paths for each map and counts what can walk to the start.
 `-warp=E1M1 -editortest` runs the map editor's scripted test ([EditingMaps.md](EditingMaps.md#the-map-editor-in-the-game-and-in-play-in-editor)).
 `-run=DoomContent -wadtest=all` writes every map as a PWAD and reads it back; `-file=Saved/Maps/RND00003.wad
@@ -102,6 +105,7 @@ first 11 steps failed on E1M1.
 | `rate_*` | Shots in a fixed time with the trigger held: pistol every 14 tics, chaingun 2 per 8, plasma every 3, shotgun every 37, rockets every 20 |
 | `flyer` | A cacodemon hit by the player is still flying a second later |
 | `target` | 3 s of plasma at a baron in the open (aim kept on it) takes over 100 health |
+| `sleepers` | Monsters waiting for the player sleep (no actor or movement tick), CLASSIC monsters have no AI controller, and a shot one wakes and ticks again |
 | `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units in 5 s (the rest are shut in closets) |
 | `smartai` | SMART monsters (Unreal's AI framework, [AI.md](AI.md)): every live monster gets the AI controller with its Behavior Tree running, perception senses the player, and 70% of the monsters that can walk to the player close in by 64+ units or get it in sight in 10 s (`-smartbaseline` measures CLASSIC monsters instead) |
 | `automap` | With the map closed, the walls in view become known, beyond the player's own sector; then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |

@@ -52,8 +52,10 @@ ADoomMonster::ADoomMonster(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
-	AIControllerClass = AAIController::StaticClass();
-	AutoPossessAI = EAutoPossessAI::Spawned;
+	// CLASSIC monsters need no controller (Doom's own code moves them, bRunPhysicsWithNoController);
+	// SMART ones get an ADoomAIController (SetSmartAI)
+	AIControllerClass = nullptr;
+	AutoPossessAI = EAutoPossessAI::Disabled;
 	bUseControllerRotationYaw = false;
 
 	UCapsuleComponent* Cap = GetCapsuleComponent();
@@ -179,6 +181,11 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 	{
 		SetSmartAI(true);
 	}
+	else if (HasAuthority() && Doom::PerfBaseline() && !Controller)
+	{
+		AIControllerClass = AAIController::StaticClass();
+		SpawnDefaultController();
+	}
 
 	if (DoomWorld->IsModern() && Def->LightColor.A > 0)
 	{
@@ -198,6 +205,10 @@ FVector ADoomMonster::EyeLocation() const { return GetActorLocation() + FVector(
 
 void ADoomMonster::StartState(EMonsterState S)
 {
+	if (S != EMonsterState::Idle)
+	{
+		WakeIdle();
+	}
 	State = S;
 	FireFrameSeen = -1;
 	const bool bBright = (Def->Flags & EThingFlag::FullBright) != 0;
@@ -292,6 +303,21 @@ void ADoomMonster::DoomTic()
 		if ((DoomWorld->GetTic() & 3) == 0)
 		{
 			Look();
+		}
+		// waiting for the player, at rest for a second on a still floor: no movement or actor tick until
+		// it wakes (StartState) or its floor lowers (UDoomWorld's movers); Look and the sprite run on Doom's tics
+		if (!bIdleAsleep && State == EMonsterState::Idle && HasAuthority() && !Doom::PerfBaseline())
+		{
+			const UCharacterMovementComponent* Move = GetCharacterMovement();
+			const bool bStill = GetVelocity().IsNearlyZero(1.f) && (Move->IsMovingOnGround() || Move->MovementMode == MOVE_Flying || Move->MovementMode == MOVE_None);
+			IdleRestTics = bStill && !DoomWorld->IsSectorMoving(Sec) ? IdleRestTics + 1 : 0;
+			if (IdleRestTics >= Doom::TicRate)
+			{
+				bIdleAsleep = true;
+				GetCharacterMovement()->StopMovementImmediately();
+				GetCharacterMovement()->SetComponentTickEnabled(false);
+				SetActorTickEnabled(false);
+			}
 		}
 		break;
 	case EMonsterState::Chase:
@@ -1041,8 +1067,7 @@ void ADoomMonster::SetSmartAI(bool bOn)
 	{
 		return;
 	}
-	UClass* Want = bOn ? ADoomAIController::StaticClass() : AAIController::StaticClass();
-	if (Controller && Controller->GetClass() == Want)
+	if (bOn == (Controller && Controller->IsA<ADoomAIController>()))
 	{
 		return;
 	}
@@ -1051,7 +1076,11 @@ void ADoomMonster::SetSmartAI(bool bOn)
 		Old->UnPossess();
 		Old->Destroy();
 	}
-	AIControllerClass = Want;
+	if (!bOn)
+	{
+		return; // CLASSIC: no controller at all
+	}
+	AIControllerClass = ADoomAIController::StaticClass();
 	SpawnDefaultController();
 	if (IsDead())
 	{
@@ -1231,6 +1260,17 @@ void ADoomMonster::ShootSkull(float Angle, AActor* SoulTarget)
 			Soul->StartState(EMonsterState::Missile);
 		}
 	}
+}
+
+void ADoomMonster::WakeIdle()
+{
+	if (bIdleAsleep)
+	{
+		bIdleAsleep = false;
+		GetCharacterMovement()->SetComponentTickEnabled(true);
+		SetActorTickEnabled(true);
+	}
+	IdleRestTics = 0;
 }
 
 void ADoomMonster::WakeCorpse()

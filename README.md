@@ -438,6 +438,17 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+Performance (`feature/perf`), measured with `-perftest` against `-perfbaseline`:
+
+* Monsters waiting for the player sleep: no actor or movement tick until they wake or their floor
+  moves.
+* CLASSIC monsters have no AI controller.
+* Sight checks use Doom's REJECT table first.
+
+The game thread's median frame with MAP29's 97 monsters waiting went from 4.1-5.5 ms to 2.2-2.3 ms,
+and with them all awake from 6.5-7.0 ms to 6.0 ms. On E1M1, 93% of sight checks are answered without
+a trace.
+
 The Doom Builder round trip (`feature/builder-roundtrip`): **Edit in Doom Builder** opens the
 level's map in Ultimate Doom Builder (an IWAD map is exported with the level's edits as a PWAD
 first). Every save there reloads the WADs and rebuilds the level's preview, and the markers and
@@ -506,10 +517,7 @@ Not done yet (roughly in priority order):
    * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
-   * **Sleeping monsters**: monsters that haven't woken only look every 4 tics but their movement ticks every frame. A tick interval, or no tick until they wake, and the Significance Manager by distance for awake ones.
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Sector, fullbright and fuzz as Custom Primitive Data would let every sprite share one material and draw in batches.
-   * **AI controllers that do nothing**: every monster spawns an `AAIController`, but the AI is Doom's own code. No auto-possession and `bRunPhysicsWithNoController` would save an actor per monster (check that movement input still works without one).
-   * **Sight checks**: `CheckSight` traces through physics every time; Doom's REJECT lump (sector pairs that can never see each other) would skip most of them for free.
    * **Effect actors from a pool**: every bullet puff, blood splat and teleport fog spawns an actor and destroys it moments later (`SpawnEffect`); the chaingun and super shotgun make dozens a second. A small pool (or Niagara bursts in the modern renderer) would spare the spawning and garbage collection.
    * **Automap line marking**: `MarkSeenLines` traces to every nearby line every 0.15 s; lines already known never need testing again, and big open maps want a budget per pass.
    * **Moving sectors**: a moving door or lift dirties its chunk, which regenerates its mesh every tic. Doors and lifts as separate components moved by transform (or World Position Offset) would regenerate nothing; check in Insights whether it matters.

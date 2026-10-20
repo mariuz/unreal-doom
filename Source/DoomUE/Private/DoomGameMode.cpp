@@ -100,6 +100,8 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 	W->UpdateMaterialGlobals(Accumulator / Doom::TicSeconds);
 }
 
+namespace DoomPerfTest { void Start(UWorld* World); }
+
 void ADoomGameMode::DoomEdit()
 {
 	if (UDoomMapEditor* E = GetWorld()->GetSubsystem<UDoomMapEditor>())
@@ -696,6 +698,11 @@ void ADoomGameMode::StartPlay()
 		}, 2.f, false);
 	}
 
+	// -perftest: a performance measure of the map (DoomPerfTest.cpp)
+	if (FParse::Param(FCommandLine::Get(), TEXT("perftest")) && W->GetMap())
+	{
+		DoomPerfTest::Start(GetWorld());
+	}
 	// -editortest: the map editor's scripted test; -mapeditor: open the editor once the map is up
 	if (FParse::Param(FCommandLine::Get(), TEXT("editortest")) && W->GetMap())
 	{
