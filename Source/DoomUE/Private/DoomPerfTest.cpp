@@ -13,6 +13,7 @@
 #include "AIController.h"
 #include "EngineUtils.h"
 #include "RenderTimer.h"
+#include "RHI.h"
 #include "Containers/Ticker.h"
 
 namespace DoomPerfTest
@@ -21,6 +22,7 @@ namespace DoomPerfTest
 	{
 		double GameMs = 0, FrameMs = 0;
 		TArray<float> GameFrames; // per frame, for the median (hitches such as shader compiles skew the mean)
+		TArray<float> RenderFrames, GpuFrames;
 		int32 Frames = 0;
 		int64 SightStart = 0, RejectStart = 0, SpawnStart = 0, ReuseStart = 0, ChunkStart = 0;
 		double FlushStart = 0;
@@ -57,6 +59,9 @@ namespace DoomPerfTest
 		TArray<float> Sorted = P.GameFrames;
 		Sorted.Sort();
 		const float Median = Sorted.Num() ? Sorted[Sorted.Num() / 2] : 0.f;
+		auto MedianOf = [](TArray<float> A) { A.Sort(); return A.Num() ? A[A.Num() / 2] : 0.f; };
+		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: render thread median %.2f ms, GPU median %.2f ms"), *W->GetMapName(), Name,
+			MedianOf(P.RenderFrames), MedianOf(P.GpuFrames));
 		const ADoomLevel* Lv = W->GetLevel();
 		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: moving chunks %lld regenerated, %.2f ms a frame"), *W->GetMapName(), Name,
 			Lv ? Lv->ChunksRegenerated - P.ChunkStart : 0, Lv ? (Lv->FlushSeconds - P.FlushStart) * 1000.0 / N : 0.0);
@@ -87,6 +92,8 @@ namespace DoomPerfTest
 		{
 			R.Phase.GameMs += FPlatformTime::ToMilliseconds(GGameThreadTime);
 			R.Phase.GameFrames.Add(FPlatformTime::ToMilliseconds(GGameThreadTime));
+			R.Phase.RenderFrames.Add(FPlatformTime::ToMilliseconds(GRenderThreadTime));
+			R.Phase.GpuFrames.Add(FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles()));
 			R.Phase.FrameMs += Dt * 1000.0;
 			R.Phase.Seconds += Dt;
 			++R.Phase.Frames;
