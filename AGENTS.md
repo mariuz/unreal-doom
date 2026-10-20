@@ -172,6 +172,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * gamepad rebinding (`Pad*` mappables, `FMappable::bGamepad`);
   * performance: idle monsters sleep, no CLASSIC AI controllers, REJECT, an effect pool, cheaper
     automap marking (`-perftest`, `-perfbaseline`); pooled effects are hidden `ADoomThing`s with
     `bPooled` (not in the thing list);

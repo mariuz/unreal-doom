@@ -438,6 +438,10 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+Gamepad rebinding (`feature/gamepad-rebind`): the Controls page lists the gamepad's buttons too
+(PAD FIRE, USE, RUN, NEXT / PREVIOUS WEAPON, AUTOMAP). A PAD row takes only a gamepad button, a
+keyboard row only a key or mouse button, and gamepad buttons show short names (PAD RT, PAD A).
+
 Performance (`feature/perf`), measured with `-perftest` against `-perfbaseline`:
 
 * Monsters waiting for the player sleep: no actor or movement tick until they wake or their floor
@@ -514,7 +518,7 @@ Not done yet (roughly in priority order):
    * **New geometry in the editor viewport itself**: the map editor draws sectors over a running game (in Play In Editor too). Drawing them in the Unreal editor's viewport, saved into the level as edits, is still to do.
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
-   * **Gamepad rebinding and per-platform mappings**: the Controls page rebinds keyboard and mouse; the gamepad's buttons are fixed, and there is one mapping set for every platform.
+   * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
    * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
