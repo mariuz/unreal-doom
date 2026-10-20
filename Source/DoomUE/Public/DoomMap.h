@@ -112,6 +112,15 @@ public:
 	FBox2f Bounds;
 	/** Which BSP format the map used: vanilla, XNOD, ZGL3, glBSP v5... */
 	FString NodesFormat = TEXT("vanilla");
+	/** Doom's REJECT table: a set bit says sector pairs that can never see each other (empty when the
+	 *  map has none, or after Rebuild changed the geometry). */
+	TArray<uint8> Reject;
+	bool RejectsSight(int32 SectorA, int32 SectorB) const
+	{
+		if (SectorA < 0 || SectorB < 0) return false;
+		const int64 Bit = (int64)SectorA * Sectors.Num() + SectorB;
+		return Reject.IsValidIndex(int32(Bit >> 3)) && (Reject[int32(Bit >> 3)] & (1 << (Bit & 7)));
+	}
 	/** Lines with a special, for walk-over checks. */
 	TArray<int32> SpecialLines;
 

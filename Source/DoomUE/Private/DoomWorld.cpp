@@ -1008,8 +1008,15 @@ void UDoomWorld::RadiusAttack(AActor* Source, AActor* Instigator, const FVector&
 
 bool UDoomWorld::CheckSight(const AActor* From, const AActor* To) const
 {
+	++SightChecks;
 	if (!From || !To)
 	{
+		return false;
+	}
+	// P_CheckSight: REJECT rules most pairs out without a trace
+	if (Map.IsValid() && Map->Reject.Num() && !Doom::PerfBaseline() && Map->RejectsSight(SectorAt(From->GetActorLocation()), SectorAt(To->GetActorLocation())))
+	{
+		++RejectedSights;
 		return false;
 	}
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomSight), false, From);
@@ -1401,7 +1408,9 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 			// a lowering floor: resting corpses on it fall with it (their movement ticks again)
 			for (const TWeakObjectPtr<ADoomMonster>& Mon : Monsters)
 			{
-				if (Mon.IsValid() && Mon->IsCorpseAsleep() && Map->SectorAt(Mon->DoomPos()) == M.Sector) Mon->WakeCorpse();
+				if (!Mon.IsValid() || Map->SectorAt(Mon->DoomPos()) != M.Sector) continue;
+				if (Mon->IsCorpseAsleep()) Mon->WakeCorpse();
+				if (Mon->IsIdleAsleep()) Mon->WakeIdle();
 			}
 		}
 		for (const TWeakObjectPtr<ADoomMonster>& Mon : Monsters)

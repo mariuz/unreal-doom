@@ -419,6 +419,41 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
+	// --- 9a. monsters waiting for the player sleep (no actor or movement tick) and CLASSIC ones have
+	// no AI controller; one woken by a shot ticks again ---------------------------------------------
+	Run->Steps.Add({ TEXT("sleepers"),
+		[W](FString& Msg)
+		{
+			return true;
+		},
+		[W, Player](int32 Tics, FString& Msg)
+		{
+			int32 Idle = 0, Asleep = 0, Controllers = 0;
+			ADoomMonster* Sleeper = nullptr;
+			for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+			{
+				if (!M.IsValid() || M->IsDead()) continue;
+				Controllers += M->GetController() ? 1 : 0;
+				if (M->State != EMonsterState::Idle) continue;
+				++Idle;
+				if (M->IsIdleAsleep() && !M->IsActorTickEnabled() && !M->GetCharacterMovement()->IsComponentTickEnabled())
+				{
+					++Asleep;
+					if (!Sleeper) Sleeper = M.Get();
+				}
+			}
+			bool bWoke = false;
+			if (Sleeper)
+			{
+				UGameplayStatics::ApplyDamage(Sleeper, 1.f, nullptr, Player(), nullptr);
+				bWoke = !Sleeper->IsIdleAsleep() && Sleeper->IsActorTickEnabled() && Sleeper->GetCharacterMovement()->IsComponentTickEnabled();
+			}
+			Msg = FString::Printf(TEXT("%d of %d monsters waiting for the player are asleep; %d AI controllers (CLASSIC: none); a shot one woke and ticks: %d"),
+				Asleep, Idle, Controllers, bWoke);
+			const bool bClassic = !W->IsSmartAI();
+			return Idle > 0 && Asleep * 10 >= Idle * 8 && (!bClassic || Controllers == 0) && bWoke ? EStep::Pass : EStep::Fail;
+		} });
+
 	// --- 9. awake monsters actually walk (no freezing in low rooms or doorways) -------------------
 	{
 		struct FChase { TMap<TWeakObjectPtr<ADoomMonster>, FVector2f> Start, Last; TMap<TWeakObjectPtr<ADoomMonster>, float> Path; };

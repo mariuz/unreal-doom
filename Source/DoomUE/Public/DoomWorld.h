@@ -315,6 +315,10 @@ public:
 	ADoomMonster* SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 	void RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage);
 	bool CheckSight(const AActor* From, const AActor* To) const;
+	/** CheckSight calls so far (-perftest). */
+	mutable int64 SightChecks = 0;
+	/** Of them, answered by the REJECT table without a trace. */
+	mutable int64 RejectedSights = 0;
 
 	/** Kill bookkeeping and the boss-death map events (A_BossDeath, A_KeenDie). */
 	void OnMonsterDied(ADoomMonster* M);

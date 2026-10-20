@@ -2,6 +2,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/Parse.h"
+#include "Misc/CommandLine.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogDoom, Log, All);
 
@@ -20,6 +22,9 @@ namespace Doom
 	constexpr int32 TicRate = 35;
 	constexpr float TicSeconds = 1.0f / TicRate;
 
+	/** -perfbaseline: the performance work off (idle monsters tick, controllers for everyone, no
+	 *  REJECT), to measure it against with -perftest. */
+	inline bool PerfBaseline() { static const bool b = FParse::Param(FCommandLine::Get(), TEXT("perfbaseline")); return b; }
 	inline FVector ToUE(float X, float Y, float Z) { return FVector(X * Scale, -Y * Scale, Z * Scale); }
 	inline FVector ToUE(const FVector2f& P, float Z) { return ToUE(P.X, P.Y, Z); }
 	inline FVector2f ToDoom2D(const FVector& V) { return FVector2f(V.X / Scale, -V.Y / Scale); }

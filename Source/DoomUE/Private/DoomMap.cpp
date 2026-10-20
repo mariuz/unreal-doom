@@ -397,6 +397,14 @@ bool FDoomMap::LoadBinary(const FDoomWad& Wad, int32 Marker)
 		T.Flags = U16(P + 8);
 	}
 
+	// REJECT, when it is the size the sectors want
+	{
+		const TConstArrayView<uint8> R = Get(9, TEXT("REJECT"));
+		const int64 Want = ((int64)Sectors.Num() * Sectors.Num() + 7) / 8;
+		Reject.Reset();
+		if (R.Num() >= Want) Reject = TArray<uint8>(R.GetData(), (int32)Want);
+	}
+
 	TConstArrayView<uint8> NodesL = Get(ML_NODES, TEXT("NODES"));
 	TConstArrayView<uint8> SegsL = Get(ML_SEGS, TEXT("SEGS"));
 	TConstArrayView<uint8> SsL = Get(ML_SSECTORS, TEXT("SSECTORS"));
