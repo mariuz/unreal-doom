@@ -307,6 +307,11 @@ public:
 
 	ADoomThing* SpawnThing(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle, bool bDropped = false);
 	ADoomThing* SpawnEffect(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
+	/** A finished effect: hidden and kept for the next SpawnEffectLocal (puffs and blood come by the
+	 *  dozen a second), or destroyed when the pool is full. */
+	void ReleaseEffect(ADoomThing* Effect);
+	/** Effects made new and taken from the pool (-perftest). */
+	int64 EffectsSpawned = 0, EffectsReused = 0;
 	ADoomThing* SpawnEffectLocal(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
 	/** Modern renderer only: a Niagara burst on top of Doom's sprite effect, sprayed around Up. */
 	void SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up = FVector::UpVector);
@@ -319,6 +324,7 @@ public:
 	mutable int64 SightChecks = 0;
 	/** Of them, answered by the REJECT table without a trace. */
 	mutable int64 RejectedSights = 0;
+	TArray<TWeakObjectPtr<ADoomThing>> EffectPool;
 
 	/** Kill bookkeeping and the boss-death map events (A_BossDeath, A_KeenDie). */
 	void OnMonsterDied(ADoomMonster* M);

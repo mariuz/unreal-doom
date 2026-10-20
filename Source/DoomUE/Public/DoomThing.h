@@ -52,6 +52,8 @@ public:
 	const FDoomThingDef* Def = nullptr;
 	bool bDropped = false;
 	bool bEffect = false;
+	/** A finished effect kept hidden for the next one (UDoomWorld's effect pool). */
+	bool bPooled = false;
 	bool bDead = false;
 	int32 Health = 0;
 

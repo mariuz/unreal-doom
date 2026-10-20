@@ -53,9 +53,9 @@ void ADoomThing::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	// a network client's own effects (puffs, blood) end with their animation
-	if (bEffect && Sprite->IsSequenceDone())
+	if (bEffect && !bPooled && Sprite->IsSequenceDone())
 	{
-		Destroy();
+		DoomWorld ? DoomWorld->ReleaseEffect(this) : (void)Destroy();
 	}
 }
 
@@ -129,7 +129,17 @@ void ADoomThing::InitEffect(UDoomWorld* InWorld, const FString& SpriteName, cons
 	Sprite->Init(DoomWorld, SpriteName);
 	Sprite->PlaySequence(Frames, Tics, bLoop, bFullBright);
 	Sprite->SetSector(DoomWorld->SectorAt(GetActorLocation()));
-	if (DoomWorld->IsModern() && bFullBright)
+	if (Light)
+	{
+		Light->SetVisibility(false); // a pooled effect's light from its last use
+	}
+	if (DoomWorld->IsModern() && bFullBright && Light)
+	{
+		Light->SetLightColor(SpriteName == TEXT("TFOG") ? FLinearColor(0.4f, 1.f, 0.4f) : FLinearColor(1.f, 0.6f, 0.25f));
+		Light->SetIntensity(5000.f);
+		Light->SetVisibility(true);
+	}
+	else if (DoomWorld->IsModern() && bFullBright)
 	{
 		Light = NewObject<UPointLightComponent>(this, TEXT("Light"));
 		Light->SetupAttachment(Capsule);
@@ -176,7 +186,7 @@ void ADoomThing::DoomTic()
 		}
 		if (Sprite->IsSequenceDone())
 		{
-			Destroy();
+			DoomWorld->ReleaseEffect(this);
 		}
 		return;
 	}

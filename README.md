@@ -445,6 +445,10 @@ Performance (`feature/perf`), measured with `-perftest` against `-perfbaseline`:
 * CLASSIC monsters have no AI controller.
 * Sight checks use Doom's REJECT table first.
 
+* Finished effects (puffs, blood, fog) go to a pool of up to 64 and are reused: with the chaingun
+  firing, about 94% of effects come from it.
+* Automap marking no longer traces walls it already knows, and does at most 400 traces a pass.
+
 The game thread's median frame with MAP29's 97 monsters waiting went from 4.1-5.5 ms to 2.2-2.3 ms,
 and with them all awake from 6.5-7.0 ms to 6.0 ms. On E1M1, 93% of sight checks are answered without
 a trace.
@@ -518,6 +522,4 @@ Not done yet (roughly in priority order):
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Sector, fullbright and fuzz as Custom Primitive Data would let every sprite share one material and draw in batches.
-   * **Effect actors from a pool**: every bullet puff, blood splat and teleport fog spawns an actor and destroys it moments later (`SpawnEffect`); the chaingun and super shotgun make dozens a second. A small pool (or Niagara bursts in the modern renderer) would spare the spawning and garbage collection.
-   * **Automap line marking**: `MarkSeenLines` traces to every nearby line every 0.15 s; lines already known never need testing again, and big open maps want a budget per pass.
    * **Moving sectors**: a moving door or lift dirties its chunk, which regenerates its mesh every tic. Doors and lifts as separate components moved by transform (or World Position Offset) would regenerate nothing; check in Insights whether it matters.

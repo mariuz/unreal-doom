@@ -6,6 +6,7 @@
 #include "DoomWorld.h"
 #include "DoomMonster.h"
 #include "DoomPlayer.h"
+#include "DoomInfo.h"
 #include "DoomUE.h"
 #include "AIController.h"
 #include "EngineUtils.h"
@@ -19,7 +20,7 @@ namespace DoomPerfTest
 		double GameMs = 0, FrameMs = 0;
 		TArray<float> GameFrames; // per frame, for the median (hitches such as shader compiles skew the mean)
 		int32 Frames = 0;
-		int64 SightStart = 0, RejectStart = 0;
+		int64 SightStart = 0, RejectStart = 0, SpawnStart = 0, ReuseStart = 0;
 		double Seconds = 0;
 	};
 
@@ -53,9 +54,9 @@ namespace DoomPerfTest
 		TArray<float> Sorted = P.GameFrames;
 		Sorted.Sort();
 		const float Median = Sorted.Num() ? Sorted[Sorted.Num() / 2] : 0.f;
-		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: game thread median %.2f ms (mean %.2f), frame %.2f ms (%d frames), %.0f sight checks a second (%.0f%% by REJECT); %s"),
+		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: game thread median %.2f ms (mean %.2f), frame %.2f ms (%d frames), %.0f sight checks a second (%.0f%% by REJECT), effects %lld new and %lld reused; %s"),
 			*W->GetMapName(), Name, Median, P.GameMs / N, P.FrameMs / N, P.Frames, Sights / FMath::Max(0.001, P.Seconds),
-			Sights ? 100.0 * (W->RejectedSights - P.RejectStart) / Sights : 0.0, *Counts(World, W));
+			Sights ? 100.0 * (W->RejectedSights - P.RejectStart) / Sights : 0.0, W->EffectsSpawned - P.SpawnStart, W->EffectsReused - P.ReuseStart, *Counts(World, W));
 	}
 
 	bool Tick(FRun& R, float Dt)
@@ -67,6 +68,15 @@ namespace DoomPerfTest
 			return false;
 		}
 		R.Time += Dt;
+		if (R.Stage >= 2)
+		{
+			if (ADoomPlayer* P = W->GetPlayer())
+			{
+				P->Inv().Ammo[(int32)EDoomAmmo::Bullets] = 200;
+				P->SetActorRotation(FRotator::ZeroRotator);
+				P->SetFireHeld(true);
+			}
+		}
 		if (R.Stage == 1 || R.Stage == 3)
 		{
 			R.Phase.GameMs += FPlatformTime::ToMilliseconds(GGameThreadTime);
@@ -82,6 +92,8 @@ namespace DoomPerfTest
 			R.Phase = FPhase();
 			R.Phase.SightStart = W->SightChecks;
 			R.Phase.RejectStart = W->RejectedSights;
+			R.Phase.SpawnStart = W->EffectsSpawned;
+			R.Phase.ReuseStart = W->EffectsReused;
 		};
 		switch (R.Stage)
 		{
@@ -96,6 +108,10 @@ namespace DoomPerfTest
 				if (ADoomPlayer* P = W->GetPlayer())
 				{
 					P->bGodMode = true;
+					// and the chaingun firing all the while: puffs and blood by the dozen
+					for (bool& B : P->Inv().Weapons) B = true;
+					P->PendingWeapon = EDoomWeapon::Chaingun;
+					P->SetFireHeld(true);
 					for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
 					{
 						if (M.IsValid() && !M->IsDead()) M->WakeUp(P, false);
