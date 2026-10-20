@@ -263,6 +263,8 @@ public:
 	FDoomGraphics* GetGraphics() const { return Gfx.Get(); }
 	FDoomWad* GetWad() const { return Wad.Get(); }
 	ADoomLevel* GetLevel() const { return Level; }
+	/** A line's special as if Activator used it from the front, keys or not (tests). */
+	bool UseLine(int32 Line, AActor* Activator) { return ActivateSpecial(Line, 0, Activator, EActivation::Use, true); }
 	ADoomPlayer* GetPlayer() const;
 	int32 GetTic() const { return Flow().LevelTic; }
 	int32 GetSkill() const { return Skill; }

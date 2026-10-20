@@ -544,6 +544,7 @@ void ADoomLevel::LineChanged(int32 Line)
 
 void ADoomLevel::Flush()
 {
+	const double T0 = FPlatformTime::Seconds();
 	for (int32 i = 0; i < Chunks.Num(); ++i)
 	{
 		FChunk& C = Chunks[i];
@@ -555,7 +556,9 @@ void ADoomLevel::Flush()
 		FChunkSections Sections;
 		Generate(C, Sections.Solid, Sections.NonSolid);
 		CommitChunk(i, Sections);
+		++ChunksRegenerated;
 	}
+	FlushSeconds += FPlatformTime::Seconds() - T0;
 }
 
 void ADoomLevel::CommitChunk(int32 i, FChunkSections& Sections)
