@@ -116,6 +116,8 @@ public:
 	float WeaponY = 128.f;    // 32 = up, 128 = down
 	float BobX = 0, BobY = 0;
 	EDoomWeapon PendingWeapon = EDoomWeapon::Count;
+	/** The trigger held from code (-perftest): the weapon fires as long as it stays held. */
+	void SetFireHeld(bool bHeld) { bFireHeld = bHeld; }
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UCameraComponent> Camera;

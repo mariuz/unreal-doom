@@ -22,6 +22,7 @@
 #include "DoomPlayerState.h"
 #include "DoomMusic.h"
 #include "DoomMapGen.h"
+#include "Components/PointLightComponent.h"
 #include "Perception/AISense_Hearing.h"
 #include "DoomDehacked.h"
 #include "Misc/FileHelper.h"
@@ -327,6 +328,8 @@ void UDoomWorld::UnloadMap()
 		PendingLoad.Reset();
 	}
 	for (TWeakObjectPtr<ADoomThing>& T : Things) if (T.IsValid()) T->Destroy();
+	for (TWeakObjectPtr<ADoomThing>& T : EffectPool) if (T.IsValid()) T->Destroy();
+	EffectPool.Reset();
 	for (TWeakObjectPtr<ADoomMonster>& M : Monsters) if (M.IsValid()) M->Destroy();
 	for (TWeakObjectPtr<ADoomProjectile>& P : Projectiles) if (P.IsValid()) P->Destroy();
 	for (AActor* A : EnvironmentActors) if (A) A->Destroy();
@@ -838,9 +841,25 @@ ADoomThing* UDoomWorld::SpawnEffectLocal(const FString& SpriteName, const FStrin
 	{
 		return nullptr;
 	}
-	FActorSpawnParameters SP;
-	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ADoomThing* T = GetWorld()->SpawnActor<ADoomThing>(ADoomThing::StaticClass(), FTransform(UEPos), SP);
+	ADoomThing* T = nullptr;
+	while (!T && EffectPool.Num())
+	{
+		T = EffectPool.Pop(EAllowShrinking::No).Get();
+	}
+	if (T)
+	{
+		++EffectsReused;
+		T->bPooled = false;
+		T->SetActorLocation(UEPos, false, nullptr, ETeleportType::ResetPhysics);
+		T->SetActorHiddenInGame(false);
+	}
+	else
+	{
+		FActorSpawnParameters SP;
+		SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		T = GetWorld()->SpawnActor<ADoomThing>(ADoomThing::StaticClass(), FTransform(UEPos), SP);
+		EffectsSpawned += T ? 1 : 0;
+	}
 	if (T)
 	{
 		T->InitEffect(this, SpriteName, Frames, Tics, bFullBright, bLoop);
@@ -938,6 +957,24 @@ ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source
 }
 
 void UDoomWorld::RegisterThing(ADoomThing* T) { Things.Add(T); }
+
+void UDoomWorld::ReleaseEffect(ADoomThing* Effect)
+{
+	if (!Effect || Effect->bPooled)
+	{
+		return;
+	}
+	if (EffectPool.Num() >= 64 || Effect->IsActorBeingDestroyed() || Doom::PerfBaseline())
+	{
+		Effect->Destroy();
+		return;
+	}
+	Effect->bPooled = true;
+	Effect->SetActorHiddenInGame(true);
+	Effect->SetActorTickEnabled(false);
+	if (Effect->Light) Effect->Light->SetVisibility(false);
+	EffectPool.Add(Effect);
+}
 void UDoomWorld::RegisterMonster(ADoomMonster* M) { Monsters.Add(M); }
 void UDoomWorld::RegisterProjectile(ADoomProjectile* P) { Projectiles.Add(P); }
 
@@ -1236,8 +1273,9 @@ void UDoomWorld::RunTic()
 	}
 	for (int32 i = Things.Num() - 1; i >= 0; --i)
 	{
-		if (Things[i].IsValid()) Things[i]->DoomTic();
-		else Things.RemoveAtSwap(i);
+		if (Things[i].IsValid() && !Things[i]->bPooled) Things[i]->DoomTic();
+		if (!Things.IsValidIndex(i)) continue;
+		if (!Things[i].IsValid() || Things[i]->bPooled) Things.RemoveAtSwap(i);
 	}
 	for (int32 i = Projectiles.Num() - 1; i >= 0; --i)
 	{

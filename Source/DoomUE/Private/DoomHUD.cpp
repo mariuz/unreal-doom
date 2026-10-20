@@ -475,14 +475,21 @@ void ADoomHUD::MarkSeenLines(ADoomPlayer* P)
 	TArray<int32> Stack = { Here };
 	TSet<int32> Visited = { Here };
 	TArray<FLineHit> Hits;
-	while (Stack.Num())
+	// a known wall needs no look (only openings lead on), and a pass traces at most 400 lines
+	int32 Budget = 400;
+	while (Stack.Num() && Budget > 0)
 	{
 		const int32 S = Stack.Pop(EAllowShrinking::No);
 		for (int32 Li : Map->Sectors[S].Lines)
 		{
 			FDoomLine& L = Map->Lines[Li];
+			float OpenTop, OpenBottom;
+			if (L.bSeen && !Doom::PerfBaseline() && (L.BackSector == INDEX_NONE || !Map->LineOpening(Li, OpenTop, OpenBottom)))
+			{
+				continue;
+			}
 			const FVector2f Mid = (Map->V(L.V1) + Map->V(L.V2)) * 0.5f;
-			if (FVector2f::Distance(Mid, Eye) > 2048.f)
+			if (FVector2f::Distance(Mid, Eye) > 2048.f || (--Budget < 0 && !Doom::PerfBaseline()))
 			{
 				continue;
 			}

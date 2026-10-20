@@ -172,7 +172,9 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
-  * performance: idle monsters sleep, no CLASSIC AI controllers, REJECT (`-perftest`, `-perfbaseline`);
+  * performance: idle monsters sleep, no CLASSIC AI controllers, REJECT, an effect pool, cheaper
+    automap marking (`-perftest`, `-perfbaseline`); pooled effects are hidden `ADoomThing`s with
+    `bPooled` (not in the thing list);
   * the Doom Builder round trip (Edit in Doom Builder, `DoomEditorData::ReloadIfChanged`);
   * the map editor (`DoomEditor.h`, `DoomMapEdit.h`, `-editortest`, Doom > Play in the Map Editor);
   * SMART monsters (`DoomAI.h`, [docs/AI.md](docs/AI.md)): AI controller, perception, Behavior Tree and EQS
