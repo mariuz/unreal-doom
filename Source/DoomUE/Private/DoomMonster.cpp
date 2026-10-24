@@ -1,4 +1,5 @@
 #include "DoomMonster.h"
+#include "DoomMonsterPrivate.h"
 #include "Engine/World.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -18,22 +19,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/DamageEvents.h"
-
-namespace
-{
-	constexpr int32 DirNone = 8;
-	const int32 Opposite[9] = { 4, 5, 6, 7, 0, 1, 2, 3, DirNone };
-
-	FVector2f DirVector(int32 Dir)
-	{
-		const float A = FMath::DegreesToRadians(Dir * 45.f);
-		return FVector2f(FMath::Cos(A), FMath::Sin(A));
-	}
-
-	int32 MonsterRand() { return DoomInfo::Random(); }
-
-	bool Is(const FDoomThingDef* D, const TCHAR* Name) { return D && D->Name.Equals(Name, ESearchCase::CaseSensitive); }
-}
 
 float ADoomMonster::MonsterMass(const FDoomThingDef* D)
 {
@@ -220,9 +205,9 @@ void ADoomMonster::StartState(EMonsterState S)
 	case EMonsterState::Chase: Sprite->PlaySequence(!Def->Run.IsEmpty() ? Def->Run : Def->Idle, RunTics(), true, bBright); StepStart = DoomPos(); break;
 	case EMonsterState::Melee: Sprite->PlaySequence(Def->Melee, IsFastDemon() ? 3 : 6, false, bBright); FaceTarget(); break;
 	case EMonsterState::Missile:
-		Sprite->PlaySequence(Def->Attack, Is(Def, TEXT("ArchVile")) ? 5 : Is(Def, TEXT("Chaingunner")) || Is(Def, TEXT("SpiderMastermind")) ? 4 : 8, false, true);
+		Sprite->PlaySequence(Def->Attack, DoomMonsterDetail::Is(Def, TEXT("ArchVile")) ? 5 : DoomMonsterDetail::Is(Def, TEXT("Chaingunner")) || DoomMonsterDetail::Is(Def, TEXT("SpiderMastermind")) ? 4 : 8, false, true);
 		FaceTarget();
-		if (Is(Def, TEXT("ArchVile")))
+		if (DoomMonsterDetail::Is(Def, TEXT("ArchVile")))
 		{
 			const FVector L = GetActorLocation();
 			DoomWorld->PlaySound(TEXT("VILATK"), &L);
@@ -248,10 +233,10 @@ void ADoomMonster::Tick(float DeltaSeconds)
 		Move->Velocity = ChargeVelocity;
 		return;
 	}
-	if (State == EMonsterState::Chase && MoveDir != DirNone)
+	if (State == EMonsterState::Chase && MoveDir != DoomMonsterDetail::DirNone)
 	{
 		// SMART: straight along the path, not in Doom's eight directions
-		const FVector2f D = (bSmart && SmartMove == ESmartMove::Moving && !SmartDir.IsNearlyZero()) ? SmartDir : DirVector(MoveDir);
+		const FVector2f D = (bSmart && SmartMove == ESmartMove::Moving && !SmartDir.IsNearlyZero()) ? SmartDir : DoomMonsterDetail::DirVector(MoveDir);
 		FVector Input(D.X, -D.Y, 0);
 		if ((Def->Flags & EThingFlag::Float) && FloatGoalTics > 0)
 		{
@@ -352,7 +337,7 @@ void ADoomMonster::DoomTic()
 			const ADoomPlayer* TP = Cast<ADoomPlayer>(Target.Get());
 			const ADoomMonster* TM = Cast<ADoomMonster>(Target.Get());
 			const bool bTargetAlive = (TP && !TP->IsDead()) || (TM && !TM->IsDead());
-			if (bRefires && (MonsterRand() < (Num == 68 || Num == 7 ? 10 : 40) || (bTargetAlive && DoomWorld->CheckSight(this, Target.Get()))))
+			if (bRefires && (DoomMonsterDetail::MonsterRand() < (Num == 68 || Num == 7 ? 10 : 40) || (bTargetAlive && DoomWorld->CheckSight(this, Target.Get()))))
 			{
 				FaceTarget();
 				StartState(EMonsterState::Missile);
@@ -386,7 +371,7 @@ void ADoomMonster::DoomTic()
 		if (Sprite->IsSequenceDone())
 		{
 			State = EMonsterState::Dead;
-			if (Is(Def, TEXT("LostSoul")))
+			if (DoomMonsterDetail::Is(Def, TEXT("LostSoul")))
 			{
 				Destroy(); // burnt out: lost souls leave no corpse
 				return;
@@ -431,7 +416,7 @@ void ADoomMonster::WakeUp(AActor* NewTarget, bool bFromSound)
 	Target = NewTarget;
 	if (!Def->SeeSound.IsEmpty())
 	{
-		const bool bBoss = Is(Def, TEXT("Cyberdemon")) || Is(Def, TEXT("SpiderMastermind"));
+		const bool bBoss = DoomMonsterDetail::Is(Def, TEXT("Cyberdemon")) || DoomMonsterDetail::Is(Def, TEXT("SpiderMastermind"));
 		const FVector L = GetActorLocation();
 		DoomWorld->PlaySound(Def->SeeSound, bBoss ? nullptr : &L);
 	}
@@ -484,7 +469,7 @@ void ADoomMonster::FaceTarget()
 	{
 		if (P->Invisibility > 0)
 		{
-			DoomAngle += (MonsterRand() - MonsterRand()) * 0.09f; // spectral fuzz throws the aim off
+			DoomAngle += (DoomMonsterDetail::MonsterRand() - DoomMonsterDetail::MonsterRand()) * 0.09f; // spectral fuzz throws the aim off
 		}
 	}
 }
@@ -521,31 +506,31 @@ bool ADoomMonster::CheckMissileRange()
 	{
 		Dist -= 128.f;
 	}
-	if (Is(Def, TEXT("ArchVile")) && Dist > 14 * 64)
+	if (DoomMonsterDetail::Is(Def, TEXT("ArchVile")) && Dist > 14 * 64)
 	{
 		return false;
 	}
-	if (Is(Def, TEXT("Revenant")))
+	if (DoomMonsterDetail::Is(Def, TEXT("Revenant")))
 	{
 		if (Dist < 196) return false;
 		Dist *= 0.5f;
 	}
-	if (Is(Def, TEXT("Cyberdemon")) || Is(Def, TEXT("SpiderMastermind")) || Is(Def, TEXT("LostSoul")))
+	if (DoomMonsterDetail::Is(Def, TEXT("Cyberdemon")) || DoomMonsterDetail::Is(Def, TEXT("SpiderMastermind")) || DoomMonsterDetail::Is(Def, TEXT("LostSoul")))
 	{
 		Dist *= 0.5f;
 	}
-	Dist = FMath::Min(Dist, Is(Def, TEXT("Cyberdemon")) ? 160.f : 200.f);
-	return MonsterRand() >= Dist;
+	Dist = FMath::Min(Dist, DoomMonsterDetail::Is(Def, TEXT("Cyberdemon")) ? 160.f : 200.f);
+	return DoomMonsterDetail::MonsterRand() >= Dist;
 }
 
 bool ADoomMonster::TestMove(int32 Dir) const
 {
-	if (Dir == DirNone)
+	if (Dir == DoomMonsterDetail::DirNone)
 	{
 		return false;
 	}
 	const float S = Doom::Scale;
-	const FVector2f D = DirVector(Dir);
+	const FVector2f D = DoomMonsterDetail::DirVector(Dir);
 	const FVector Dir3(D.X, -D.Y, 0);
 	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	const float Radius = GetCapsuleComponent()->GetScaledCapsuleRadius();
@@ -622,7 +607,7 @@ bool ADoomMonster::TestMove(int32 Dir) const
 
 bool ADoomMonster::TryWalk(int32 Dir)
 {
-	if (Dir == DirNone)
+	if (Dir == DoomMonsterDetail::DirNone)
 	{
 		return false;
 	}
@@ -632,7 +617,7 @@ bool ADoomMonster::TryWalk(int32 Dir)
 	if (Moved < Def->Speed * 0.25f || !TestMove(Dir))
 	{
 		// blocked: maybe it is a door we can open
-		const FVector2f Ahead = DoomPos() + DirVector(Dir) * (Def->Radius + 24.f);
+		const FVector2f Ahead = DoomPos() + DoomMonsterDetail::DirVector(Dir) * (Def->Radius + 24.f);
 		DoomWorld->TryMonsterUse(this, DoomPos(), Ahead);
 		return false;
 	}
@@ -643,41 +628,41 @@ void ADoomMonster::NewChaseDir()
 {
 	if (!Target.IsValid())
 	{
-		MoveDir = DirNone;
+		MoveDir = DoomMonsterDetail::DirNone;
 		return;
 	}
 	const int32 OldDir = MoveDir;
-	const int32 TurnAround = Opposite[OldDir];
+	const int32 TurnAround = DoomMonsterDetail::Opposite[OldDir];
 	const FVector2f Delta = Doom::ToDoom2D(Target->GetActorLocation()) - DoomPos();
-	int32 D1 = Delta.X > 10 ? 0 : Delta.X < -10 ? 4 : DirNone;
-	int32 D2 = Delta.Y < -10 ? 6 : Delta.Y > 10 ? 2 : DirNone;
+	int32 D1 = Delta.X > 10 ? 0 : Delta.X < -10 ? 4 : DoomMonsterDetail::DirNone;
+	int32 D2 = Delta.Y < -10 ? 6 : Delta.Y > 10 ? 2 : DoomMonsterDetail::DirNone;
 
 	auto Try = [&](int32 Dir)
 	{
-		if (Dir == DirNone || !TestMove(Dir))
+		if (Dir == DoomMonsterDetail::DirNone || !TestMove(Dir))
 		{
 			return false;
 		}
 		MoveDir = Dir;
-		MoveCount = MonsterRand() & 15;
+		MoveCount = DoomMonsterDetail::MonsterRand() & 15;
 		StepStart = DoomPos();
 		return true;
 	};
 
-	if (D1 != DirNone && D2 != DirNone)
+	if (D1 != DoomMonsterDetail::DirNone && D2 != DoomMonsterDetail::DirNone)
 	{
 		const int32 Diag = D1 == 0 ? (D2 == 2 ? 1 : 7) : (D2 == 2 ? 3 : 5);
 		if (Diag != TurnAround && Try(Diag)) return;
 	}
-	if (MonsterRand() > 200 || FMath::Abs(Delta.Y) > FMath::Abs(Delta.X))
+	if (DoomMonsterDetail::MonsterRand() > 200 || FMath::Abs(Delta.Y) > FMath::Abs(Delta.X))
 	{
 		Swap(D1, D2);
 	}
-	if (D1 == TurnAround) D1 = DirNone;
-	if (D2 == TurnAround) D2 = DirNone;
+	if (D1 == TurnAround) D1 = DoomMonsterDetail::DirNone;
+	if (D2 == TurnAround) D2 = DoomMonsterDetail::DirNone;
 	if (Try(D1) || Try(D2)) return;
-	if (OldDir != DirNone && Try(OldDir)) return;
-	if (MonsterRand() & 1)
+	if (OldDir != DoomMonsterDetail::DirNone && Try(OldDir)) return;
+	if (DoomMonsterDetail::MonsterRand() & 1)
 	{
 		for (int32 d = 0; d < 8; ++d) if (d != TurnAround && Try(d)) return;
 	}
@@ -685,8 +670,8 @@ void ADoomMonster::NewChaseDir()
 	{
 		for (int32 d = 7; d >= 0; --d) if (d != TurnAround && Try(d)) return;
 	}
-	if (TurnAround != DirNone && Try(TurnAround)) return;
-	MoveDir = DirNone;
+	if (TurnAround != DoomMonsterDetail::DirNone && Try(TurnAround)) return;
+	MoveDir = DoomMonsterDetail::DirNone;
 }
 
 bool ADoomMonster::VileTryRaise()
@@ -737,9 +722,9 @@ bool ADoomMonster::VileTryRaise()
 
 bool ADoomMonster::CanBeRaised() const
 {
-	return State == EMonsterState::Dead && !Is(Def, TEXT("LostSoul")) && !Is(Def, TEXT("Cyberdemon"))
-		&& !Is(Def, TEXT("SpiderMastermind")) && !Is(Def, TEXT("ArchVile")) && !Is(Def, TEXT("BossBrain"))
-		&& !Is(Def, TEXT("CommanderKeen"));
+	return State == EMonsterState::Dead && !DoomMonsterDetail::Is(Def, TEXT("LostSoul")) && !DoomMonsterDetail::Is(Def, TEXT("Cyberdemon"))
+		&& !DoomMonsterDetail::Is(Def, TEXT("SpiderMastermind")) && !DoomMonsterDetail::Is(Def, TEXT("ArchVile")) && !DoomMonsterDetail::Is(Def, TEXT("BossBrain"))
+		&& !DoomMonsterDetail::Is(Def, TEXT("CommanderKeen"));
 }
 
 void ADoomMonster::Resurrect()
@@ -787,7 +772,7 @@ void ADoomMonster::Chase()
 		--Threshold;
 	}
 	// turn towards the movement direction in 45 degree steps
-	if (MoveDir != DirNone)
+	if (MoveDir != DoomMonsterDetail::DirNone)
 	{
 		const float Want = MoveDir * 45.f;
 		float Delta = FMath::Fmod(Want - DoomAngle + 540.f, 360.f) - 180.f;
@@ -810,7 +795,7 @@ void ADoomMonster::Chase()
 		}
 		else
 		{
-			MoveDir = DirNone;
+			MoveDir = DoomMonsterDetail::DirNone;
 			StartState(EMonsterState::Idle);
 			return;
 		}
@@ -826,13 +811,13 @@ void ADoomMonster::Chase()
 		return;
 	}
 
-	if (Is(Def, TEXT("ArchVile")) && VileTryRaise())
+	if (DoomMonsterDetail::Is(Def, TEXT("ArchVile")) && VileTryRaise())
 	{
 		return;
 	}
 	if (!Def->Melee.IsEmpty() && CheckMeleeRange())
 	{
-		if (!Def->AttackSound.IsEmpty() && !Is(Def, TEXT("Revenant")))
+		if (!Def->AttackSound.IsEmpty() && !DoomMonsterDetail::Is(Def, TEXT("Revenant")))
 		{
 			const FVector L = GetActorLocation();
 			DoomWorld->PlaySound(Def->AttackSound, &L);
@@ -850,7 +835,7 @@ void ADoomMonster::Chase()
 	if (bSmart && SmartMove == ESmartMove::Moving)
 	{
 		// the tree's path; MoveCount still paces the missile attacks as in A_Chase
-		if (--MoveCount < 0) MoveCount = MonsterRand() & 15;
+		if (--MoveCount < 0) MoveCount = DoomMonsterDetail::MonsterRand() & 15;
 		SmartStep();
 	}
 	else if (--MoveCount < 0 || !TryWalk(MoveDir))
@@ -858,420 +843,10 @@ void ADoomMonster::Chase()
 		NewChaseDir();
 	}
 
-	if (!Def->ActiveSound.IsEmpty() && MonsterRand() < 3)
+	if (!Def->ActiveSound.IsEmpty() && DoomMonsterDetail::MonsterRand() < 3)
 	{
 		const FVector L = GetActorLocation();
 		DoomWorld->PlaySound(Def->ActiveSound, &L);
-	}
-}
-
-void ADoomMonster::HitscanAttack(int32 Pellets, float SpreadDeg, int32 DamageMul)
-{
-	if (!Target.IsValid())
-	{
-		return;
-	}
-	const FVector From = EyeLocation();
-	const FVector Aim = Target->GetActorLocation();
-	const FVector Base = (Aim - From).GetSafeNormal();
-	const float Range = 2048.f * Doom::Scale;
-	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomMonsterShot), false, this);
-	if (!Def->AttackSound.IsEmpty())
-	{
-		DoomWorld->PlaySound(Def->AttackSound, &From);
-	}
-	for (int32 i = 0; i < Pellets; ++i)
-	{
-		const float Yaw = (MonsterRand() - MonsterRand()) / 255.f * SpreadDeg;
-		const FVector Dir = Base.RotateAngleAxis(Yaw, FVector::UpVector);
-		FHitResult Hit;
-		const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, From, From + Dir * Range, ECC_Visibility, Q);
-		// a monster's bullet can open the GR door 46 (P_ShootSpecialLine); ActivateSpecial filters the rest
-		DoomWorld->CheckShootLines(this, Doom::ToDoom2D(From), Doom::ToDoom2D(bHit ? Hit.ImpactPoint + Dir * 4.f * Doom::Scale : From + Dir * Range));
-		if (!bHit)
-		{
-			continue;
-		}
-		const int32 Damage = ((MonsterRand() % 5) + 1) * DamageMul;
-		if (Hit.GetActor() && (Hit.GetActor()->IsA<ADoomPlayer>() || Hit.GetActor()->IsA<ADoomMonster>() || Hit.GetActor()->IsA<ADoomThing>()))
-		{
-			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, Dir, Hit, nullptr, this, nullptr);
-			if (!Hit.GetActor()->IsA<ADoomThing>())
-			{
-				DoomWorld->SpawnEffect(TEXT("BLUD"), TEXT("CBA"), 8, Hit.ImpactPoint, false);
-			}
-		}
-		else
-		{
-			DoomWorld->SpawnEffect(TEXT("PUFF"), TEXT("ABCD"), 4, Hit.ImpactPoint - Dir * 4.f * Doom::Scale, true);
-		}
-	}
-}
-
-void ADoomMonster::DoAttack(bool bMelee)
-{
-	if (!Target.IsValid())
-	{
-		return;
-	}
-	const FVector Center = GetActorLocation() + FVector(0, 0, 4.f * Doom::Scale);
-	const FVector TargetCenter = Target->GetActorLocation();
-	const FVector ToTarget = (TargetCenter - Center).GetSafeNormal();
-	auto Missile = [&](const TCHAR* Type, float YawOffset)
-	{
-		DoomWorld->SpawnProjectile(Type, this, Center + ToTarget * Def->Radius * Doom::Scale * 0.5f, ToTarget.RotateAngleAxis(YawOffset, FVector::UpVector),
-			Is(Def, TEXT("Revenant")) ? Target.Get() : nullptr);
-	};
-	auto MeleeHit = [&](int32 Die)
-	{
-		if (CheckMeleeRange())
-		{
-			const int32 Damage = ((MonsterRand() % Die) + 1) * Def->MeleeDamage;
-			UGameplayStatics::ApplyDamage(Target.Get(), Damage, nullptr, this, nullptr);
-			const FVector L = GetActorLocation();
-			DoomWorld->PlaySound(Is(Def, TEXT("Imp")) ? TEXT("CLAW") : Is(Def, TEXT("Revenant")) ? TEXT("SKEPCH") : TEXT(""), &L);
-			return true;
-		}
-		return false;
-	};
-
-	switch (Def->Attack_)
-	{
-	case EDoomAttack::Hitscan: HitscanAttack(1, 22.5f, 3); break;
-	case EDoomAttack::Shotgun: HitscanAttack(3, 22.5f, 3); break;
-	case EDoomAttack::Chaingun: HitscanAttack(1, 22.5f, 3); break;
-	case EDoomAttack::Spider: HitscanAttack(3, 22.5f, 3); break;
-	case EDoomAttack::Melee: MeleeHit(Is(Def, TEXT("Demon")) || Is(Def, TEXT("Spectre")) ? 10 : 8); break;
-	case EDoomAttack::MeleeOrMissile:
-		if (bMelee || CheckMeleeRange())
-		{
-			MeleeHit(Is(Def, TEXT("Cacodemon")) ? 6 : 8);
-		}
-		else
-		{
-			Missile(*Def->Projectile, 0);
-		}
-		break;
-	case EDoomAttack::Missile: Missile(*Def->Projectile, 0); break;
-	case EDoomAttack::Cyber: Missile(TEXT("Rocket"), 0); break;
-	case EDoomAttack::Revenant:
-		if (bMelee) MeleeHit(10);
-		else Missile(TEXT("Tracer"), 0);
-		break;
-	case EDoomAttack::Mancubus:
-	{
-		// A_FatAttack1/2/3 (the H frames of GHIGHIGH): one shot straight at the target with one 11.25
-		// degrees to one side, then 22.5 to the other, then a pair 5.6 degrees either side
-		static const float Volleys[3][2] = { { 0.f, 11.25f }, { 0.f, -22.5f }, { -5.625f, 5.625f } };
-		const float* V = Volleys[FMath::Clamp(Sprite->FrameIndex() / 3, 0, 2)];
-		Missile(TEXT("FatShot"), V[0]);
-		Missile(TEXT("FatShot"), V[1]);
-		break;
-	}
-	case EDoomAttack::Skull:
-	{
-		const FVector L = GetActorLocation();
-		DoomWorld->PlaySound(Def->AttackSound, &L);
-		ChargeVelocity = (TargetCenter - GetActorLocation()).GetSafeNormal() * 20.f * Doom::TicRate * Doom::Scale;
-		ChargeTics = Doom::TicRate;
-		GetCharacterMovement()->SetMovementMode(MOVE_Flying);
-		StartState(EMonsterState::Charging);
-		break;
-	}
-	case EDoomAttack::PainSpawn:
-	{
-		ShootSkull(Doom::YawToAngle(FVector(ToTarget.X, ToTarget.Y, 0).Rotation().Yaw), Target.Get());
-		break;
-	}
-	case EDoomAttack::Vile:
-		if (DoomWorld->CheckSight(this, Target.Get()))
-		{
-			DoomWorld->SpawnEffect(TEXT("FIRE"), TEXT("ABCDEFGH"), 3, TargetCenter, true);
-			DoomWorld->PlaySound(TEXT("BAREXP"), &TargetCenter);
-			UGameplayStatics::ApplyDamage(Target.Get(), 20.f, nullptr, this, nullptr);
-			DoomWorld->RadiusAttack(this, this, TargetCenter, 70.f);
-			if (ACharacter* C = Cast<ACharacter>(Target.Get()))
-			{
-				C->LaunchCharacter(FVector(0, 0, 1000.f * Doom::Scale / 3.f), false, true);
-			}
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-	if (IsDead() || Damage <= 0 || !Def)
-	{
-		return 0.f;
-	}
-	if ((Def->Flags & EThingFlag::Boss) && DamageEvent.IsOfType(FRadialDamageEvent::ClassID) && !Is(Def, TEXT("BossBrain")))
-	{
-		return 0.f; // cyberdemon and mastermind shrug off splash
-	}
-	AActor* Source = UDoomWorld::DamageSource(DamageCauser);
-	Health -= FMath::RoundToInt(Damage);
-
-	// knockback (P_DamageMobj thrust): away from the inflictor (missile, blast or shooter),
-	// damage * 12.5 / mass units per tic; no push from a player's chainsaw
-	const ADoomPlayer* SawPlayer = Cast<ADoomPlayer>(Source);
-	if (DamageCauser && !(Def->Flags & EThingFlag::Hanging) && !(SawPlayer && SawPlayer->Inv().Ready == EDoomWeapon::Chainsaw))
-	{
-		const FVector From = DamageEvent.IsOfType(FRadialDamageEvent::ClassID)
-			? static_cast<const FRadialDamageEvent&>(DamageEvent).Origin : DamageCauser->GetActorLocation();
-		const FVector Push = (GetActorLocation() - From).GetSafeNormal2D() * (Damage * 12.5f / MonsterMass(Def) * Doom::TicRate * Doom::Scale);
-		// added to the velocity rather than launched: launching switches to falling, which drops flyers and
-		// throws walkers off ledges, where Doom's dropoff rule (P_TryMove) stops a pushed monster at the edge
-		GetCharacterMovement()->Velocity += Push;
-	}
-
-	if (Health <= 0)
-	{
-		Die(Source, Health < -Def->Health);
-		return Damage;
-	}
-	if (MonsterRand() < Def->PainChance && !Def->Pain.IsEmpty() && State != EMonsterState::Charging)
-	{
-		bJustHit = true;
-		StartState(EMonsterState::Pain);
-		const FVector L = GetActorLocation();
-		DoomWorld->PlaySound(Def->PainSound, &L);
-	}
-	ReactionTime = 0;
-	// infighting: hit by another monster -> go after it; an arch-vile's victims never fight back, and
-	// anyone already chasing an arch-vile switches regardless of the threshold (vanilla)
-	const ADoomMonster* SourceMonster = Cast<ADoomMonster>(Source);
-	const bool bSourceVile = SourceMonster && SourceMonster->Def && Is(SourceMonster->Def, TEXT("ArchVile"));
-	const ADoomMonster* TargetMonster = Cast<ADoomMonster>(Target.Get());
-	const bool bTargetVile = TargetMonster && TargetMonster->Def && Is(TargetMonster->Def, TEXT("ArchVile"));
-	if (Source && Source != this && (Threshold <= 0 || bTargetVile) && !bSourceVile)
-	{
-		if (Source->IsA<ADoomPlayer>() || Source->IsA<ADoomMonster>())
-		{
-			Target = Source;
-			Threshold = 100;
-			if (State == EMonsterState::Idle)
-			{
-				StartState(EMonsterState::Chase);
-			}
-		}
-	}
-	return Damage;
-}
-
-bool ADoomMonster::IsFastDemon() const
-{
-	// G_InitNew: with -fast or on Nightmare the demons' run, attack and pain frames take half the time
-	return DoomWorld && DoomWorld->IsFast() && Def && (Def->DoomEdNum == 3002 || Def->DoomEdNum == 58);
-}
-
-int32 ADoomMonster::RunTics() const
-{
-	return IsFastDemon() ? FMath::Max(1, Def->RunTics / 2) : Def->RunTics;
-}
-
-void ADoomMonster::SetSmartAI(bool bOn)
-{
-	bSmart = bOn;
-	ClearSmartGoal();
-	if (!HasAuthority() || !GetWorld() || IsActorBeingDestroyed())
-	{
-		return;
-	}
-	if (bOn == (Controller && Controller->IsA<ADoomAIController>()))
-	{
-		return;
-	}
-	if (AController* Old = Controller)
-	{
-		Old->UnPossess();
-		Old->Destroy();
-	}
-	if (!bOn)
-	{
-		return; // CLASSIC: no controller at all
-	}
-	AIControllerClass = ADoomAIController::StaticClass();
-	SpawnDefaultController();
-	if (IsDead())
-	{
-		if (const AAIController* C = Cast<AAIController>(Controller); C && C->GetBrainComponent())
-		{
-			C->GetBrainComponent()->StopLogic(TEXT("dead"));
-		}
-	}
-}
-
-bool ADoomMonster::SetSmartGoal(const FVector2f& Goal, float AcceptRadius)
-{
-	const FDoomMap* Map = DoomWorld ? DoomWorld->GetMap() : nullptr;
-	if (!Map || !Def)
-	{
-		return false;
-	}
-	TArray<FVector2f> Path;
-	if (!DoomWorld->GetNav().FindPath(*Map, DoomPos(), Goal, Def->Radius, Def->Height, (Def->Flags & EThingFlag::Float) != 0, Path))
-	{
-		SmartMove = ESmartMove::Failed;
-		return false;
-	}
-	SmartPath = MoveTemp(Path);
-	SmartIndex = 0;
-	SmartGoal = Goal;
-	SmartAccept = AcceptRadius;
-	SmartMove = ESmartMove::Moving;
-	SmartStuck = 0;
-	StepStart = DoomPos();
-	return true;
-}
-
-void ADoomMonster::ClearSmartGoal()
-{
-	SmartMove = ESmartMove::None;
-	SmartPath.Reset();
-	SmartIndex = 0;
-	SmartDir = FVector2f::ZeroVector;
-}
-
-void ADoomMonster::SmartStep()
-{
-	const FVector2f Pos = DoomPos();
-	const float Moved = FVector2f::Distance(Pos, StepStart);
-	StepStart = Pos;
-	const float Reach = FMath::Max(Def->Radius, 16.f);
-	while (SmartIndex < SmartPath.Num() - 1 && FVector2f::Distance(Pos, SmartPath[SmartIndex]) < Reach)
-	{
-		++SmartIndex;
-	}
-	if (!SmartPath.IsValidIndex(SmartIndex) || FVector2f::Distance(Pos, SmartGoal) < SmartAccept)
-	{
-		SmartMove = ESmartMove::Arrived;
-		SmartDir = FVector2f::ZeroVector;
-		MoveDir = DirNone;
-		return;
-	}
-	SmartDir = (SmartPath[SmartIndex] - Pos).GetSafeNormal();
-	if (SmartDir.IsNearlyZero())
-	{
-		return;
-	}
-	// the nearest of Doom's eight directions: the monster turns to face it as in A_Chase
-	MoveDir = (FMath::RoundToInt(FMath::RadiansToDegrees(FMath::Atan2(SmartDir.Y, SmartDir.X)) / 45.f) + 8) % 8;
-	if (Moved < Def->Speed * 0.25f)
-	{
-		// blocked: maybe a door to open; after a while the tree thinks again
-		DoomWorld->TryMonsterUse(this, Pos, Pos + SmartDir * (Def->Radius + 24.f));
-		if (++SmartStuck > 16)
-		{
-			SmartMove = ESmartMove::Failed;
-			SmartDir = FVector2f::ZeroVector;
-		}
-	}
-	else
-	{
-		SmartStuck = 0;
-	}
-}
-
-bool ADoomMonster::FriendInLineOfFire() const
-{
-	if (!Target.IsValid())
-	{
-		return false;
-	}
-	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomFriendlyFire), false, this);
-	Q.AddIgnoredActor(Target.Get());
-	FHitResult Hit;
-	if (!GetWorld()->LineTraceSingleByObjectType(Hit, EyeLocation(), Target->GetActorLocation(), FCollisionObjectQueryParams(ECC_DoomMonster), Q))
-	{
-		return false;
-	}
-	const ADoomMonster* M = Cast<ADoomMonster>(Hit.GetActor());
-	return M && !M->IsDead();
-}
-
-void ADoomMonster::Die(AActor* Killer, bool bGib)
-{
-	State = EMonsterState::Dying;
-	if (bSmart)
-	{
-		ClearSmartGoal();
-		if (const AAIController* C = Cast<AAIController>(Controller); C && C->GetBrainComponent())
-		{
-			C->GetBrainComponent()->StopLogic(TEXT("dead"));
-		}
-	}
-	LastTarget = Target; // a dying pain elemental's souls go after whoever it was fighting
-	Target.Reset();
-	MoveDir = DirNone;
-	ChargeVelocity = FVector::ZeroVector;
-	MakeCorpse();
-	UCapsuleComponent* Cap = GetCapsuleComponent();
-	const bool bXDeath = bGib && !Def->XDeath.IsEmpty();
-	Sprite->PlaySequence(bXDeath ? Def->XDeath : Def->Death, 5, false, (Def->Flags & EThingFlag::FullBright) != 0);
-	Sprite->SetFuzz((Def->Flags & EThingFlag::Shadow) != 0);
-	const FVector L = GetActorLocation();
-	DoomWorld->PlaySound(bXDeath ? TEXT("SLOP") : Def->DeathSound, &L);
-	if (Def->Flags & EThingFlag::CountKill)
-	{
-		DoomWorld->CreditKill(Killer);
-	}
-	if (Def->DropType)
-	{
-		const FVector Feet = L - FVector(0, 0, Cap->GetScaledCapsuleHalfHeight());
-		DoomWorld->SpawnThing(Def->DropType, Feet, 0, true);
-	}
-	if (Light)
-	{
-		Light->SetVisibility(false);
-	}
-	if (Is(Def, TEXT("PainElemental")))
-	{
-		// A_PainDie: three souls at 90, 180 and 270 degrees, by the same rules as its attack
-		for (int32 i = 0; i < 3; ++i)
-		{
-			ShootSkull(DoomAngle + 90.f * (i + 1), LastTarget.Get());
-		}
-	}
-	DoomWorld->OnMonsterDied(this);
-}
-
-void ADoomMonster::ShootSkull(float Angle, AActor* SoulTarget)
-{
-	// A_PainShootSkull: no more than 20 lost souls on the map; the soul appears just past both bodies'
-	// edges (4 + 3/2 of the radii), only if the way there is clear, and charges at once
-	int32 Souls = 0;
-	for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
-	{
-		if (M.IsValid() && Is(M->Def, TEXT("LostSoul")) && !M->IsDead()) ++Souls;
-	}
-	if (Souls > 20)
-	{
-		return;
-	}
-	const FDoomThingDef* SoulDef = DoomInfo::FindThing(3006);
-	const float SoulRadius = SoulDef ? SoulDef->Radius : 16.f;
-	const float Prestep = 4.f + 1.5f * (Def->Radius + SoulRadius);
-	const float Rad = FMath::DegreesToRadians(Angle);
-	const FVector Dir = Doom::ToUE(FMath::Cos(Rad), FMath::Sin(Rad), 0).GetSafeNormal();
-	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	const FVector Feet = GetActorLocation() - FVector(0, 0, Half) + Dir * Prestep * Doom::Scale + FVector(0, 0, 8.f * Doom::Scale);
-	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPainSpawn), false, this);
-	const FVector Body(0, 0, (SoulDef ? SoulDef->Height * 0.5f : 28.f) * Doom::Scale);
-	if (GetWorld()->SweepTestByChannel(GetActorLocation(), Feet + Body, FQuat::Identity, ECC_DoomMonster,
-		FCollisionShape::MakeSphere(SoulRadius * 0.9f * Doom::Scale), Q))
-	{
-		return; // vanilla spawns it and kills it at once; nothing is left either way
-	}
-	if (ADoomMonster* Soul = DoomWorld->SpawnMonster(3006, Feet, Angle))
-	{
-		Soul->Target = SoulTarget;
-		if (SoulTarget)
-		{
-			Soul->StartState(EMonsterState::Missile);
-		}
 	}
 }
 
@@ -1295,32 +870,6 @@ void ADoomMonster::WakeCorpse()
 		SetActorTickEnabled(true);
 	}
 	Sprite->Wake(); // its sprite follows it while it moves, and sleeps again once it rests
-}
-
-void ADoomMonster::MakeCorpse()
-{
-	Sprite->bSleepWhenDone = true; // once the death frames are over (UDoomSpriteComponent)
-	if (HasAuthority())
-	{
-		bNetCorpse = true;
-	}
-	UCapsuleComponent* Cap = GetCapsuleComponent();
-	// corpses keep resting on the world but stop blocking bodies and bullets
-	Cap->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Cap->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	if (HitBox)
-	{
-		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
-	if (Def->Flags & EThingFlag::Float)
-	{
-		GetCharacterMovement()->SetMovementMode(MOVE_Falling); // flyers drop
-	}
-	if (Light)
-	{
-		Light->SetVisibility(false);
-	}
 }
 
 void ADoomMonster::DoomSerialize(FArchive& Ar)
@@ -1369,7 +918,7 @@ void ADoomMonster::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimit
 	// a charging lost soul slams into whatever it hits
 	if (Other && (Other->IsA<ADoomPlayer>() || Other->IsA<ADoomMonster>()))
 	{
-		UGameplayStatics::ApplyDamage(Other, ((MonsterRand() % 8) + 1) * 3, nullptr, this, nullptr);
+		UGameplayStatics::ApplyDamage(Other, ((DoomMonsterDetail::MonsterRand() % 8) + 1) * 3, nullptr, this, nullptr);
 	}
 	ChargeVelocity = FVector::ZeroVector;
 	ChargeTics = 0;

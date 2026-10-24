@@ -438,6 +438,20 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+Smaller files (`feature/split-files`): no source file is over 1,200 lines now. The six big ones were
+split by job, with no change in behaviour:
+
+* **`DoomWorld.cpp`:** split into map setup and the tic, sectors (movers, lights, damage), specials
+  (line activation, teleports), flow (level flow, players, network) and presentation (sound, music,
+  palette).
+* **`DoomContentBuilder.cpp`:** split into materials, effects, the Lyra export, and maps (import,
+  tiles, the edit test).
+* **The map editor:** split into the view, the panels and the editing.
+* **Others:** the monster's combat and SMART steering, the marine's weapons, and the editor's thing
+  markers and sector and line edits each have a file of their own.
+
+What the pieces share lives in small private headers, in named namespaces.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -536,7 +550,7 @@ Not done yet (roughly in priority order):
 4. Unreal practices worth adopting next:
    * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
-   * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
+   * **`MovePlane` returning `{Moving, Arrived, Blocked}`** instead of a bool and an out parameter (`DoomWorldSectors.cpp`).
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
@@ -548,7 +562,6 @@ Not done yet (roughly in priority order):
    * **Assertions**: the game module has a single `check`. Invariants (map indices, chunk and sector tables, net struct sizes) want `check` / `ensureMsgf`, which compile out of shipping builds.
    * **Static analysis**: a build with `-StaticAnalyzer=VisualCpp` (or Clang-Tidy) and its warnings fixed, and a `.clang-format` matching Epic's layout (tabs, braces on their own lines).
    * **Log categories per system**: everything logs to `LogDoom`; `LogDoomAI`, `LogDoomNet`, `LogDoomMap`, `LogDoomRender` and so on would let a log be filtered by area.
-   * **Smaller files**: besides `DoomWorld.cpp` (about 3,200 lines), `DoomContentBuilder.cpp` (2,000), `DoomEditor.cpp`, `DoomMonster.cpp`, `DoomPlayer.cpp` and `DoomMapActors.cpp` (1,250-1,450 each) mix several jobs.
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **Reusable plugins**: the WAD reader, the node builder, the map generator and the PWAD writer don't depend on the game; as a plugin they could serve other projects (LyraDoom already copies the game module).

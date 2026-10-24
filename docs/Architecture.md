@@ -17,7 +17,7 @@ The port follows that split:
 | `ADoomPlayer` | `ACharacter` | The marine's body: movement, weapon state machine, powerups, damage, pickups. `Inv()` returns the player state's inventory | `mobj_t` of the player, `P_PlayerThink` |
 | `ADoomPlayerController` | `APlayerController` | Enhanced Input, menu and screen keys | `G_Responder` |
 | `ADoomHUD` | `AHUD` | Status bar, weapon, automap, menu, intermission, title, finale | `ST_`, `HU_`, `AM_`, `WI_`, `F_` |
-| `UDoomWorld` | `UTickableWorldSubsystem` | The simulation of one tic (`RunTic`, server and standalone only; network clients run `ClientTick` for animation and replicated geometry): sectors, movers, lights, specials, monsters, things, missiles, the brain. Also the WAD, graphics, sound, map, save games and the menu model | `P_Ticker` and the `p_*.c` files |
+| `UDoomWorld` | `UTickableWorldSubsystem` | The simulation of one tic (`RunTic`, server and standalone only; network clients run `ClientTick` for animation and replicated geometry): sectors, movers, lights, specials, monsters, things, missiles, the brain. Also the WAD, graphics, sound, map, save games and the menu model. Its code is split by job: `DoomWorld.cpp` (setup, spawning, the tic), `DoomWorldSectors.cpp` (movers, lights, damage), `DoomWorldSpecials.cpp` (line activation, teleports), `DoomWorldFlow.cpp` (level flow, players, network), `DoomWorldPresentation.cpp` (sound, music, palette), `DoomSave.cpp`, `DoomFinale.cpp` | `P_Ticker` and the `p_*.c` files |
 
 ### The clock
 

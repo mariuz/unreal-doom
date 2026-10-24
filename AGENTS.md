@@ -10,7 +10,7 @@ for what the port does; this file covers how to work on it, and the traps alread
 Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 subsectors, area
 6,712,686).
 
-* `Source/DoomUE`: the game module. `UDoomWorld` (a world subsystem) is the Doom simulation;
+* `Source/DoomUE`: the game module. `UDoomWorld` (a world subsystem, split over `DoomWorld*.cpp`) is the Doom simulation;
   `ADoomGameMode`, `ADoomGameState` and `ADoomPlayerState` follow Unreal's gameplay framework;
   `ADoomLevel` builds the geometry. See [docs/Architecture.md](docs/Architecture.md).
 * `Source/DoomUEEditor`: the editor module. `-run=DoomContent` generates materials, effects and the
@@ -174,6 +174,10 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * smaller files: `DoomWorld*.cpp` (world: setup and tic, Sectors, Specials, Flow, Presentation),
+    `DoomContent*.cpp`, `DoomEditor*.cpp`, `DoomMonster*.cpp`, `DoomPlayer*.cpp`, `DoomMap{Actors,Markers,Edits}.cpp`;
+    shared helpers in private headers (`DoomWorldSpecialTable.h`, `DoomContentPrivate.h`,
+    `DoomMonsterPrivate.h`, `DoomPlayerPrivate.h`, `DoomMapActorsPrivate.h`) in named namespaces;
   * include discipline: every file compiles alone (no unity, no PCH), `Tools/check_includes.bat`,
     `Tools/check_unity_names.py`;
   * multiplayer polish: player colours (sprite translation), finale on clients, `-altdeath`,
