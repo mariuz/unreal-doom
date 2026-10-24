@@ -1,4 +1,6 @@
 #include "DoomPlayer.h"
+#include "Engine/World.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "DoomWorld.h"
 #include "DoomMonster.h"
 #include "DoomThing.h"

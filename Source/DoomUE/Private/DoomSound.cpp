@@ -1,4 +1,6 @@
 #include "DoomSound.h"
+#include "UObject/Package.h"
+#include "Engine/World.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
 #include "DoomInfo.h"

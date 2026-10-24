@@ -3,7 +3,9 @@
 #include "DoomSettings.h"
 #include "DoomUE.h"
 
-namespace
+// the built-in tables (a named namespace: in a unity build an anonymous one would put Monster,
+// Item, Fire, White and EThingFlag's names in every other file of the same group)
+namespace DoomInfoBuiltIn
 {
 	using namespace EThingFlag;
 
@@ -258,9 +260,9 @@ namespace
 // asset, else the built-in ones) before patches apply.
 namespace
 {
-	TArray<FDoomThingDef>& ThingTable() { static TArray<FDoomThingDef> T = BuildThings(); return T; }
-	TArray<FDoomProjectileDef>& ProjectileTable() { static TArray<FDoomProjectileDef> T = BuildProjectiles(); return T; }
-	TArray<FDoomWeaponDef>& WeaponTable() { static TArray<FDoomWeaponDef> T = BuildWeapons(); return T; }
+	TArray<FDoomThingDef>& ThingTable() { static TArray<FDoomThingDef> T = DoomInfoBuiltIn::BuildThings(); return T; }
+	TArray<FDoomProjectileDef>& ProjectileTable() { static TArray<FDoomProjectileDef> T = DoomInfoBuiltIn::BuildProjectiles(); return T; }
+	TArray<FDoomWeaponDef>& WeaponTable() { static TArray<FDoomWeaponDef> T = DoomInfoBuiltIn::BuildWeapons(); return T; }
 	TMap<int32, int32>& ThingIndex()
 	{
 		static TMap<int32, int32> M = []()
@@ -346,9 +348,9 @@ int32 DoomInfo::MaxAmmo(EDoomAmmo A, bool bBackpack)
 
 void DoomInfo::BuiltInTables(TArray<FDoomThingDef>& Things, TArray<FDoomProjectileDef>& Projectiles, TArray<FDoomWeaponDef>& Weapons)
 {
-	Things = BuildThings();
-	Projectiles = BuildProjectiles();
-	Weapons = BuildWeapons();
+	Things = DoomInfoBuiltIn::BuildThings();
+	Projectiles = DoomInfoBuiltIn::BuildProjectiles();
+	Weapons = DoomInfoBuiltIn::BuildWeapons();
 }
 
 FString DoomInfo::TablesSource()
@@ -358,9 +360,9 @@ FString DoomInfo::TablesSource()
 
 void DoomInfo::ResetTables()
 {
-	ThingTable() = BuildThings();
-	ProjectileTable() = BuildProjectiles();
-	WeaponTable() = BuildWeapons();
+	ThingTable() = DoomInfoBuiltIn::BuildThings();
+	ProjectileTable() = DoomInfoBuiltIn::BuildProjectiles();
+	WeaponTable() = DoomInfoBuiltIn::BuildWeapons();
 	GRules = FDoomRules();
 	GTablesSource = TEXT("built-in");
 	// the editable copy, when the project has one
@@ -476,7 +478,7 @@ int32 DoomInfo::ParTime(const FString& Map)
 
 int32 DoomInfo::Random()
 {
-	return GRandom.RandRange(0, 255);
+	return DoomInfoBuiltIn::GRandom.RandRange(0, 255);
 }
 
 static FString DefaultPickupMessage(EPickup P);

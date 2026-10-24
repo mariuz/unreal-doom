@@ -1,4 +1,6 @@
 #include "DoomContentBuilder.h"
+#include "UObject/Linker.h"
+#include "Misc/FeedbackContext.h"
 #include "DoomGameData.h"
 #include "DoomMapTiles.h"
 #include "DoomAssets.h"

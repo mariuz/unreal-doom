@@ -116,7 +116,9 @@ Tools/run_tests.bat DoomUE -NullRHI
 
 * **Unity builds merge source files:** a new file regroups them, and names in anonymous namespaces
   or file-level statics then clash with another file's (`Walls`, `Fire`, `IsManualDoor` so far).
-  Give them file-specific names.
+  Give them file-specific names. A unity build or the shared PCH also hides missing includes.
+  `Tools/check_includes.bat` checks both (`names` for the quick name check alone); run it after
+  adding files or helpers. It wants the editor closed and takes about 10 minutes the first time.
 * **The Options page's rows are numbered by hand** in `FDoomMenu` (`Rows`, `Adjust`, `Select`,
   `Activate`) and in the play-test's `rebind` step. Adding a row shifts the ones after it. The page
   scrolls past 10 rows.
@@ -172,6 +174,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * include discipline: every file compiles alone (no unity, no PCH), `Tools/check_includes.bat`,
+    `Tools/check_unity_names.py`;
   * multiplayer polish: player colours (sprite translation), finale on clients, `-altdeath`,
     `-nomonsters`, `-fast`, the MULTIPLAYER page (`-hosttest`, `-jointest`);
   * gamepad rebinding (`Pad*` mappables, `FMappable::bGamepad`);

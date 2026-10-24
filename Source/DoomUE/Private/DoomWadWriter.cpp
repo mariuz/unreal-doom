@@ -21,7 +21,7 @@ namespace
 		void Tex(FName N) { Name8(N.IsNone() ? FString(TEXT("-")) : N.ToString()); }
 	};
 
-	int32 Round(float V) { return FMath::RoundToInt(V); }
+	int32 WadRound(float V) { return FMath::RoundToInt(V); }
 
 	/** Doom's BLOCKMAP: 128-unit blocks, each listing the lines that touch it. */
 	TArray<uint8> Blockmap(const FDoomMap& M)
@@ -85,7 +85,7 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 	for (const FDoomLine& L : M.Lines) MaxV = FMath::Max3(MaxV, L.V1, L.V2);
 	for (int32 i = 0; i <= MaxV && i < M.Vertices.Num(); ++i)
 	{
-		const FVector2f R(Round(M.Vertices[i].X), Round(M.Vertices[i].Y));
+		const FVector2f R(WadRound(M.Vertices[i].X), WadRound(M.Vertices[i].Y));
 		Rounded += !R.Equals(M.Vertices[i], 0.001f);
 		M.Vertices[i] = R;
 	}
@@ -102,7 +102,7 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		FWriter W = Add(TEXT("THINGS"));
 		for (const FDoomMapThing& T : M.Things)
 		{
-			W.S16(Round(T.P.X)); W.S16(Round(T.P.Y)); W.S16(Round(T.Angle)); W.U16(T.Type); W.U16(T.Flags);
+			W.S16(WadRound(T.P.X)); W.S16(WadRound(T.P.Y)); W.S16(WadRound(T.Angle)); W.U16(T.Type); W.U16(T.Flags);
 		}
 	}
 	{
@@ -120,7 +120,7 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		FWriter W = Add(TEXT("SIDEDEFS"));
 		for (const FDoomSide& S : M.Sides)
 		{
-			W.S16(Round(S.XOffset)); W.S16(Round(S.YOffset));
+			W.S16(WadRound(S.XOffset)); W.S16(WadRound(S.YOffset));
 			W.Tex(S.Upper); W.Tex(S.Lower); W.Tex(S.Middle);
 			W.U16(S.Sector);
 		}
@@ -131,8 +131,8 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		for (int32 i = 0; i < M.Vertices.Num(); ++i)
 		{
 			const FVector2f& V = M.Vertices[i];
-			SplitRounded += (i > MaxV && !FVector2f(Round(V.X), Round(V.Y)).Equals(V, 0.001f)) ? 1 : 0;
-			W.S16(Round(V.X)); W.S16(Round(V.Y));
+			SplitRounded += (i > MaxV && !FVector2f(WadRound(V.X), WadRound(V.Y)).Equals(V, 0.001f)) ? 1 : 0;
+			W.S16(WadRound(V.X)); W.S16(WadRound(V.Y));
 		}
 	}
 	{
@@ -140,10 +140,10 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		for (const FDoomSeg& S : M.Segs)
 		{
 			const FVector2f A = M.V(S.V1), B = M.V(S.V2);
-			const double Angle = FMath::Atan2((double)Round(B.Y) - Round(A.Y), (double)Round(B.X) - Round(A.X));
+			const double Angle = FMath::Atan2((double)WadRound(B.Y) - WadRound(A.Y), (double)WadRound(B.X) - WadRound(A.X));
 			const int32 Bam = (int32)FMath::RoundToDouble((Angle < 0 ? Angle + 2 * UE_DOUBLE_PI : Angle) / (2 * UE_DOUBLE_PI) * 65536.0) & 0xFFFF;
 			W.U16(S.V1); W.U16(S.V2); W.U16(Bam);
-			W.U16(S.Line == INDEX_NONE ? 0xFFFF : S.Line); W.S16(S.Side); W.S16(Round(S.Offset));
+			W.U16(S.Line == INDEX_NONE ? 0xFFFF : S.Line); W.S16(S.Side); W.S16(WadRound(S.Offset));
 		}
 	}
 	{
@@ -180,7 +180,7 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		FWriter W = Add(TEXT("NODES"));
 		for (const FDoomNode& N : M.Nodes)
 		{
-			W.S16(Round(N.Origin.X)); W.S16(Round(N.Origin.Y)); W.S16(Round(N.Dir.X)); W.S16(Round(N.Dir.Y));
+			W.S16(WadRound(N.Origin.X)); W.S16(WadRound(N.Origin.Y)); W.S16(WadRound(N.Dir.X)); W.S16(WadRound(N.Dir.Y));
 			for (int32 c = 0; c < 2; ++c)
 			{
 				const FBox2f B = ChildBox(N.Child[c]);
@@ -196,7 +196,7 @@ bool DoomWadWriter::MapLumps(const FDoomMap& Source, const FString& MapName, TAr
 		FWriter W = Add(TEXT("SECTORS"));
 		for (const FDoomSector& S : M.Sectors)
 		{
-			W.S16(Round(S.Floor)); W.S16(Round(S.Ceiling));
+			W.S16(WadRound(S.Floor)); W.S16(WadRound(S.Ceiling));
 			W.Tex(S.FloorPic); W.Tex(S.CeilingPic);
 			W.S16(S.Light); W.S16(S.Special); W.S16(S.Tag);
 		}

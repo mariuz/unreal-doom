@@ -1,4 +1,6 @@
 #include "DoomMonster.h"
+#include "Engine/World.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomPlayer.h"

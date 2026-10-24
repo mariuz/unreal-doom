@@ -1,4 +1,5 @@
 #include "DoomThing.h"
+#include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomPlayer.h"

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/Paths.h"
 #include "Engine/DataAsset.h"
 #include "DoomMapTiles.generated.h"
 

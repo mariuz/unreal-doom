@@ -438,6 +438,12 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
+files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
+others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
+build (`DoomInfo.cpp`'s table helpers now live in a named namespace, and the rest have file-specific
+names). `Tools/check_includes.bat` runs both checks.
+
 Multiplayer polish (`feature/mp-polish`):
 
 * **Player colours:** players 2-4 wear grey, brown and red (Doom's translation tables).
@@ -537,7 +543,6 @@ Not done yet (roughly in priority order):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
-   * **Build without unity files** (`bUseUnity = false`, or `-DisableUnity` in a CI build): unity builds hid missing includes, and name clashes between files broke builds three times (`Walls`, `Fire`, `IsManualDoor`). A regular non-unity build keeps every file compiling on its own, as IWYU intends.
    * **Localizable text**: the port's own words (the menu's added rows, the map editor's panels, messages that aren't the WAD's) are `TEXT` literals; the game module has no `LOCTEXT`. User-facing text belongs in `FText` with `LOCTEXT` / `NSLOCTEXT` and string tables, so it can be translated. Doom's own strings stay in the WAD's DEHACKED / BEX text.
    * **Encapsulation**: game state is public and mutable on `UCLASS`es (`ADoomPlayer::bGodMode`, `bFireHeld`, `UDoomWorld`'s test counters and switches). Accessors, or `UPROPERTY` with the right specifiers, plus `friend` for the test runners.
    * **Assertions**: the game module has a single `check`. Invariants (map indices, chunk and sector tables, net struct sizes) want `check` / `ensureMsgf`, which compile out of shipping builds.

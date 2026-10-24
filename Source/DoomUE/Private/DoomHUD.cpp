@@ -1,4 +1,5 @@
 #include "DoomHUD.h"
+#include "Engine/World.h"
 #include "DoomPlayerState.h"
 #include "DoomGameState.h"
 #include "DoomWorld.h"

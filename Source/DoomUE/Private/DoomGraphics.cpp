@@ -1,4 +1,5 @@
 #include "DoomGraphics.h"
+#include "UObject/Package.h"
 #include "DoomWad.h"
 #include "DoomUE.h"
 #include "DoomInfo.h"
