@@ -438,6 +438,16 @@ exit...), each selecting its actor or moving the camera there; `-run=DoomContent
 for the log. Freedoom's 68 maps have no errors. `-edittest` breaks a tag on purpose and checks the
 checker names that line.
 
+Multiplayer polish (`feature/mp-polish`):
+
+* **Player colours:** players 2-4 wear grey, brown and red (Doom's translation tables).
+* **Finale screens** reach clients.
+* **Switches:** `-altdeath` (deathmatch 2.0: items respawn after 30 s), `-nomonsters`, and `-fast`,
+  which also gives demons Nightmare's halved frames.
+* **MULTIPLAYER page** in the menu, to host (rules, map, monsters, fast) or join an address.
+
+See [docs/Multiplayer.md](docs/Multiplayer.md).
+
 Gamepad rebinding (`feature/gamepad-rebind`): the Controls page lists the gamepad's buttons too
 (PAD FIRE, USE, RUN, NEXT / PREVIOUS WEAPON, AUTOMAP). A PAD row takes only a gamepad button, a
 keyboard row only a key or mouse button, and gamepad buttons show short names (PAD RT, PAD A).
@@ -510,7 +520,7 @@ Not done yet (roughly in priority order):
 1. **A hand play-through**: the scripted play-test can't press keys through Enhanced Input in its
    unfocused window, so Esc closing the menu and the automap keys (= - F 0 M C G, arrows to pan) are
    checked by reading the code only. Then the vanilla differences still left from the audit:
-   Nightmare / `-fast` demon frames; the arch-vile's fire sprite that follows its victim, and its
+   the arch-vile's fire sprite that follows its victim, and its
    attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
@@ -522,7 +532,6 @@ Not done yet (roughly in priority order):
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
    * **Split `DoomWorld.cpp`** (about 3,000 lines): specials, movers, lights, sound, saves and level flow in their own files; `MovePlane` returning `{Moving, Arrived, Blocked}` instead of a bool and an out parameter.
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
-   * **Multiplayer polish** (co-op and deathmatch work: see [docs/Multiplayer.md](docs/Multiplayer.md)): Doom's player colour translation, finale screens on clients, `-altdeath` item respawn, `-nomonsters` / `-fast`, and a join / host page in the menu.
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.

@@ -88,6 +88,9 @@ private:
 	/** A client pressed Enter on the intermission screen. */
 	UFUNCTION(Server, Reliable)
 	void ServerFinishIntermission();
+	/** A client pressed Enter on a story screen or the cast call. */
+	UFUNCTION(Server, Reliable)
+	void ServerFinaleInput();
 	/** -nettest on a network client. */
 	void RunClientNetTest();
 };

@@ -67,7 +67,9 @@ public:
 	/** A patch lump (HUD graphics, menu, etc). */
 	const FDoomPicture* Patch(const FString& LumpName);
 	/** Sprite frame: prefix "TROO", frame 'A', rotation 1..8 (0 = any). */
-	FDoomSpriteFrame SpriteFrame(const FString& Prefix, TCHAR Frame, int32 Rotation);
+	/** Translation 1-3 recolours the marine's green (palette 0x70-0x7F) grey, brown or red: Doom's
+	 *  player colours for players 2-4 (R_InitTranslationTables). */
+	FDoomSpriteFrame SpriteFrame(const FString& Prefix, TCHAR Frame, int32 Rotation, int32 Translation = 0);
 	bool SpriteHasRotations(const FString& Prefix, TCHAR Frame) const;
 
 	/** Texture height in pixels (for shortest-lower-texture specials); 0 if missing. */
@@ -159,6 +161,7 @@ private:
 	TMap<FString, FSpriteLump> SpriteLumps; // "TROOA1" -> lump
 	TMap<FName, TSharedPtr<FDoomPicture>> TextureCache, FlatCache, PatchCache;
 	TMap<int32, TSharedPtr<FDoomPicture>> SpriteCache;
+	TMap<int64, TSharedPtr<FDoomPicture>> TranslatedSprites; // (lump << 2) | translation
 	TArray<FAnimGroup> Anims;
 	TMap<FName, FName> SwitchPairs;
 	bool bSwitchLump = false;

@@ -987,6 +987,101 @@ void ADoomGameMode::StartPlayTest()
 			} });
 	}
 
+	// --- 18b. player colours: the marine's frames for players 2-4 trade the green ramp for grey, brown
+	// and red (Doom's translation tables) --------------------------------------------------------------
+	Run->Steps.Add({ TEXT("colours"),
+		[](FString& Msg) { return true; },
+		[W](int32 Tics, FString& Msg)
+		{
+			auto Count = [](const FDoomPicture* P, int32 Lo)
+			{
+				int32 N = 0;
+				if (P) for (int16 I : P->Indices) N += (I >= Lo && I <= Lo + 15) ? 1 : 0;
+				return N;
+			};
+			const FDoomPicture* Green = W->GetGraphics()->SpriteFrame(TEXT("PLAY"), 'A', 1, 0).Picture;
+			const int32 GreenPixels = Count(Green, 0x70);
+			bool bOk = GreenPixels > 0;
+			static const int32 Bases[4] = { 0x70, 0x60, 0x40, 0x20 };
+			FString Report = FString::Printf(TEXT("PLAYA1: %d green pixels"), GreenPixels);
+			for (int32 t = 1; t <= 3; ++t)
+			{
+				const FDoomPicture* P = W->GetGraphics()->SpriteFrame(TEXT("PLAY"), 'A', 1, t).Picture;
+				const int32 Left = Count(P, 0x70), Moved = Count(P, Bases[t]) - Count(Green, Bases[t]);
+				bOk &= P && P != Green && Left == 0 && Moved == GreenPixels;
+				Report += FString::Printf(TEXT("; player %d: %d green left, %d moved to 0x%02X"), t + 1, Left, Moved, Bases[t]);
+			}
+			Msg = Report;
+			return bOk ? EStep::Pass : EStep::Fail;
+		} });
+
+	// --- 18c. -fast: demons step twice as often (G_InitNew halves their frames); imp balls fly at 20 ---
+	Run->Steps.Add({ TEXT("fast"),
+		[](FString& Msg) { return true; },
+		[W, Player](int32 Tics, FString& Msg)
+		{
+			const bool bWas = W->bFastParam;
+			W->bFastParam = false;
+			ADoomPlayer* P = Player();
+			const FVector At = P->GetActorLocation() + P->GetActorForwardVector() * 96.f * Doom::Scale;
+			ADoomMonster* Slow = W->SpawnMonster(3002, At, 0);
+			const int32 SlowTics = Slow ? Slow->RunTics() : -1; // read before -fast goes on
+			W->bFastParam = true;
+			ADoomMonster* Fast = W->SpawnMonster(3002, At + FVector(0, 0, 80.f * Doom::Scale), 0);
+			const bool bOk = Slow && Fast && Fast->RunTics() * 2 == SlowTics
+				&& FMath::IsNearlyEqual(Fast->GetCharacterMovement()->MaxWalkSpeed, Slow->GetCharacterMovement()->MaxWalkSpeed * 2.f, 1.f) && W->IsFast();
+			Msg = FString::Printf(TEXT("demon run frames %d -> %d, speed %.0f -> %.0f"), SlowTics, Fast ? Fast->RunTics() : -1,
+				Slow ? Slow->GetCharacterMovement()->MaxWalkSpeed : 0.f, Fast ? Fast->GetCharacterMovement()->MaxWalkSpeed : 0.f);
+			if (Slow) Slow->Destroy();
+			if (Fast) Fast->Destroy();
+			W->bFastParam = bWas;
+			return bOk ? EStep::Pass : EStep::Fail;
+		} });
+
+	// --- 18d. -altdeath (deathmatch 2.0): an item picked up comes back where it was 30 s later --------
+	{
+		struct FAlt { int32 Type = 0; FVector At = FVector::ZeroVector; bool bWasDM = false, bWasAlt = false; };
+		TSharedRef<FAlt> A = MakeShared<FAlt>();
+		Run->Steps.Add({ TEXT("altdeath"),
+			[W, A, Player](FString& Msg)
+			{
+				A->bWasDM = W->Flow().bDeathmatch;
+				A->bWasAlt = W->bAltDeathParam;
+				W->Flow().bDeathmatch = true;
+				W->bAltDeathParam = true;
+				ADoomPlayer* P = Player();
+				P->Inv().Ammo[(int32)EDoomAmmo::Bullets] = 0;
+				for (const TWeakObjectPtr<ADoomThing>& T : W->GetThings())
+				{
+					if (!T.IsValid() || T->bEffect || T->bPooled || T->bDropped || !T->Def || T->Def->DoomEdNum != 2007) continue; // a clip
+					A->Type = 2007;
+					A->At = T->GetActorLocation();
+					T->OnOverlap(nullptr, P, nullptr, 0, false, FHitResult());
+					break;
+				}
+				if (!A->Type) { Msg = TEXT("no clip on the map"); W->Flow().bDeathmatch = A->bWasDM; W->bAltDeathParam = A->bWasAlt; return false; }
+				return true;
+			},
+			[W, A](int32 Tics, FString& Msg)
+			{
+				auto ClipThere = [&]()
+				{
+					for (const TWeakObjectPtr<ADoomThing>& T : W->GetThings())
+					{
+						if (T.IsValid() && !T->bPooled && T->Def && T->Def->DoomEdNum == A->Type && FVector::Dist2D(T->GetActorLocation(), A->At) < 1.f) return true;
+					}
+					return false;
+				};
+				if (Tics == 5 && ClipThere()) { Msg = TEXT("the clip was not taken"); W->Flow().bDeathmatch = A->bWasDM; W->bAltDeathParam = A->bWasAlt; return EStep::Fail; }
+				if (Tics < 30 * 35 + 5) return EStep::Running;
+				const bool bBack = ClipThere();
+				Msg = FString::Printf(TEXT("a clip taken at (%.0f,%.0f): back after 30 s: %d"), Doom::ToDoom2D(A->At).X, Doom::ToDoom2D(A->At).Y, bBack);
+				W->Flow().bDeathmatch = A->bWasDM;
+				W->bAltDeathParam = A->bWasAlt;
+				return bBack ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
 	// --- 19 (last: it leaves the map). the intermission shows the vanilla par time ----------------
 	Run->Steps.Add({ TEXT("intermission"),
 		[this, W](FString& Msg)

@@ -159,7 +159,7 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 		HitBox->RegisterComponent();
 	}
 	UCharacterMovementComponent* Move = GetCharacterMovement();
-	Move->MaxWalkSpeed = Def->Speed / FMath::Max(1, Def->RunTics) * Doom::TicRate * S;
+	Move->MaxWalkSpeed = Def->Speed / FMath::Max(1, RunTics()) * Doom::TicRate * S;
 	Move->MaxFlySpeed = Move->MaxWalkSpeed;
 	if (Def->Flags & EThingFlag::Float)
 	{
@@ -215,8 +215,8 @@ void ADoomMonster::StartState(EMonsterState S)
 	switch (S)
 	{
 	case EMonsterState::Idle: Sprite->PlaySequence(Def->Idle, Def->IdleTics, true, bBright); break;
-	case EMonsterState::Chase: Sprite->PlaySequence(!Def->Run.IsEmpty() ? Def->Run : Def->Idle, Def->RunTics, true, bBright); StepStart = DoomPos(); break;
-	case EMonsterState::Melee: Sprite->PlaySequence(Def->Melee, 6, false, bBright); FaceTarget(); break;
+	case EMonsterState::Chase: Sprite->PlaySequence(!Def->Run.IsEmpty() ? Def->Run : Def->Idle, RunTics(), true, bBright); StepStart = DoomPos(); break;
+	case EMonsterState::Melee: Sprite->PlaySequence(Def->Melee, IsFastDemon() ? 3 : 6, false, bBright); FaceTarget(); break;
 	case EMonsterState::Missile:
 		Sprite->PlaySequence(Def->Attack, Is(Def, TEXT("ArchVile")) ? 5 : Is(Def, TEXT("Chaingunner")) || Is(Def, TEXT("SpiderMastermind")) ? 4 : 8, false, true);
 		FaceTarget();
@@ -226,7 +226,7 @@ void ADoomMonster::StartState(EMonsterState S)
 			DoomWorld->PlaySound(TEXT("VILATK"), &L);
 		}
 		break;
-	case EMonsterState::Pain: Sprite->PlaySequence(Def->Pain, 4, false, bBright); break;
+	case EMonsterState::Pain: Sprite->PlaySequence(Def->Pain, IsFastDemon() ? 2 : 4, false, bBright); break;
 	case EMonsterState::Raising: Sprite->PlaySequence(TEXT("[\\]"), 10, false, true); break;
 	case EMonsterState::Charging: Sprite->PlaySequence(TEXT("CD"), 4, true, true); break;
 	default: break;
@@ -321,7 +321,7 @@ void ADoomMonster::DoomTic()
 		}
 		break;
 	case EMonsterState::Chase:
-		if (bFrameChanged || Sprite->CurrentSequence().Len() == 1 && (DoomWorld->GetTic() % FMath::Max(1, Def->RunTics)) == 0)
+		if (bFrameChanged || Sprite->CurrentSequence().Len() == 1 && (DoomWorld->GetTic() % FMath::Max(1, RunTics())) == 0)
 		{
 			Chase();
 		}
@@ -817,7 +817,7 @@ void ADoomMonster::Chase()
 	if (bJustAttacked)
 	{
 		bJustAttacked = false;
-		if (DoomWorld->GetSkill() < 5)
+		if (!DoomWorld->IsFast())
 		{
 			NewChaseDir();
 		}
@@ -838,7 +838,7 @@ void ADoomMonster::Chase()
 		StartState(EMonsterState::Melee);
 		return;
 	}
-	if (!Def->Attack.IsEmpty() && (DoomWorld->GetSkill() >= 5 || MoveCount <= 0) && CheckMissileRange() && !(bSmart && FriendInLineOfFire()))
+	if (!Def->Attack.IsEmpty() && (DoomWorld->IsFast() || MoveCount <= 0) && CheckMissileRange() && !(bSmart && FriendInLineOfFire()))
 	{
 		StartState(EMonsterState::Missile);
 		bJustAttacked = true;
@@ -1057,6 +1057,17 @@ float ADoomMonster::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AC
 		}
 	}
 	return Damage;
+}
+
+bool ADoomMonster::IsFastDemon() const
+{
+	// G_InitNew: with -fast or on Nightmare the demons' run, attack and pain frames take half the time
+	return DoomWorld && DoomWorld->IsFast() && Def && (Def->DoomEdNum == 3002 || Def->DoomEdNum == 58);
+}
+
+int32 ADoomMonster::RunTics() const
+{
+	return IsFastDemon() ? FMath::Max(1, Def->RunTics / 2) : Def->RunTics;
 }
 
 void ADoomMonster::SetSmartAI(bool bOn)

@@ -173,6 +173,14 @@ public:
 
 	/** Doom's -deathmatch, read when the game boots. */
 	bool bDeathmatchParam = false;
+	/** -altdeath (deathmatch 2.0: pickups come back after 30 s, weapons don't stay), -nomonsters,
+	 *  -fast (Nightmare's fast monsters and missiles on any skill). The host page sets them too. */
+	bool bAltDeathParam = false, bNoMonsters = false, bFastParam = false;
+	bool IsAltDeath() const { return IsDeathmatch() && bAltDeathParam; }
+	/** Doom's fastparm: -fast or Nightmare. */
+	bool IsFast() const { return bFastParam || GetSkill() >= 5; }
+	/** -altdeath: a picked-up item comes back where it was, 30 s later (P_RespawnSpecials). */
+	void QueueRespawn(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 
 	/** Loads the configured IWAD (+ PWADs). */
 	bool InitWads(const FDoomWadSetup* Setup = nullptr);
@@ -453,6 +461,8 @@ private:
 	bool bModern = false;
 	bool bSmartAI = false;
 	TUniquePtr<FDoomMap> PendingEdited;
+	struct FItemRespawn { int32 Type; FVector Feet; float Angle; int32 Tic; };
+	TArray<FItemRespawn> ItemRespawns;
 	mutable FDoomNav Nav;
 	mutable bool bNavBuilt = false;
 	bool bNoParticles = false; // -noparticles

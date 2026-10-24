@@ -431,6 +431,11 @@ void ADoomPlayer::AnimateBody()
 	{
 		return;
 	}
+	// players 2-4 wear grey, brown and red (Doom's translation tables); the server's value replicates
+	if (const ADoomPlayerState* PS = GetPlayerState<ADoomPlayerState>())
+	{
+		Body->SetTranslation(PS->PlayerNumber & 3);
+	}
 	// Doom's S_PLAY states: run ABCD, attack E (F while the flash shows), pain G, death H-N, gibs O-W
 	FString Seq = TEXT("A");
 	int32 Tics = 4;

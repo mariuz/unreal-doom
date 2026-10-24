@@ -302,7 +302,8 @@ void ADoomPlayerController::MenuSelect(const FInputActionValue& V)
 		W->Menu.Select(*W);
 		break;
 	case EDoomGameState::Finale:
-		W->FinaleInput();
+		if (HasAuthority()) W->FinaleInput();
+		else ServerFinaleInput(); // the server runs the story screens; any player moves them on
 		break;
 	case EDoomGameState::Intermission:
 		if (W->Flow().IntermissionTic > Doom::TicRate)
@@ -389,6 +390,15 @@ void ADoomPlayerController::OpenMenuPage(int32 Page)
 	if (W && (W->GetState() == EDoomGameState::Playing || W->GetState() == EDoomGameState::Title))
 	{
 		W->Menu.Open(*W, (EMenuPage)Page);
+	}
+}
+
+void ADoomPlayerController::ServerFinaleInput_Implementation()
+{
+	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
+	if (W && W->GetState() == EDoomGameState::Finale)
+	{
+		W->FinaleInput();
 	}
 }
 
