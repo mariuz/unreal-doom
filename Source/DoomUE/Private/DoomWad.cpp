@@ -19,19 +19,19 @@ bool FDoomWad::AddFile(const FString& Path)
 	TArray<uint8> Bytes;
 	if (!FFileHelper::LoadFileToArray(Bytes, *Path))
 	{
-		UE_LOG(LogDoom, Error, TEXT("Cannot read WAD %s"), *Path);
+		UE_LOG(LogDoomMap, Error, TEXT("Cannot read WAD %s"), *Path);
 		return false;
 	}
 	if (Bytes.Num() < 12 || (FMemory::Memcmp(Bytes.GetData(), "IWAD", 4) != 0 && FMemory::Memcmp(Bytes.GetData(), "PWAD", 4) != 0))
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s is not a WAD"), *Path);
+		UE_LOG(LogDoomMap, Error, TEXT("%s is not a WAD"), *Path);
 		return false;
 	}
 	const int32 Count = WadRead::S32(&Bytes[4]);
 	const int32 DirOfs = WadRead::S32(&Bytes[8]);
 	if (Count < 0 || DirOfs < 0 || (int64)DirOfs + (int64)Count * 16 > Bytes.Num())
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s has a broken directory"), *Path);
+		UE_LOG(LogDoomMap, Error, TEXT("%s has a broken directory"), *Path);
 		return false;
 	}
 	const int32 FileIndex = Files.Num();
@@ -52,7 +52,7 @@ bool FDoomWad::AddFile(const FString& Path)
 	}
 	Files.Add(MoveTemp(Bytes));
 	Paths.Add(Path);
-	UE_LOG(LogDoom, Log, TEXT("Added %s: %d lumps"), *Path, Count);
+	UE_LOG(LogDoomMap, Log, TEXT("Added %s: %d lumps"), *Path, Count);
 	return true;
 }
 

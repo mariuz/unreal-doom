@@ -60,12 +60,12 @@ namespace DoomPerfTest
 		Sorted.Sort();
 		const float Median = Sorted.Num() ? Sorted[Sorted.Num() / 2] : 0.f;
 		auto MedianOf = [](TArray<float> A) { A.Sort(); return A.Num() ? A[A.Num() / 2] : 0.f; };
-		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: render thread median %.2f ms, GPU median %.2f ms"), *W->GetMapName(), Name,
+		UE_LOG(LogDoomTest, Display, TEXT("Perftest %s %s: render thread median %.2f ms, GPU median %.2f ms"), *W->GetMapName(), Name,
 			MedianOf(P.RenderFrames), MedianOf(P.GpuFrames));
 		const ADoomLevel* Lv = W->GetLevel();
-		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: moving chunks %lld regenerated, %.2f ms a frame"), *W->GetMapName(), Name,
+		UE_LOG(LogDoomTest, Display, TEXT("Perftest %s %s: moving chunks %lld regenerated, %.2f ms a frame"), *W->GetMapName(), Name,
 			Lv ? Lv->ChunksRegenerated - P.ChunkStart : 0, Lv ? (Lv->FlushSeconds - P.FlushStart) * 1000.0 / N : 0.0);
-		UE_LOG(LogDoom, Display, TEXT("Perftest %s %s: game thread median %.2f ms (mean %.2f), frame %.2f ms (%d frames), %.0f sight checks a second (%.0f%% by REJECT), effects %lld new and %lld reused; %s"),
+		UE_LOG(LogDoomTest, Display, TEXT("Perftest %s %s: game thread median %.2f ms (mean %.2f), frame %.2f ms (%d frames), %.0f sight checks a second (%.0f%% by REJECT), effects %lld new and %lld reused; %s"),
 			*W->GetMapName(), Name, Median, P.GameMs / N, P.FrameMs / N, P.Frames, Sights / FMath::Max(0.001, P.Seconds),
 			Sights ? 100.0 * (W->RejectedSights - P.RejectStart) / Sights : 0.0, W->EffectsSpawned - P.SpawnStart, W->EffectsReused - P.ReuseStart, *Counts(World, W));
 	}
@@ -131,7 +131,7 @@ namespace DoomPerfTest
 						for (int32 S : Movers) bMover |= L.Special == S;
 						if (bMover && L.Side[1] != INDEX_NONE) Started += W->UseLine(l, P) ? 1 : 0;
 					}
-					UE_LOG(LogDoom, Display, TEXT("Perftest %s: started %d doors and lifts"), *W->GetMapName(), Started);
+					UE_LOG(LogDoomTest, Display, TEXT("Perftest %s: started %d doors and lifts"), *W->GetMapName(), Started);
 				}
 				Begin(4);
 			}

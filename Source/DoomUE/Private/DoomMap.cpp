@@ -74,7 +74,7 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 	const int32 Marker = Wad.FindLump(Name);
 	if (Marker == INDEX_NONE)
 	{
-		UE_LOG(LogDoom, Error, TEXT("Map %s not found"), *Name);
+		UE_LOG(LogDoomMap, Error, TEXT("Map %s not found"), *Name);
 		return false;
 	}
 	const bool bLoaded = (Marker + 1 < Wad.NumLumps() && Wad.Lump(Marker + 1).NameStr == TEXT("TEXTMAP"))
@@ -82,7 +82,7 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 		: LoadBinary(Wad, Marker);
 	if (!bLoaded || Subsectors.Num() == 0)
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s: no usable BSP (vanilla, ZDoom extended or glBSP GL nodes)"), *Name);
+		UE_LOG(LogDoomMap, Error, TEXT("%s: no usable BSP (vanilla, ZDoom extended or glBSP GL nodes)"), *Name);
 		return false;
 	}
 	AssignSubsectorSectors();
@@ -97,7 +97,7 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 			Area += 0.5 * MapCross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
+	UE_LOG(LogDoomMap, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
 		*Name, Vertices.Num(), Lines.Num(), Sectors.Num(), Subsectors.Num(), Area, Things.Num(), *NodesFormat);
 	return true;
 }
@@ -200,7 +200,7 @@ bool FDoomMap::LoadUdmf(const FDoomWad& Wad, int32 Marker)
 		}
 		if (After != TEXT("{"))
 		{
-			UE_LOG(LogDoom, Error, TEXT("%s: TEXTMAP syntax error near '%s'"), *Name, *Tok);
+			UE_LOG(LogDoomMap, Error, TEXT("%s: TEXTMAP syntax error near '%s'"), *Name, *Tok);
 			return false;
 		}
 		FUdmfBlock Block;
@@ -292,12 +292,12 @@ bool FDoomMap::LoadUdmf(const FDoomWad& Wad, int32 Marker)
 	}
 	if (Sectors.Num() == 0 || Vertices.Num() == 0)
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s: TEXTMAP has no geometry"), *Name);
+		UE_LOG(LogDoomMap, Error, TEXT("%s: TEXTMAP has no geometry"), *Name);
 		return false;
 	}
 	if (Namespace != TEXT("doom"))
 	{
-		UE_LOG(LogDoom, Warning, TEXT("%s: UDMF namespace \"%s\": only Doom-format specials are supported"), *Name, *Namespace);
+		UE_LOG(LogDoomMap, Warning, TEXT("%s: UDMF namespace \"%s\": only Doom-format specials are supported"), *Name, *Namespace);
 	}
 
 	// nodes: the ZNODES lump between TEXTMAP and ENDMAP (as written by ZDBSP and other builders)
@@ -310,7 +310,7 @@ bool FDoomMap::LoadUdmf(const FDoomWad& Wad, int32 Marker)
 			return bOk;
 		}
 	}
-	UE_LOG(LogDoom, Error, TEXT("%s: UDMF map without ZNODES (build its nodes with ZDBSP or a map editor)"), *Name);
+	UE_LOG(LogDoomMap, Error, TEXT("%s: UDMF map without ZNODES (build its nodes with ZDBSP or a map editor)"), *Name);
 	return false;
 }
 
@@ -349,7 +349,7 @@ bool FDoomMap::LoadBinary(const FDoomWad& Wad, int32 Marker)
 	}
 	if (Sectors.Num() == 0)
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s has no sectors"), *Name);
+		UE_LOG(LogDoomMap, Error, TEXT("%s has no sectors"), *Name);
 		return false;
 	}
 
@@ -558,7 +558,7 @@ bool FDoomMap::LoadExtendedNodes(TConstArrayView<uint8> Lump)
 	{
 		if (!Inflate(Data, Len, Inflated))
 		{
-			UE_LOG(LogDoom, Error, TEXT("%s: %s nodes do not decompress"), *Name, *Magic);
+			UE_LOG(LogDoomMap, Error, TEXT("%s: %s nodes do not decompress"), *Name, *Magic);
 			return false;
 		}
 		Data = Inflated.GetData();
@@ -657,7 +657,7 @@ bool FDoomMap::LoadExtendedNodes(TConstArrayView<uint8> Lump)
 	}
 	if (C.bBad)
 	{
-		UE_LOG(LogDoom, Error, TEXT("%s: %s nodes are truncated"), *Name, *Magic);
+		UE_LOG(LogDoomMap, Error, TEXT("%s: %s nodes are truncated"), *Name, *Magic);
 		return false;
 	}
 	return true;

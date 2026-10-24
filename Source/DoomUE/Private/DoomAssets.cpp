@@ -13,7 +13,7 @@ namespace
 		T* Obj = LoadObject<T>(nullptr, Path);
 		if (!Obj)
 		{
-			UE_LOG(LogDoom, Error, TEXT("Missing asset %s: open the project in the editor once (it generates the Doom materials) or run -run=DoomContent"), Path);
+			UE_LOG(LogDoomRender, Error, TEXT("Missing asset %s: open the project in the editor once (it generates the Doom materials) or run -run=DoomContent"), Path);
 		}
 		return Obj;
 	}
@@ -60,7 +60,7 @@ UNiagaraSystem* DoomAssets::Particles(EDoomParticles Kind)
 	if (!Sys)
 	{
 		Missing[(int32)Kind] = true;
-		UE_LOG(LogDoom, Warning, TEXT("Missing effect %s: run -run=DoomContent -force"), ParticlesPath(Kind));
+		UE_LOG(LogDoomRender, Warning, TEXT("Missing effect %s: run -run=DoomContent -force"), ParticlesPath(Kind));
 	}
 	return Sys;
 }

@@ -285,11 +285,11 @@ int32 DoomMapCheck::Count(const TArray<FDoomMapIssue>& Issues, FDoomMapIssue::ES
 
 void DoomMapCheck::Log(const FString& MapName, const TArray<FDoomMapIssue>& Issues)
 {
-	UE_LOG(LogDoom, Display, TEXT("Checkmap %s: %d errors, %d warnings, %d notes"), *MapName,
+	UE_LOG(LogDoomMap, Display, TEXT("Checkmap %s: %d errors, %d warnings, %d notes"), *MapName,
 		Count(Issues, ESev::Error), Count(Issues, ESev::Warning), Count(Issues, ESev::Info));
 	for (const FDoomMapIssue& I : Issues)
 	{
 		const TCHAR* Kind = I.Severity == ESev::Error ? TEXT("error") : I.Severity == ESev::Warning ? TEXT("warning") : TEXT("note");
-		UE_LOG(LogDoom, Display, TEXT("Checkmap %s %s: %s"), *MapName, Kind, *I.Text);
+		UE_LOG(LogDoomMap, Display, TEXT("Checkmap %s %s: %s"), *MapName, Kind, *I.Text);
 	}
 }

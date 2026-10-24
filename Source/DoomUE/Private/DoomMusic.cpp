@@ -535,7 +535,7 @@ TArray<FOplInstrument> DoomMusic::LoadBank(const FDoomWad& Wad)
 	TConstArrayView<uint8> D = Wad.LumpData(TEXT("GENMIDI"));
 	if (D.Num() < 8 + 175 * 36 || FMemory::Memcmp(D.GetData(), "#OPL_II#", 8) != 0)
 	{
-		UE_LOG(LogDoom, Warning, TEXT("No GENMIDI bank: music disabled"));
+		UE_LOG(LogDoomAudio, Warning, TEXT("No GENMIDI bank: music disabled"));
 		return Bank;
 	}
 	Bank.SetNum(175);
@@ -575,10 +575,10 @@ TSharedPtr<FDoomMusicPlayer> DoomMusic::CreatePlayer(const FDoomWad& Wad, const 
 	FDoomSong Song;
 	if (!Song.LoadMus(D) && !Song.LoadMidi(D))
 	{
-		UE_LOG(LogDoom, Warning, TEXT("Music %s: missing or unreadable"), *Lump);
+		UE_LOG(LogDoomAudio, Warning, TEXT("Music %s: missing or unreadable"), *Lump);
 		return nullptr;
 	}
-	UE_LOG(LogDoom, Log, TEXT("Music %s: %d events, %.1f s"), *Lump, Song.Events.Num(), Song.Length);
+	UE_LOG(LogDoomAudio, Log, TEXT("Music %s: %d events, %.1f s"), *Lump, Song.Events.Num(), Song.Length);
 	return MakeShared<FDoomMusicPlayer>(*Bank, MoveTemp(Song), bLoop);
 }
 

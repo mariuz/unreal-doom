@@ -58,7 +58,7 @@ void ADoomGameState::OnRep_Finale()
 	if (Finale.Stage != LastFinaleStage)
 	{
 		LastFinaleStage = Finale.Stage;
-		UE_LOG(LogDoom, Log, TEXT("Finale from the server: stage %d, %d text lines, backdrop %s, picture %s"), Finale.Stage, Finale.Text.Num(), *Finale.Backdrop, *Finale.Picture);
+		UE_LOG(LogDoomNet, Log, TEXT("Finale from the server: stage %d, %d text lines, backdrop %s, picture %s"), Finale.Stage, Finale.Text.Num(), *Finale.Backdrop, *Finale.Picture);
 	}
 }
 

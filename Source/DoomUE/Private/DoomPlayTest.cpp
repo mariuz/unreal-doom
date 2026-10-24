@@ -1141,7 +1141,7 @@ void ADoomGameMode::StartPlayTest()
 				R->StartTic = Now;
 				if (!S.Start(Msg))
 				{
-					UE_LOG(LogDoom, Display, TEXT("Playtest %s SKIP: %s"), *S.Name, *Msg);
+					UE_LOG(LogDoomTest, Display, TEXT("Playtest %s SKIP: %s"), *S.Name, *Msg);
 					++R->Skipped;
 					++R->Index;
 					R->bStarted = false;
@@ -1154,13 +1154,13 @@ void ADoomGameMode::StartPlayTest()
 			{
 				return;
 			}
-			UE_LOG(LogDoom, Display, TEXT("Playtest %s %s: %s"), *S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
+			UE_LOG(LogDoomTest, Display, TEXT("Playtest %s %s: %s"), *S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
 			(Result == EStep::Pass ? R->Passed : R->Failed)++;
 			++R->Index;
 			R->bStarted = false;
 			GoHome();
 		}
-		UE_LOG(LogDoom, Display, TEXT("Playtest: %d passed, %d failed, %d skipped"), R->Passed, R->Failed, R->Skipped);
+		UE_LOG(LogDoomTest, Display, TEXT("Playtest: %d passed, %d failed, %d skipped"), R->Passed, R->Failed, R->Skipped);
 		FPlatformMisc::RequestExit(false, TEXT("playtest"));
 		GetWorldTimerManager().ClearTimer(R->Timer); // last: this frees the lambda's captures
 	}, 0.005f, true, 1.f);

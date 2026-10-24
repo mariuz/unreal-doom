@@ -27,7 +27,7 @@ namespace DoomMapCheck
 {
 	/** Every problem found; Gfx (optional) checks texture names and switch textures. */
 	DOOMUE_API TArray<FDoomMapIssue> Run(const FDoomMap& Map, const FDoomGraphics* Gfx, const FString& MapName);
-	/** "3 errors, 1 warning" and each issue, to LogDoom (commandlets, tests). */
+	/** "3 errors, 1 warning" and each issue, to LogDoomMap (commandlets, tests). */
 	DOOMUE_API void Log(const FString& MapName, const TArray<FDoomMapIssue>& Issues);
 	DOOMUE_API int32 Count(const TArray<FDoomMapIssue>& Issues, FDoomMapIssue::ESeverity Severity);
 }

@@ -107,11 +107,11 @@ void UDoomWorld::LoadPatches(const TArray<FString>& DehFiles)
 		const FString Text(D.Num(), reinterpret_cast<const ANSICHAR*>(D.GetData()));
 		if (LumpName == TEXT("DEHACKED"))
 		{
-			UE_LOG(LogDoom, Log, TEXT("DEHACKED lump: %s"), *DoomDehacked::Apply(Text).ToString());
+			UE_LOG(LogDoomGame, Log, TEXT("DEHACKED lump: %s"), *DoomDehacked::Apply(Text).ToString());
 		}
 		else
 		{
-			UE_LOG(LogDoom, Log, TEXT("UMAPINFO lump: %d maps"), MapInfos.Parse(Text));
+			UE_LOG(LogDoomGame, Log, TEXT("UMAPINFO lump: %d maps"), MapInfos.Parse(Text));
 		}
 	}
 	for (const FString& File : DehFiles)
@@ -119,11 +119,11 @@ void UDoomWorld::LoadPatches(const TArray<FString>& DehFiles)
 		FString Text;
 		if (FFileHelper::LoadFileToString(Text, *File))
 		{
-			UE_LOG(LogDoom, Log, TEXT("%s: %s"), *FPaths::GetCleanFilename(File), *DoomDehacked::Apply(Text).ToString());
+			UE_LOG(LogDoomGame, Log, TEXT("%s: %s"), *FPaths::GetCleanFilename(File), *DoomDehacked::Apply(Text).ToString());
 		}
 		else
 		{
-			UE_LOG(LogDoom, Error, TEXT("Cannot read DeHackEd patch %s"), *File);
+			UE_LOG(LogDoomGame, Error, TEXT("Cannot read DeHackEd patch %s"), *File);
 		}
 	}
 	// UMAPINFO is the more specific source: its par times win over DeHackEd's [PARS]
@@ -174,7 +174,7 @@ void UDoomWorld::TicRespawn()
 			Risen->SpawnFeet = M->SpawnFeet;
 			Risen->SpawnAngle = M->SpawnAngle;
 			Risen->bCanRespawn = true;
-			UE_LOG(LogDoom, Log, TEXT("Nightmare: %s respawned"), *Risen->Def->Name);
+			UE_LOG(LogDoomGame, Log, TEXT("Nightmare: %s respawned"), *Risen->Def->Name);
 		}
 		M->Destroy();
 	}
@@ -203,7 +203,7 @@ void UDoomWorld::OnMonsterDied(ADoomMonster* Dead)
 				});
 				if (bAllDead)
 				{
-					UE_LOG(LogDoom, Log, TEXT("Boss action: special %d on tag %d"), A.Special, A.Tag);
+					UE_LOG(LogDoomGame, Log, TEXT("Boss action: special %d on tag %d"), A.Special, A.Tag);
 					ExecuteSpecial(A.Special, A.Tag);
 				}
 			}
@@ -465,7 +465,7 @@ void UDoomWorld::OnFlowReplicated()
 	const FDoomLevelFlow& F = Flow();
 	if (!F.CurrentMap.IsEmpty() && F.LevelSerial != LoadedSerial && F.Phase == EDoomGameState::Playing)
 	{
-		UE_LOG(LogDoom, Log, TEXT("Client: building %s (level %d) from the server"), *F.CurrentMap, F.LevelSerial);
+		UE_LOG(LogDoomNet, Log, TEXT("Client: building %s (level %d) from the server"), *F.CurrentMap, F.LevelSerial);
 		LoadMap(F.CurrentMap, false, true);
 		// changes the server published before this map was built
 		if (const ADoomGameState* GS = GetDoomGameState())

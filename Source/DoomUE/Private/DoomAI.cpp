@@ -934,7 +934,7 @@ const FDoomAIAssets& DoomAI::Get()
 	{
 		Assets = FDoomAIAssets();
 		Build([](UClass* Class, FName Name) { UObject* O = NewObject<UObject>(GetTransientPackage(), Class, Name); O->AddToRoot(); return O; }, Assets);
-		UE_LOG(LogDoom, Log, TEXT("Monster AI: no assets in %s, built the tree and queries in code"), AssetFolder);
+		UE_LOG(LogDoomAI, Log, TEXT("Monster AI: no assets in %s, built the tree and queries in code"), AssetFolder);
 	}
 	else
 	{
