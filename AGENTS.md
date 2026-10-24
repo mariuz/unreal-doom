@@ -172,6 +172,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * multiplayer polish: player colours (sprite translation), finale on clients, `-altdeath`,
+    `-nomonsters`, `-fast`, the MULTIPLAYER page (`-hosttest`, `-jointest`);
   * gamepad rebinding (`Pad*` mappables, `FMappable::bGamepad`);
   * performance: idle monsters sleep, no CLASSIC AI controllers, REJECT, an effect pool, cheaper
     automap marking (`-perftest`, `-perfbaseline`); pooled effects are hidden `ADoomThing`s with

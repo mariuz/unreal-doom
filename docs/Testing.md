@@ -120,6 +120,9 @@ first 11 steps failed on E1M1.
 | `things` | Every one-frame thing's sprite sleeps (no tick, in the batched facing pass) and every animated one still ticks |
 | `corpses` | With every monster killed, 90% of the corpses (all, in practice) run no movement, actor or sprite tick, and a sleeping corpse still turns to face the camera when the player steps aside |
 | `rebind` | The Controls list has every rebindable control; binding Fire to F makes Enhanced Input map F instead of Mouse1 (Ctrl stays) and the menu row read "FIRE  F, CTRL" (`playtest_controls.png`); binding PAD FIRE to the left trigger replaces the right one; the reset brings Mouse1 and the right trigger back |
+| `colours` | The marine's frames for players 2-4 have no green left: every green pixel moved to the grey, brown or red ramp |
+| `fast` | With `-fast`, demons take half the frames a step and walk twice as fast |
+| `altdeath` | With deathmatch 2.0 rules, a clip picked up is back where it was 30 s later |
 | `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
 
 Keys pressed from the test (`InputKey`) reach the controller's own key handling (the prompts) but

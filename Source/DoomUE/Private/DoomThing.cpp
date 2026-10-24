@@ -229,7 +229,8 @@ void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, U
 		return; // pickups happen on the server
 	}
 	// deathmatch: weapons stay for the next player, and you cannot take one you already carry
-	const bool bWeaponStays = DoomWorld->IsDeathmatch() && !bDropped && Def->Pickup >= EPickup::Chainsaw;
+	// weapons stay in deathmatch 1.0; deathmatch 2.0 (-altdeath) takes them and brings them back
+	const bool bWeaponStays = DoomWorld->IsDeathmatch() && !DoomWorld->IsAltDeath() && !bDropped && Def->Pickup >= EPickup::Chainsaw;
 	if (bWeaponStays)
 	{
 		static const TMap<EPickup, EDoomWeapon> Weapons = {
@@ -250,6 +251,11 @@ void ADoomThing::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, U
 		}
 		if (!bWeaponStays)
 		{
+			// -altdeath: the map's items return, except invulnerability and invisibility (as Doom)
+			if (DoomWorld->IsAltDeath() && !bDropped && Def->DoomEdNum != 2022 && Def->DoomEdNum != 2024)
+			{
+				DoomWorld->QueueRespawn(Def->DoomEdNum, GetActorLocation() - FVector(0, 0, Capsule->GetScaledCapsuleHalfHeight()), Sprite->DoomAngle);
+			}
 			Destroy();
 		}
 	}

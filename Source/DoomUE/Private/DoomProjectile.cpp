@@ -101,7 +101,7 @@ void ADoomProjectile::InitProjectile(UDoomWorld* InWorld, const FDoomProjectileD
 		Sphere->IgnoreActorWhenMoving(InSource, true);
 	}
 	float Speed = Def->Speed;
-	if (DoomWorld->GetSkill() >= 5 && InSource && !InSource->IsA<ADoomPlayer>() &&
+	if (DoomWorld->IsFast() && InSource && !InSource->IsA<ADoomPlayer>() &&
 		(Def->Name.Equals(TEXT("ImpBall")) || Def->Name.Equals(TEXT("CacoBall")) || Def->Name.Equals(TEXT("BaronBall"))))
 	{
 		Speed = 20.f; // nightmare's fast imp, cacodemon and baron balls (the other missiles keep their speed)

@@ -42,6 +42,9 @@ public:
 	/** A monster waiting for the player sleeps like a corpse until it wakes or its floor moves. */
 	void WakeIdle();
 	bool IsIdleAsleep() const { return bIdleAsleep; }
+	/** Frames a step takes: a demon's are halved with -fast or on Nightmare. */
+	int32 RunTics() const;
+	bool IsFastDemon() const;
 
 	/** Vanilla mobjinfo mass, for knockback. */
 	static float MonsterMass(const FDoomThingDef* D);

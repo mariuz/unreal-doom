@@ -71,6 +71,10 @@ void ADoomGameMode::Tick(float DeltaSeconds)
 			else
 			{
 				W->TicFinale();
+				if (W->IsNetServer())
+				{
+					if (ADoomGameState* GS = GetGameState<ADoomGameState>()) GS->PublishFinale(*W);
+				}
 			}
 		}
 	}
@@ -226,6 +230,10 @@ void ADoomGameMode::FinishIntermission()
 void ADoomGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);
+	OptMap = UGameplayStatics::ParseOption(Options, TEXT("DoomMap"));
+	OptRules = UGameplayStatics::HasOption(Options, TEXT("DoomRules")) ? FCString::Atoi(*UGameplayStatics::ParseOption(Options, TEXT("DoomRules"))) : -1;
+	bOptNoMonsters = UGameplayStatics::HasOption(Options, TEXT("NoMonsters"));
+	bOptFast = UGameplayStatics::HasOption(Options, TEXT("Fast"));
 	if (GameSession)
 	{
 		GameSession->MaxPlayers = 4; // Doom's MAXPLAYERS
@@ -327,6 +335,23 @@ void ADoomGameMode::StartPlay()
 		Warp = MapActor->MapName;
 	}
 	FParse::Value(FCommandLine::Get(), TEXT("-warp="), Warp);
+	// a game hosted from the menu: its map and rules
+	if (!OptMap.IsEmpty())
+	{
+		Warp = OptMap;
+	}
+	if (OptRules >= 0)
+	{
+		W->bDeathmatchParam = OptRules >= 1;
+		W->bAltDeathParam = OptRules == 2;
+	}
+	W->bNoMonsters |= bOptNoMonsters;
+	W->bFastParam |= bOptFast;
+	if (!OptMap.IsEmpty() || OptRules >= 0)
+	{
+		UE_LOG(LogDoom, Log, TEXT("Hosted game: %s, %s%s%s"), *Warp, OptRules == 2 ? TEXT("deathmatch 2.0") : OptRules == 1 ? TEXT("deathmatch") : TEXT("co-op"),
+			W->bNoMonsters ? TEXT(", no monsters") : TEXT(""), W->bFastParam ? TEXT(", fast") : TEXT(""));
+	}
 	if (!Warp.IsEmpty())
 	{
 		// -warp=1 1 style (episode map) or -warp=E1M1 / MAP01
@@ -698,6 +723,32 @@ void ADoomGameMode::StartPlay()
 		}, 2.f, false);
 	}
 
+	// -hosttest / -jointest: the menu's Multiplayer page hosts a deathmatch on E1M1 with fast monsters,
+	// or joins 127.0.0.1 (with -nettest the two then run the network test)
+	if (FParse::Param(FCommandLine::Get(), TEXT("hosttest")) && OptMap.IsEmpty())
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W]()
+		{
+			W->Menu.Open(*W, EMenuPage::Multiplayer);
+			W->Menu.NetRules = 1;
+			W->Menu.NetMapIndex = FMath::Max(0, W->GetWad()->MapNames().IndexOfByKey(W->GetWad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")));
+			W->Menu.bNetFast = true;
+			W->Menu.Item = 4; // HOST GAME
+			W->Menu.Select(*W);
+		}, 2.f, false);
+	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("jointest")))
+	{
+		FTimerHandle T;
+		GetWorldTimerManager().SetTimer(T, [W]()
+		{
+			if (W->IsNetClient()) return;
+			W->Menu.Open(*W, EMenuPage::Multiplayer);
+			W->Menu.Item = 7; // CONNECT (to 127.0.0.1)
+			W->Menu.Select(*W);
+		}, 3.f, false);
+	}
 	// -perftest: a performance measure of the map (DoomPerfTest.cpp)
 	if (FParse::Param(FCommandLine::Get(), TEXT("perftest")) && W->GetMap())
 	{

@@ -35,6 +35,19 @@ bool UDoomSpriteComponent::IsSimulated() const
 	return !Owner || Owner->HasAuthority();
 }
 
+void UDoomSpriteComponent::SetTranslation(int32 InTranslation)
+{
+	if (Translation == InTranslation)
+	{
+		return;
+	}
+	Translation = InTranslation;
+	Net.Translation = (uint8)InTranslation;
+	LastPicture = nullptr; // the next facing pass picks the recoloured frame
+	bDirty = true;
+	Wake();
+}
+
 void UDoomSpriteComponent::OnRep_Net()
 {
 	if (!DoomWorld || !MID)
@@ -59,6 +72,7 @@ void UDoomSpriteComponent::OnRep_Net()
 	}
 	SetFuzz(Net.bFuzz);
 	DoomAngle = Net.Angle;
+	SetTranslation(Net.Translation);
 }
 
 void UDoomSpriteComponent::BindLevel()
@@ -268,7 +282,7 @@ void UDoomSpriteComponent::UpdateVisual(const FVector& ViewLocation)
 	const float Rel = FMath::Fmod(AngToThing - DoomAngle + 202.5f + 720.f, 360.f);
 	const int32 Rotation = FMath::Clamp((int32)(Rel / 45.f), 0, 7) + 1;
 
-	const FDoomSpriteFrame F = DoomWorld->GetGraphics()->SpriteFrame(Sprite, CurrentFrame(), Rotation);
+	const FDoomSpriteFrame F = DoomWorld->GetGraphics()->SpriteFrame(Sprite, CurrentFrame(), Rotation, Translation);
 	if (!F.Picture)
 	{
 		SetVisibility(false);

@@ -63,4 +63,9 @@ private:
 	void StartPlayTest();
 	double Accumulator = 0;       // level time not yet run as tics
 	double ScreenAccumulator = 0; // same, for the intermission and story screens
+	/** The menu's host page travel options: DoomMap, DoomRules (0 co-op, 1 deathmatch, 2 2.0),
+	 *  NoMonsters, Fast. */
+	FString OptMap;
+	int32 OptRules = -1;
+	bool bOptNoMonsters = false, bOptFast = false;
 };

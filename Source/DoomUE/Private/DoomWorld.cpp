@@ -250,7 +250,10 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 	bSmartAI = Settings->bSmartMonsters || FParse::Param(FCommandLine::Get(), TEXT("smartai"));
 	if (FParse::Param(FCommandLine::Get(), TEXT("classicai"))) bSmartAI = false;
 	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
-	bDeathmatchParam = FParse::Param(FCommandLine::Get(), TEXT("deathmatch"));
+	bAltDeathParam = FParse::Param(FCommandLine::Get(), TEXT("altdeath"));
+	bDeathmatchParam = FParse::Param(FCommandLine::Get(), TEXT("deathmatch")) || bAltDeathParam;
+	bNoMonsters = FParse::Param(FCommandLine::Get(), TEXT("nomonsters"));
+	bFastParam = FParse::Param(FCommandLine::Get(), TEXT("fast"));
 	UE_LOG(LogDoom, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
 	return true;
 }
@@ -336,6 +339,7 @@ void UDoomWorld::UnloadMap()
 	Things.Reset();
 	Monsters.Reset();
 	Projectiles.Reset();
+	ItemRespawns.Reset();
 	EnvironmentActors.Reset();
 	Movers.Reset();
 	Lights.Reset();
@@ -689,6 +693,10 @@ void UDoomWorld::SpawnMapThings()
 		if (bDM && Def->Pickup >= EPickup::BlueCard && Def->Pickup <= EPickup::RedSkull)
 		{
 			continue; // Doom's MF_NOTDMATCH: no keys in deathmatch
+		}
+		if ((Def->Flags & EThingFlag::Monster) && bNoMonsters)
+		{
+			continue; // -nomonsters
 		}
 		const int32 Sec = Map->SectorAt(T.P);
 		const float Floor = Sec >= 0 ? Map->Sectors[Sec].Floor : 0;
@@ -1257,10 +1265,27 @@ void UDoomWorld::UpdateMaterialGlobals(float SubTic)
 	}
 }
 
+void UDoomWorld::QueueRespawn(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle)
+{
+	ItemRespawns.Add({ DoomEdNum, UEFeet, DoomAngle, Flow().LevelTic + 30 * Doom::TicRate });
+}
+
 void UDoomWorld::RunTic()
 {
 	++Flow().LevelTic;
 	if (MessageTics > 0) --MessageTics;
+	// -altdeath: items back after 30 s, with the teleport fog and its sound (P_RespawnSpecials)
+	for (int32 i = ItemRespawns.Num() - 1; i >= 0; --i)
+	{
+		const FItemRespawn R = ItemRespawns[i];
+		if (Flow().LevelTic < R.Tic) continue;
+		ItemRespawns.RemoveAtSwap(i);
+		if (SpawnThing(R.Type, R.Feet, R.Angle))
+		{
+			SpawnEffect(TEXT("IFOG"), TEXT("ABCDE"), 6, R.Feet + FVector(0, 0, 16.f * Doom::Scale));
+			PlaySound(TEXT("ITMBK"), &R.Feet);
+		}
+	}
 
 	for (ADoomPlayer* P : GetPlayers())
 	{
@@ -3091,8 +3116,14 @@ FString UDoomWorld::NetFingerprint() const
 	{
 		for (const ADoomPlayerState* PS : GS->DoomPlayers())
 		{
-			Players += FString::Printf(TEXT(" [P%d hp%d am%d w%d k%d f%d]"), PS->PlayerNumber + 1, PS->Inv.Health, PS->Inv.Ammo[0],
-				(int32)PS->Inv.Weapons[(int32)EDoomWeapon::Shotgun], PS->LevelKills, PS->Frags);
+			// the marine's colour as this machine draws it (Doom's translation: 0 green .. 3 red)
+			const ADoomPlayer* Pawn = PS->GetPawn<ADoomPlayer>();
+			Players += FString::Printf(TEXT(" [P%d hp%d am%d w%d k%d f%d c%d]"), PS->PlayerNumber + 1, PS->Inv.Health, PS->Inv.Ammo[0],
+				(int32)PS->Inv.Weapons[(int32)EDoomWeapon::Shotgun], PS->LevelKills, PS->Frags, Pawn && Pawn->Body ? Pawn->Body->Translation : -1);
+		}
+		if (Flow().Phase == EDoomGameState::Finale)
+		{
+			Players += FString::Printf(TEXT(" finale stage%d tic%d lines%d"), (int32)FinaleStage, FinaleTic, FinaleText.Num());
 		}
 	}
 	return FString::Printf(TEXT("%s level%d phase%d monsters%d/%d things%d door%d ceiling%.0f kills%d/%d%s"),

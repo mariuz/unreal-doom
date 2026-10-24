@@ -1,5 +1,6 @@
 #include "DoomMenu.h"
 #include "DoomWorld.h"
+#include "DoomMapGen.h"
 #include "DoomEditor.h"
 #include "DoomGraphics.h"
 #include "DoomPlayer.h"
@@ -79,8 +80,25 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 			R.Add({ EKind::Action, TEXT("M_RDTHIS"), TEXT("READ THIS!") });
 		}
 		R.Add({ EKind::Action, TEXT("M_QUITG"), TEXT("QUIT GAME") });
-		R.Add({ EKind::Choice, FString(), TEXT("MAP EDITOR") }); // last, so Doom's own rows keep their places
+		R.Add({ EKind::Choice, FString(), TEXT("MULTIPLAYER") }); // after Doom's own rows, which keep their places
+		R.Add({ EKind::Choice, FString(), TEXT("MAP EDITOR") });
 		break;
+	case EMenuPage::Multiplayer:
+	{
+		static const TCHAR* Rules[] = { TEXT("CO-OP"), TEXT("DEATHMATCH"), TEXT("DEATHMATCH 2.0") };
+		const TArray<FString>& Maps = W.GetWad()->MapNames();
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("GAME: %s"), Rules[FMath::Clamp(NetRules, 0, 2)]) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MAP: < %s >"), Maps.IsValidIndex(NetMapIndex) ? *Maps[NetMapIndex] : TEXT("RANDOM")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTERS: %s"), bNetNoMonsters ? TEXT("NONE") : TEXT("YES")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FAST MONSTERS: %s"), bNetFast ? TEXT("YES") : TEXT("NO")) });
+		R.Add({ EKind::Choice, FString(), TEXT("HOST GAME") });
+		R.Add({ EKind::Gap });
+		FMenuRow Join{ EKind::Choice, FString(), TEXT("JOIN ADDRESS:") };
+		Join.ValueText = bEditing ? EditText + TEXT("_") : JoinAddress;
+		R.Add(Join);
+		R.Add({ EKind::Choice, FString(), TEXT("CONNECT") });
+		break;
+	}
 	case EMenuPage::Episode:
 		for (const FDoomEpisode& E : Episodes(W))
 		{
@@ -183,6 +201,7 @@ FIntPoint FDoomMenu::Origin() const
 	switch (Page)
 	{
 	case EMenuPage::Main: return FIntPoint(97, 64);
+	case EMenuPage::Multiplayer: return FIntPoint(56, 40);
 	case EMenuPage::Episode:
 	case EMenuPage::Skill: return FIntPoint(48, 63);
 	case EMenuPage::Options: return FIntPoint(60, 37);
@@ -227,6 +246,13 @@ void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
 	if (Key == EKeys::Enter || Key == EKeys::Gamepad_FaceButton_Bottom || Key == EKeys::LeftMouseButton)
 	{
 		bEditing = false;
+		if (Page == EMenuPage::Multiplayer)
+		{
+			// the address to join
+			if (!EditText.IsEmpty()) JoinAddress = EditText;
+			W.PlaySound(TEXT("PISTOL"), nullptr);
+			return;
+		}
 		if (W.SaveGame(Item + 1, EditText))
 		{
 			W.PlaySound(TEXT("PISTOL"), nullptr);
@@ -396,6 +422,23 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 		default: bChanged = false; break;
 		}
 	}
+	else if (Page == EMenuPage::Multiplayer && Item <= 3)
+	{
+		switch (Item)
+		{
+		case 0: NetRules = (NetRules + Dir + 3) % 3; break;
+		case 1:
+		{
+			const int32 N = W.GetWad()->MapNames().Num() + 1; // the last choice: a random map
+			NetMapIndex = (NetMapIndex + Dir + N) % N;
+			break;
+		}
+		case 2: bNetNoMonsters = !bNetNoMonsters; break;
+		default: bNetFast = !bNetFast; break;
+		}
+		W.PlaySound(TEXT("STNMOV"), nullptr);
+		return;
+	}
 	else if (Page == EMenuPage::Sound && (Item == 0 || Item == 2))
 	{
 		float& V = Item == 0 ? S->SfxVolume : S->MusicVolume;
@@ -464,7 +507,8 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8 || Item == 9)))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8 || Item == 9))
+		|| (Page == EMenuPage::Multiplayer && Item <= 3))
 	{
 		Adjust(W, 1);
 		return;
@@ -472,10 +516,50 @@ void FDoomMenu::Select(UDoomWorld& W)
 	Activate(W);
 }
 
+FString FDoomMenu::HostOptions(UDoomWorld& W) const
+{
+	const TArray<FString>& Maps = W.GetWad()->MapNames();
+	const FString Map = Maps.IsValidIndex(NetMapIndex) ? Maps[NetMapIndex] : DoomMapGen::NameForSeed((uint32)FMath::RandRange(1, 0xFFFFF));
+	return FString::Printf(TEXT("listen?DoomMap=%s?DoomRules=%d%s%s"), *Map, NetRules, bNetNoMonsters ? TEXT("?NoMonsters") : TEXT(""), bNetFast ? TEXT("?Fast") : TEXT(""));
+}
+
+void FDoomMenu::HostGame(UDoomWorld& W)
+{
+	// a listen server on Doom's one Unreal level; the game mode reads the options (InitGame)
+	const FString Options = HostOptions(W);
+	UE_LOG(LogDoom, Log, TEXT("Hosting: %s"), *Options);
+	Stack.Reset();
+	Close(W);
+	UGameplayStatics::OpenLevel(W.GetWorld(), FName(TEXT("/Engine/Maps/Entry")), true, Options);
+}
+
+void FDoomMenu::JoinGame(UDoomWorld& W)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(W.GetWorld(), 0);
+	if (!PC || JoinAddress.IsEmpty())
+	{
+		W.PlaySound(TEXT("OOF"), nullptr);
+		return;
+	}
+	UE_LOG(LogDoom, Log, TEXT("Joining %s"), *JoinAddress);
+	Stack.Reset();
+	Close(W);
+	PC->ClientTravel(JoinAddress, TRAVEL_Absolute);
+}
+
 void FDoomMenu::Activate(UDoomWorld& W)
 {
 	switch (Page)
 	{
+	case EMenuPage::Multiplayer:
+		if (Item == 4) HostGame(W);
+		else if (Item == 6)
+		{
+			EditText = JoinAddress;
+			bEditing = true; // typed like a save name; Enter keeps it
+		}
+		else if (Item == 7) JoinGame(W);
+		return;
 	case EMenuPage::Controls:
 		if (Item >= DoomInput::Mappables().Num())
 		{
@@ -491,6 +575,11 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		return;
 	case EMenuPage::Main:
 	{
+		if (Item == Rows(W).Num() - 2)
+		{
+			Push(W, EMenuPage::Multiplayer);
+			return;
+		}
 		if (Item == Rows(W).Num() - 1)
 		{
 			// MAP EDITOR: the map being played, or a new random one

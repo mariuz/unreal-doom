@@ -15,8 +15,9 @@ Start a listen server (it plays too) on E1M1:
 "C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" "/Engine/Maps/Entry?listen" -game -warp=E1M1
 ```
 
-Add `-deathmatch` for deathmatch rules. Join from another machine, or from a second window on
-the same one:
+Add `-deathmatch` for deathmatch rules, or `-altdeath` for deathmatch 2.0 (items come back 30 s after
+they are taken, and weapons don't stay). `-nomonsters` leaves the monsters out and `-fast` makes them
+Nightmare-fast on any skill. Join from another machine, or from a second window on the same one:
 
 ```bash
 "C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" 127.0.0.1 -game
@@ -24,13 +25,21 @@ the same one:
 
 You can also use the console: `open 127.0.0.1`. The game uses UDP port 7777.
 
+**From the menu:** MULTIPLAYER in the main menu.
+
+* **Hosting:** choose the game (co-op, deathmatch, deathmatch 2.0), the map (or a random one),
+  monsters on or off and fast monsters, then pick **HOST GAME**. It opens a listen server with those
+  options (`listen?DoomMap=E1M1?DoomRules=1?NoMonsters?Fast`), which the game mode reads.
+* **Joining:** type an address in **JOIN ADDRESS** (127.0.0.1 by default) and pick **CONNECT**.
+
 ## Rules
 
 | | Co-op | Deathmatch (`-deathmatch`) |
 |---|---|---|
 | Starts | Doom's player 1-4 starts by player number. A map without them lines players up beside start 1 | A random deathmatch start (type 11), else the co-op starts |
 | Things | Single-player things plus those flagged *multiplayer only* (flag 16) | The same without keys (Doom's `MF_NOTDMATCH`) |
-| Weapons | Picked up and gone | **Weapons stay**: they remain for the next player, and you cannot take one you carry |
+| Weapons | Picked up and gone | **Weapons stay**: they remain for the next player, and you cannot take one you carry. With `-altdeath`, weapons are taken like other items |
+| Items | Picked up and gone | Gone, or with `-altdeath` back where they were 30 s later, with the item fog (except invulnerability and invisibility) |
 | Dying | Press Use to be reborn at your start with a pistol. The level carries on | The same, at a deathmatch start |
 | Frags | Counted as in Doom's `P_KillMobj`: another player's kill +1 for them; your own rocket, or a death with no source (slime, crushers), −1; monsters change nothing | Shown on the status bar in place of ARMS |
 | Intermission | A row per player: kills, items and secrets as a share of the level's totals, and frags | Frags per player |
@@ -38,7 +47,9 @@ You can also use the console: `open 127.0.0.1`. The game uses UDP port 7777.
 | Saving | Not in network games | Same |
 
 Each player's face on the status bar and their intermission row sit on their colour square
-(`STFB0-3`, `STPB0-3`). Any player can press Enter to leave the intermission.
+(`STFB0-3`, `STPB0-3`). The marines wear Doom's colours, as its translation tables recolour the green
+ramp: player 1 green, 2 grey, 3 brown, 4 red (`FDoomGraphics::SpriteFrame`'s translation, replicated
+with the sprite). Any player can press Enter to leave the intermission.
 
 ## What travels over the network
 
@@ -68,6 +79,8 @@ Each player's face on the status bar and their intermission row sit on their col
     death, gibs).
   * Fire, use and weapon changes are server RPCs. Movement and view use `CharacterMovement`
     prediction.
+* **Finale screens** (`ADoomGameState::Finale`): the story text, backdrop, picture and the cast call,
+  published by the server each finale tic; any player's Enter moves them on (`ServerFinaleInput`).
 * **Sounds, effects, particles**:
   * Unreliable multicasts on the game state. Puffs, blood and teleport fog are spawned locally
     on each client.
@@ -103,15 +116,14 @@ the network.
    intermission.
 
 Both log `NetFingerprint()` every second (map, level serial, phase, monsters alive and dead,
-things, the door's ceiling, totals, and each player's health, ammo, kills and frags), so the
-two logs can be compared line by line.
+things, the door's ceiling, totals, and each player's health, ammo, kills, frags and colour as that
+machine draws it, plus the finale's stage), so the two logs can be compared line by line.
+
+`-hosttest` (on the first) and `-jointest` (on the second) do the same through the menu's
+Multiplayer page: a fast deathmatch on E1M1 hosted from the page, joined from it.
 
 ## Not done yet
 
-* Doom's player colour translation: every marine is green.
-* Finale and ending screens are only drawn on the server. Clients see the phase but not the
-  text or picture state.
-* Things picked up in deathmatch never respawn (`-altdeath`), and there are no `-nomonsters` or
-  `-fast` switches for network games.
+* The host page has no skill choice (the host's own skill setting is used) and no port.
 * Joining mid-game spawns the new player at their start. Seamless travel between maps isn't
   used (maps change inside one Unreal level, so it isn't needed today).

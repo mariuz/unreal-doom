@@ -31,6 +31,8 @@ struct FDoomSpriteNet
 	UPROPERTY() uint8 Serial = 0;
 	/** Facing, whole degrees. */
 	UPROPERTY() uint16 Angle = 0;
+	/** Player colour translation (0 none, 1-3 grey, brown, red). */
+	UPROPERTY() uint8 Translation = 0;
 };
 
 UCLASS(ClassGroup = Doom, meta = (BlueprintSpawnableComponent))
@@ -43,6 +45,9 @@ public:
 
 	void Init(UDoomWorld* InWorld, const FString& InSprite);
 	void SetSpritePrefix(const FString& InSprite) { Sprite = InSprite; bDirty = true; }
+	/** Doom's player colours: the marines of players 2-4 (FDoomGraphics::SpriteFrame). */
+	void SetTranslation(int32 InTranslation);
+	int32 Translation = 0;
 
 	/** Plays a frame sequence such as "ABCD"; one frame per Tics tics. */
 	void PlaySequence(const FString& Frames, int32 Tics, bool bLoop, bool bFullBright = false);

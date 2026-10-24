@@ -68,6 +68,7 @@ public:
 	TWeakObjectPtr<AActor> LastAttacker;
 
 protected:
+	friend class ADoomGameMode; // the scripted test runs (-playtest)
 	UFUNCTION()
 	void OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& Sweep);
 

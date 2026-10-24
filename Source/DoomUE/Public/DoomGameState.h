@@ -163,6 +163,24 @@ struct TStructOpsTypeTraits<FDoomSideNetArray> : public TStructOpsTypeTraitsBase
 	enum { WithNetDeltaSerializer = true };
 };
 
+/** The story screens and endings as the server shows them (DoomFinale.cpp), for clients to draw. */
+USTRUCT()
+struct FDoomFinaleNet
+{
+	GENERATED_BODY()
+
+	UPROPERTY() uint8 Stage = 0;
+	UPROPERTY() TArray<FString> Text;
+	UPROPERTY() FString Backdrop;
+	UPROPERTY() FString Picture;
+	UPROPERTY() int32 Tic = 0;
+	UPROPERTY() int32 CastIndex = 0;
+	UPROPERTY() FString CastSequence;
+	UPROPERTY() int32 CastFrame = 0;
+	UPROPERTY() bool bCastAttacking = false;
+	UPROPERTY() bool bCastDying = false;
+};
+
 UCLASS()
 class DOOMUE_API ADoomGameState : public AGameStateBase
 {
@@ -178,6 +196,11 @@ public:
 	FDoomSectorNetArray SectorNet;
 	UPROPERTY(Replicated)
 	FDoomSideNetArray SideNet;
+	/** The finale's screen (EDoomGameState::Finale): server-made, client-drawn. */
+	UPROPERTY(ReplicatedUsing = OnRep_Finale)
+	FDoomFinaleNet Finale;
+	/** Server: copy the world's finale state into Finale (each finale tic). */
+	void PublishFinale(const class UDoomWorld& W);
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -200,5 +223,8 @@ public:
 private:
 	UFUNCTION()
 	void OnRep_Flow();
+	UFUNCTION()
+	void OnRep_Finale();
 	TMap<int32, int32> SectorItem, SideItem; // server: sector / side -> item index
+	uint8 LastFinaleStage = 255; // client: the stage last logged
 };

@@ -773,7 +773,7 @@ bool FDoomGraphics::SpriteHasRotations(const FString& InPrefix, TCHAR Frame) con
 	return !SpriteLumps.Contains(Prefix + Frame + TEXT('0'));
 }
 
-FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& InPrefix, TCHAR Frame, int32 Rotation)
+FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& InPrefix, TCHAR Frame, int32 Rotation, int32 Translation)
 {
 	const FString Prefix = DoomInfo::SpriteName(InPrefix);
 	FDoomSpriteFrame Result;
@@ -805,6 +805,26 @@ FDoomSpriteFrame FDoomGraphics::SpriteFrame(const FString& InPrefix, TCHAR Frame
 	{
 		Result.Picture = Cached->Get();
 		Result.bMirror = L->bMirror;
+		if (Translation >= 1 && Translation <= 3)
+		{
+			const int64 Key = ((int64)L->Lump << 2) | Translation;
+			TSharedPtr<FDoomPicture>* T = TranslatedSprites.Find(Key);
+			if (!T)
+			{
+				// the green ramp onto grey, brown or red, as Doom's translation tables do
+				static const int16 Bases[4] = { 0x70, 0x60, 0x40, 0x20 };
+				TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>(**Cached);
+				Pic->Texture = nullptr;
+				Pic->IndexTexture = nullptr;
+				for (int16& I : Pic->Indices)
+				{
+					if (I >= 0x70 && I <= 0x7F) I = Bases[Translation] + (I & 0x0F);
+				}
+				Upload(*Pic, false, false);
+				T = &TranslatedSprites.Add(Key, MoveTemp(Pic));
+			}
+			Result.Picture = T->Get();
+		}
 	}
 	return Result;
 }

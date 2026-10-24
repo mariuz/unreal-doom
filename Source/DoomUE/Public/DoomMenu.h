@@ -9,7 +9,7 @@
 
 class UDoomWorld;
 
-enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, Load, Save, ReadThis, Quit, EndGame, Controls };
+enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, Load, Save, ReadThis, Quit, EndGame, Controls, Multiplayer };
 
 struct FMenuRow
 {
@@ -37,6 +37,18 @@ public:
 	int32 Item = 0;
 	int32 HelpPage = 0;
 	int32 WarpIndex = 0;
+
+	/** The Multiplayer page: the game to host (rules 0 co-op, 1 deathmatch, 2 deathmatch 2.0; a map
+	 *  from the WAD, or past the last one a random map; -nomonsters, -fast) and the address to join. */
+	int32 NetRules = 0;
+	int32 NetMapIndex = 0;
+	bool bNetNoMonsters = false;
+	bool bNetFast = false;
+	FString JoinAddress = TEXT("127.0.0.1");
+	/** The host page's choices as travel options (DoomMap, DoomRules, NoMonsters, Fast). */
+	FString HostOptions(UDoomWorld& W) const;
+	void HostGame(UDoomWorld& W);
+	void JoinGame(UDoomWorld& W);
 
 	/** Opens the menu on a page (the title screen, Esc, F1-F4). */
 	void Open(UDoomWorld& W, EMenuPage P);
