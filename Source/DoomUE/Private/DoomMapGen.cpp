@@ -1,21 +1,22 @@
 // The random map generator (see DoomMapGen.h): rooms and corridors painted on a tile grid, the
 // lines traced from the tile edges, then the node builder.
 #include "DoomMapGen.h"
+#include "Math/RandomStream.h"
 #include "DoomMap.h"
 #include "DoomGraphics.h"
 #include "DoomUE.h"
 
 namespace
 {
-	constexpr int32 TileSize = 32;
+	constexpr int32 GenTileSize = 32;
 	constexpr int32 CellTiles = 20;  // a room's cell: the room plus at least 2 tiles of gap each side
 	constexpr int32 MaxStep = 24;    // Doom's highest step up
 
-	enum class EKind : uint8 { Room, Corridor, Door, Alcove, Pool, Platform };
+	enum class EGenKind : uint8 { Room, Corridor, Door, Alcove, Pool, Platform };
 
 	struct FGenSector
 	{
-		EKind Kind = EKind::Room;
+		EGenKind Kind = EGenKind::Room;
 		float Floor = 0, Ceiling = 128;
 		FName FloorPic, CeilingPic, Wall, Step;
 		FName DoorTex, Track;  // doors
@@ -347,7 +348,7 @@ namespace
 				FRoom& R = Rooms[i];
 				R.bOutdoor = i != StartRoom && Rng.FRand() < 0.2f;
 				FGenSector S;
-				S.Kind = EKind::Room;
+				S.Kind = EGenKind::Room;
 				S.Room = i;
 				S.Floor = R.Floor;
 				S.Wall = Pick(GenWalls, false);
@@ -385,7 +386,7 @@ namespace
 				FLink& L = Links[l];
 				if (!L.bUsed || !L.bDoor) continue;
 				FGenSector S;
-				S.Kind = EKind::Door;
+				S.Kind = EGenKind::Door;
 				const FGenSector& RoomS = Sectors[Rooms[L.A].Sector];
 				S.Floor = S.Ceiling = Rooms[L.A].Floor;
 				S.FloorPic = CorridorFloor;
@@ -434,7 +435,7 @@ namespace
 				if (S == INDEX_NONE)
 				{
 					FGenSector C;
-					C.Kind = EKind::Corridor;
+					C.Kind = EGenKind::Corridor;
 					C.Floor = Hgt;
 					C.Ceiling = Hgt + 112;
 					C.FloorPic = CorridorFloor;
@@ -462,7 +463,7 @@ namespace
 				{
 					FGenSector S = RoomS;
 					const bool bPool = F < 0.18f;
-					S.Kind = bPool ? EKind::Pool : EKind::Platform;
+					S.Kind = bPool ? EGenKind::Pool : EGenKind::Platform;
 					S.Floor = RoomS.Floor + (bPool ? -16 : 16);
 					if (bPool)
 					{
@@ -541,7 +542,7 @@ namespace
 				}
 				if (!bOk) continue;
 				FGenSector S = Sectors[R.Sector];
-				S.Kind = EKind::Alcove;
+				S.Kind = EGenKind::Alcove;
 				S.Ceiling = S.Floor + 72;
 				S.CeilingPic = First({ TEXT("TLITE6_4"), TEXT("CEIL1_1"), TEXT("FLAT2") }, true);
 				S.Light = 224;
@@ -577,7 +578,7 @@ namespace
 
 		FVector2f TileCenter(int32 X, int32 Y) const
 		{
-			return FVector2f((X - W / 2) * TileSize + TileSize / 2, (Y - H / 2) * TileSize + TileSize / 2);
+			return FVector2f((X - W / 2) * GenTileSize + GenTileSize / 2, (Y - H / 2) * GenTileSize + GenTileSize / 2);
 		}
 
 		/** A free tile of the room (its floor, or its platform / pool) with free tiles all round. */
@@ -749,7 +750,7 @@ namespace
 			FIntPoint Start(-1, -1);
 			for (const FDoomMapThing& T : Things)
 			{
-				if (T.Type == 1) Start = FIntPoint(FMath::FloorToInt(T.P.X / TileSize) + W / 2, FMath::FloorToInt(T.P.Y / TileSize) + H / 2);
+				if (T.Type == 1) Start = FIntPoint(FMath::FloorToInt(T.P.X / GenTileSize) + W / 2, FMath::FloorToInt(T.P.Y / GenTileSize) + H / 2);
 			}
 			if (!In(Start.X, Start.Y)) return false;
 			TMap<int32, int32> KeyTiles; // tile -> lock colour
@@ -758,11 +759,11 @@ namespace
 			{
 				for (int32 c = 1; c <= 3; ++c)
 				{
-					if (T.Type == KeyTypes[c]) KeyTiles.Add(Idx(FMath::FloorToInt(T.P.X / TileSize) + W / 2, FMath::FloorToInt(T.P.Y / TileSize) + H / 2), c);
+					if (T.Type == KeyTypes[c]) KeyTiles.Add(Idx(FMath::FloorToInt(T.P.X / GenTileSize) + W / 2, FMath::FloorToInt(T.P.Y / GenTileSize) + H / 2), c);
 				}
 			}
 			auto Floor = [&](int32 Sec) { return Sectors[Sec].Floor; };
-			auto Ceil = [&](int32 Sec) { return Sectors[Sec].Kind == EKind::Door ? Sectors[Sec].Floor + 88 : Sectors[Sec].Ceiling; };
+			auto Ceil = [&](int32 Sec) { return Sectors[Sec].Kind == EGenKind::Door ? Sectors[Sec].Floor + 88 : Sectors[Sec].Ceiling; };
 			uint32 Keys = 0;
 			TArray<uint8> Seen;
 			for (int32 Round = 0; Round < 5; ++Round)
@@ -782,7 +783,7 @@ namespace
 						const FIntPoint Q = P + D;
 						const int32 SB = At(Q.X, Q.Y);
 						if (SB == INDEX_NONE || Seen[Idx(Q.X, Q.Y)]) continue;
-						if (Sectors[SB].Kind == EKind::Door && Sectors[SB].Lock && !(Keys & (1u << Sectors[SB].Lock))) continue;
+						if (Sectors[SB].Kind == EGenKind::Door && Sectors[SB].Lock && !(Keys & (1u << Sectors[SB].Lock))) continue;
 						if (Floor(SB) - Floor(SA) > MaxStep) continue;
 						if (FMath::Min(Ceil(SA), Ceil(SB)) - FMath::Max(Floor(SA), Floor(SB)) < 56) continue;
 						Seen[Idx(Q.X, Q.Y)] = 1;
@@ -828,7 +829,7 @@ namespace
 			{
 				const int64 Key = (int64)GY * (W + 1) + GX;
 				if (const int32* V = VertexAt.Find(Key)) return *V;
-				const int32 V = Out.Vertices.Add(FVector2f((GX - W / 2) * TileSize, (GY - H / 2) * TileSize));
+				const int32 V = Out.Vertices.Add(FVector2f((GX - W / 2) * GenTileSize, (GY - H / 2) * GenTileSize));
 				VertexAt.Add(Key, V);
 				return V;
 			};
@@ -840,11 +841,11 @@ namespace
 				Sd.Sector = Own;
 				if (Other == INDEX_NONE)
 				{
-					Sd.Middle = S.Kind == EKind::Door ? S.Track : S.Wall;
+					Sd.Middle = S.Kind == EGenKind::Door ? S.Track : S.Wall;
 					return Sd;
 				}
 				const FGenSector& O = Sectors[Other];
-				if (O.Kind == EKind::Door) Sd.Upper = O.DoorTex;
+				if (O.Kind == EGenKind::Door) Sd.Upper = O.DoorTex;
 				else if (O.Ceiling < S.Ceiling && !(IsSky(Own) && IsSky(Other))) Sd.Upper = S.Wall;
 				if (O.Floor > S.Floor) Sd.Lower = S.Step;
 				return Sd;
@@ -862,12 +863,12 @@ namespace
 				{
 					L.Side[1] = Out.Sides.Add(MakeSide(Back, Front));
 					L.Flags = DoomLineFlags::TwoSided;
-					if (Sectors[Back].Kind == EKind::Door) L.Special = Sectors[Back].DoorSpecial;
+					if (Sectors[Back].Kind == EGenKind::Door) L.Special = Sectors[Back].DoorSpecial;
 				}
 				else
 				{
 					L.Flags = DoomLineFlags::Blocking;
-					if (Sectors[Front].Kind == EKind::Door) L.Flags |= DoomLineFlags::DontPegBottom;
+					if (Sectors[Front].Kind == EGenKind::Door) L.Flags |= DoomLineFlags::DontPegBottom;
 				}
 				Out.Lines.Add(L);
 				return Li;
@@ -875,7 +876,7 @@ namespace
 			auto Order = [&](int32& First, int32& Second)
 			{
 				// the first is the front unless it is void or a door
-				if (First == INDEX_NONE || (Second != INDEX_NONE && Sectors[First].Kind == EKind::Door))
+				if (First == INDEX_NONE || (Second != INDEX_NONE && Sectors[First].Kind == EGenKind::Door))
 				{
 					Swap(First, Second);
 					return true;

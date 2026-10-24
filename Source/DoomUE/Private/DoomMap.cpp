@@ -9,15 +9,15 @@ namespace
 {
 	enum EMapLump { ML_THINGS = 1, ML_LINEDEFS, ML_SIDEDEFS, ML_VERTEXES, ML_SEGS, ML_SSECTORS, ML_NODES, ML_SECTORS };
 
-	FName TexName(const uint8* P)
+	FName MapTexName(const uint8* P)
 	{
 		const FString S = Name8(P);
 		return (S.IsEmpty() || S == TEXT("-")) ? NAME_None : FName(*S);
 	}
 
-	float Cross(const FVector2f& A, const FVector2f& B) { return A.X * B.Y - A.Y * B.X; }
+	float MapCross(const FVector2f& A, const FVector2f& B) { return A.X * B.Y - A.Y * B.X; }
 
-	/** Keeps the part of Poly where Cross(Dir, P - Origin) * Sign <= 0 (Sign 1: the right side). */
+	/** Keeps the part of Poly where MapCross(Dir, P - Origin) * Sign <= 0 (Sign 1: the right side). */
 	void ClipPolygon(TArray<FVector2f>& Poly, const FVector2f& Origin, const FVector2f& Dir, float Sign)
 	{
 		if (Poly.Num() < 3)
@@ -37,8 +37,8 @@ namespace
 		{
 			const FVector2f& A = Poly[i];
 			const FVector2f& B = Poly[(i + 1) % Poly.Num()];
-			const float DA = Cross(N, A - Origin) * Sign;
-			const float DB = Cross(N, B - Origin) * Sign;
+			const float DA = MapCross(N, A - Origin) * Sign;
+			const float DB = MapCross(N, B - Origin) * Sign;
 			const bool bInA = DA <= Eps;
 			const bool bInB = DB <= Eps;
 			if (bInA)
@@ -94,7 +94,7 @@ bool FDoomMap::Load(const FDoomWad& Wad, const FString& MapName)
 	{
 		for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
 		{
-			Area += 0.5 * Cross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
+			Area += 0.5 * MapCross(Ss.Polygon[k] - Ss.Polygon[0], Ss.Polygon[k + 1] - Ss.Polygon[0]);
 		}
 	}
 	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %d vertices, %d lines, %d sectors, %d subsectors (area %.0f), %d things, %s nodes"),
@@ -341,8 +341,8 @@ bool FDoomMap::LoadBinary(const FDoomWad& Wad, int32 Marker)
 		FDoomSector& S = Sectors[i];
 		S.Floor = S16(P);
 		S.Ceiling = S16(P + 2);
-		S.FloorPic = TexName(P + 4);
-		S.CeilingPic = TexName(P + 12);
+		S.FloorPic = MapTexName(P + 4);
+		S.CeilingPic = MapTexName(P + 12);
 		S.Light = S.OriginalLight = S16(P + 20);
 		S.Special = S16(P + 22);
 		S.Tag = S16(P + 24);
@@ -361,9 +361,9 @@ bool FDoomMap::LoadBinary(const FDoomWad& Wad, int32 Marker)
 		FDoomSide& S = Sides[i];
 		S.XOffset = S16(P);
 		S.YOffset = S16(P + 2);
-		S.Upper = TexName(P + 4);
-		S.Lower = TexName(P + 12);
-		S.Middle = TexName(P + 20);
+		S.Upper = MapTexName(P + 4);
+		S.Lower = MapTexName(P + 12);
+		S.Middle = MapTexName(P + 20);
 		S.Sector = FMath::Clamp<int32>(U16(P + 28), 0, Sectors.Num() - 1);
 	}
 
@@ -876,7 +876,7 @@ int32 FDoomMap::SubsectorAt(const FVector2f& P) const
 			return INDEX_NONE;
 		}
 		const FDoomNode& Node = Nodes[N];
-		const int32 Side = Cross(Node.Dir, P - Node.Origin) < 0 ? 0 : 1;
+		const int32 Side = MapCross(Node.Dir, P - Node.Origin) < 0 ? 0 : 1;
 		N = Node.Child[Side];
 	}
 	return INDEX_NONE;
@@ -886,7 +886,7 @@ int32 FDoomMap::PointOnLineSide(const FVector2f& P, int32 Line) const
 {
 	const FDoomLine& L = Lines[Line];
 	const FVector2f A = V(L.V1);
-	return Cross(V(L.V2) - A, P - A) < 0 ? 0 : 1;
+	return MapCross(V(L.V2) - A, P - A) < 0 ? 0 : 1;
 }
 
 int32 FDoomMap::OtherSector(int32 Line, int32 Sector) const
@@ -1006,15 +1006,15 @@ bool FDoomMap::SegmentCrossesLine(const FVector2f& A, const FVector2f& B, int32 
 	const FDoomLine& L = Lines[Line];
 	const FVector2f P1 = V(L.V1), P2 = V(L.V2);
 	const FVector2f D = P2 - P1;
-	const float SA = Cross(D, A - P1);
-	const float SB = Cross(D, B - P1);
+	const float SA = MapCross(D, A - P1);
+	const float SB = MapCross(D, B - P1);
 	if ((SA < 0) == (SB < 0))
 	{
 		return false;
 	}
 	const FVector2f T = B - A;
-	const float S1 = Cross(T, P1 - A);
-	const float S2 = Cross(T, P2 - A);
+	const float S1 = MapCross(T, P1 - A);
+	const float S2 = MapCross(T, P2 - A);
 	if ((S1 < 0) == (S2 < 0) && S1 != 0 && S2 != 0)
 	{
 		return false;
@@ -1055,14 +1055,14 @@ void FDoomMap::TraceLines(const FVector2f& A, const FVector2f& B, TArray<FLineHi
 		}
 		const FVector2f P1 = V(L.V1);
 		const FVector2f D = V(L.V2) - P1;
-		const float Den = Cross(T, D);
+		const float Den = MapCross(T, D);
 		if (FMath::Abs(Den) < 1e-6f)
 		{
 			continue;
 		}
 		FLineHit H;
 		H.Line = i;
-		H.Frac = Cross(P1 - A, D) / Den;
+		H.Frac = MapCross(P1 - A, D) / Den;
 		H.Side = Side;
 		OutHits.Add(H);
 	}

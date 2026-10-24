@@ -1,4 +1,5 @@
 #include "DoomMapActors.h"
+#include "HAL/FileManager.h"
 #include "DoomMapGen.h"
 #include "DoomWadWriter.h"
 #include "DoomWad.h"
@@ -87,7 +88,7 @@ namespace
 	constexpr int32 PlayerStartTypes[] = { 1, 2, 3, 4, 11 };
 	const TCHAR* PlayerStartNames[] = { TEXT("Player1Start"), TEXT("Player2Start"), TEXT("Player3Start"), TEXT("Player4Start"), TEXT("DeathmatchStart") };
 
-	float FloorAt(const FDoomMap* Map, const FVector& Location)
+	float MarkerFloorAt(const FDoomMap* Map, const FVector& Location)
 	{
 		const int32 Sec = Map ? Map->SectorAt(Doom::ToDoom2D(Location)) : INDEX_NONE;
 		return Sec >= 0 ? Map->Sectors[Sec].Floor : Location.Z / Doom::Scale;
@@ -904,7 +905,7 @@ void ADoomThingMarker::UpdateVisual()
 		if (const FDoomMap* Map = MapActor->GetPreviewMap())
 		{
 			FVector L = GetActorLocation();
-			const float Z = FloorAt(Map, L) * Doom::Scale;
+			const float Z = MarkerFloorAt(Map, L) * Doom::Scale;
 			if (!FMath::IsNearlyEqual(L.Z, Z, 0.5f))
 			{
 				L.Z = Z;

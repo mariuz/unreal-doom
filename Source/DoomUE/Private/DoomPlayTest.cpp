@@ -3,6 +3,8 @@
 // Needs -warp (E1M1 of Freedoom 1 is the reference map). Steps that need a feature the map doesn't
 // have (a lift, a teleporter) are skipped. Screenshots land in Saved/Screenshots/.../playtest_*.png.
 #include "DoomGameMode.h"
+#include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
 #include "DoomWorld.h"
 #include "DoomAI.h"
 #include "BrainComponent.h"

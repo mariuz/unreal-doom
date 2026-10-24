@@ -1,4 +1,6 @@
 #include "DoomSpriteComponent.h"
+#include "Engine/World.h"
+#include "Engine/Texture2D.h"
 #include "DoomWorld.h"
 #include "DoomGraphics.h"
 #include "DoomAssets.h"

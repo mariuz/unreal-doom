@@ -1,4 +1,5 @@
 #include "DoomAssets.h"
+#include "MaterialDomain.h"
 #include "DoomUE.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialParameterCollection.h"

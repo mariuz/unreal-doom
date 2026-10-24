@@ -75,6 +75,11 @@ still work for a quick look in a standalone `-game` run. The automation tests sh
 `-run=DoomContent -nodetest=all` checks the node builder against every map's own nodes (see
 [EditingMaps.md](EditingMaps.md)); `-buildnodes` with `-playtest` runs the play-test on rebuilt nodes. `-run=DoomContent
 -gentest=100` runs 100 generated maps through the map checker; `-warp=RND00002 -playtest` plays one.
+`Tools/check_includes.bat` checks that every source file compiles on its own: a build with no unity
+files and no precompiled headers, after `Tools/check_unity_names.py` (file-private names another file
+also uses, which would collide in a unity build). `Tools/check_includes.bat names` runs only the
+name check.
+
 `-perftest` (with `-warp`) measures the game thread's frame time, sight checks (and how many REJECT
 answers), effects made and reused, moved chunks regenerated (and their time), ticking monsters, and
 the render thread's and GPU's median frame (add `-ExecCmds="r.VSync 0, t.MaxFPS 0"` to see past the frame cap):

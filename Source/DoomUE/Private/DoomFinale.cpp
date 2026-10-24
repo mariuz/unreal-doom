@@ -3,6 +3,7 @@
 // The texts and cast names come from the loaded WAD's string table (DEHACKED / BEX:
 // E1TEXT.., C1TEXT.., CC_ZOMBIE..), so each IWAD or PWAD shows its own.
 #include "DoomWorld.h"
+#include "Engine/World.h"
 #include "DoomThing.h"
 #include "DoomMonster.h"
 #include "DoomPlayer.h"

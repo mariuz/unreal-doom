@@ -1,4 +1,5 @@
 #include "DoomProjectile.h"
+#include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "DoomWorld.h"
 #include "DoomMonster.h"

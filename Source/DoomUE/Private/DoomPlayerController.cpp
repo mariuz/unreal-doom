@@ -1,4 +1,6 @@
 #include "DoomPlayerController.h"
+#include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
 #include "DoomWorld.h"
 #include "DoomHUD.h"
 #include "DoomMenu.h"
