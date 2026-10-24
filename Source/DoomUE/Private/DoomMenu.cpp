@@ -527,7 +527,7 @@ void FDoomMenu::HostGame(UDoomWorld& W)
 {
 	// a listen server on Doom's one Unreal level; the game mode reads the options (InitGame)
 	const FString Options = HostOptions(W);
-	UE_LOG(LogDoom, Log, TEXT("Hosting: %s"), *Options);
+	UE_LOG(LogDoomNet, Log, TEXT("Hosting: %s"), *Options);
 	Stack.Reset();
 	Close(W);
 	UGameplayStatics::OpenLevel(W.GetWorld(), FName(TEXT("/Engine/Maps/Entry")), true, Options);
@@ -541,7 +541,7 @@ void FDoomMenu::JoinGame(UDoomWorld& W)
 		W.PlaySound(TEXT("OOF"), nullptr);
 		return;
 	}
-	UE_LOG(LogDoom, Log, TEXT("Joining %s"), *JoinAddress);
+	UE_LOG(LogDoomNet, Log, TEXT("Joining %s"), *JoinAddress);
 	Stack.Reset();
 	Close(W);
 	PC->ClientTravel(JoinAddress, TRAVEL_Absolute);

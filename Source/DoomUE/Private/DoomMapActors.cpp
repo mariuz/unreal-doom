@@ -79,7 +79,7 @@ namespace
 			}
 			else
 			{
-				UE_LOG(LogDoom, Warning, TEXT("Doom maps in the editor need the IWAD (%s) in Content/WADs"), *Settings->IWAD);
+				UE_LOG(LogDoomEditor, Warning, TEXT("Doom maps in the editor need the IWAD (%s) in Content/WADs"), *Settings->IWAD);
 				E.Wad.Reset();
 			}
 		}
@@ -123,7 +123,7 @@ bool DoomEditorData::ReloadIfChanged()
 		E = MoveTemp(Old); // unreadable for now (half written?): keep the old and try again later
 		return false;
 	}
-	UE_LOG(LogDoom, Log, TEXT("Reloaded the editor's WADs (%s changed on disk)"), *FString::Join(Files, TEXT(", ")));
+	UE_LOG(LogDoomEditor, Log, TEXT("Reloaded the editor's WADs (%s changed on disk)"), *FString::Join(Files, TEXT(", ")));
 	return true;
 }
 
@@ -220,7 +220,7 @@ void ADoomMapActor::ExportWad()
 	FDoomMap M;
 	if (!LoadEditedMap(M))
 	{
-		UE_LOG(LogDoom, Error, TEXT("Export WAD: no map %s"), *MapName);
+		UE_LOG(LogDoomEditor, Error, TEXT("Export WAD: no map %s"), *MapName);
 		return;
 	}
 	uint32 GenSeed = 0;
@@ -231,7 +231,7 @@ void ADoomMapActor::ExportWad()
 	FString Note;
 	if (DoomWadWriter::SaveMap(M, Slot, Path, &Note))
 	{
-		UE_LOG(LogDoom, Display, TEXT("Export WAD: %s as %s in %s (%s). Play it with -file=\"%s\" -warp=%s"),
+		UE_LOG(LogDoomEditor, Display, TEXT("Export WAD: %s as %s in %s (%s). Play it with -file=\"%s\" -warp=%s"),
 			*MapName, *Slot, *FPaths::ConvertRelativePathToFull(Path), *Note, *FPaths::ConvertRelativePathToFull(Path), *Slot);
 	}
 }
@@ -259,12 +259,12 @@ void ADoomMapActor::EditInDoomBuilder()
 	const FString Builder = GetDefault<UDoomSettings>()->DoomBuilderPath.FilePath;
 	if (Builder.IsEmpty() || !FPaths::FileExists(Builder))
 	{
-		UE_LOG(LogDoom, Display, TEXT("Edit in Doom Builder: open %s (map %s) in your Doom editor; set Project Settings > Doom > Doom Builder Path to launch it from here. Saving there updates this level."), *Source, *MapName.ToUpper());
+		UE_LOG(LogDoomEditor, Display, TEXT("Edit in Doom Builder: open %s (map %s) in your Doom editor; set Project Settings > Doom > Doom Builder Path to launch it from here. Saving there updates this level."), *Source, *MapName.ToUpper());
 		return;
 	}
 	const FString Args = FString::Printf(TEXT("\"%s\" -map %s"), *Source, *MapName.ToUpper());
 	FPlatformProcess::CreateProc(*Builder, *Args, true, false, false, nullptr, 0, nullptr, nullptr);
-	UE_LOG(LogDoom, Display, TEXT("Edit in Doom Builder: %s %s"), *Builder, *Args);
+	UE_LOG(LogDoomEditor, Display, TEXT("Edit in Doom Builder: %s %s"), *Builder, *Args);
 }
 
 void ADoomMapActor::CheckMap()
@@ -362,7 +362,7 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 			InMap.Things = MoveTemp(Things);
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%s: %d sector edits, %d line edits, %d thing markers from the level"), *MapName, Edits, LineEdits, Markers);
+	UE_LOG(LogDoomEditor, Log, TEXT("%s: %d sector edits, %d line edits, %d thing markers from the level"), *MapName, Edits, LineEdits, Markers);
 }
 
 int32 ADoomMapActor::SectorAtLocation(const FVector& Location) const
@@ -435,7 +435,7 @@ void ADoomMapActor::RebuildPreview()
 		: PreviewMap->Load(*W, MapName);
 	if (!bLoaded)
 	{
-		UE_LOG(LogDoom, Warning, TEXT("No map %s in the WAD"), *MapName);
+		UE_LOG(LogDoomEditor, Warning, TEXT("No map %s in the WAD"), *MapName);
 		PreviewMap.Reset();
 		return;
 	}
@@ -676,7 +676,7 @@ void ADoomMapActor::ImportThings()
 			M->SetFolderPath(ADoomThingMarker::FolderFor(T.Type));
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%s: %d thing markers"), *MapName, Fresh.Things.Num());
+	UE_LOG(LogDoomEditor, Log, TEXT("%s: %d thing markers"), *MapName, Fresh.Things.Num());
 	RequestPreview();
 #endif
 }

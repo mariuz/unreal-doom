@@ -130,7 +130,7 @@ void FDoomGraphics::ParseTextureDefs()
 			TexDefs.Add(Def.Name, MoveTemp(Def));
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%d wall textures, %d patch names"), TexDefs.Num(), PNames.Num());
+	UE_LOG(LogDoomRender, Log, TEXT("%d wall textures, %d patch names"), TexDefs.Num(), PNames.Num());
 }
 
 void FDoomGraphics::IndexFlatsAndSprites()
@@ -162,7 +162,7 @@ void FDoomGraphics::IndexFlatsAndSprites()
 			}
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%d flats, %d sprite frames"), FlatLumps.Num(), SpriteLumps.Num());
+	UE_LOG(LogDoomRender, Log, TEXT("%d flats, %d sprite frames"), FlatLumps.Num(), SpriteLumps.Num());
 }
 
 void FDoomGraphics::BuildAnimations()
@@ -209,7 +209,7 @@ void FDoomGraphics::BuildAnimations()
 			(D.bFlat ? AnimLookupFlat : AnimLookupWall).Add(G.Frames[i], TPair<int32, int32>(GroupIndex, i));
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("%d animations (%s)"), Anims.Num(), Animated.Num() ? TEXT("ANIMATED lump") : TEXT("built-in table"));
+	UE_LOG(LogDoomRender, Log, TEXT("%d animations (%s)"), Anims.Num(), Animated.Num() ? TEXT("ANIMATED lump") : TEXT("built-in table"));
 
 	// Boom's SWITCHES lump (20-byte records: off name, on name, episode; 0 ends): pairs up to
 	// the game's episode level (1 shareware, 2 registered Doom, 3 Doom 2) replace the SW1/SW2 rule.
@@ -236,7 +236,7 @@ void FDoomGraphics::BuildAnimations()
 				SwitchPairs.Add(On, Off);
 			}
 		}
-		UE_LOG(LogDoom, Log, TEXT("SWITCHES lump: %d switch textures"), SwitchPairs.Num());
+		UE_LOG(LogDoomRender, Log, TEXT("SWITCHES lump: %d switch textures"), SwitchPairs.Num());
 	}
 }
 

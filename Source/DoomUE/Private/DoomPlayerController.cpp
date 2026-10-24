@@ -40,7 +40,7 @@ void ADoomPlayerController::CreateInput()
 	{
 		DoomInput::Build([this](UClass* Class, FName Name) { return NewObject<UObject>(this, Class, Name); }, In);
 	}
-	UE_LOG(LogDoom, Log, TEXT("Input: %s"), bAssets ? TEXT("the assets in /Game/Doom/Input") : TEXT("built in code (no assets in /Game/Doom/Input)"));
+	UE_LOG(LogDoomGame, Log, TEXT("Input: %s"), bAssets ? TEXT("the assets in /Game/Doom/Input") : TEXT("built in code (no assets in /Game/Doom/Input)"));
 	MoveAction = In.Move;
 	LookAction = In.Look;
 	FireAction = In.Fire;
@@ -160,7 +160,7 @@ void ADoomPlayerController::SetupInputComponent()
 	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EIC)
 	{
-		UE_LOG(LogDoom, Error, TEXT("Enhanced Input is not the default input component (Config/DefaultInput.ini)"));
+		UE_LOG(LogDoomGame, Error, TEXT("Enhanced Input is not the default input component (Config/DefaultInput.ini)"));
 		return;
 	}
 	EIC->BindAction(MenuUpAction, ETriggerEvent::Started, this, &ADoomPlayerController::MenuUp);
@@ -437,7 +437,7 @@ void ADoomPlayerController::RunClientNetTest()
 		ADoomPlayer* Me = Cast<ADoomPlayer>(Self->GetPawn());
 		if (FMath::Fmod(Now, 1.f) < 0.01f)
 		{
-			UE_LOG(LogDoom, Display, TEXT("Nettest client t=%.0f: %s | me hp%d ammo%d"), Now, *W->NetFingerprint(),
+			UE_LOG(LogDoomTest, Display, TEXT("Nettest client t=%.0f: %s | me hp%d ammo%d"), Now, *W->NetFingerprint(),
 				Me ? Me->Inv().Health : -1, Me ? Me->Inv().Ammo[0] : -1);
 		}
 		if (Me && FMath::IsNearlyEqual(Now, 3.f)) Me->FirePressed(FInputActionValue(true));

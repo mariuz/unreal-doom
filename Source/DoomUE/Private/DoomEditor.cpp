@@ -126,7 +126,7 @@ void UDoomMapEditor::Open()
 	Widget->GetMapView()->FocusView();
 	Status = FString::Printf(TEXT("Editing %s. Click to select, 1-4 / D for the mode, Tab for 3D, F5 plays it."), *EditMap->Name);
 	Refresh();
-	UE_LOG(LogDoom, Log, TEXT("Map editor: editing %s (%d sectors, %d lines, %d things)"), *EditMap->Name, EditMap->Sectors.Num(), EditMap->Lines.Num(), EditMap->Things.Num());
+	UE_LOG(LogDoomEditor, Log, TEXT("Map editor: editing %s (%d sectors, %d lines, %d things)"), *EditMap->Name, EditMap->Sectors.Num(), EditMap->Lines.Num(), EditMap->Things.Num());
 }
 
 void UDoomMapEditor::Close()
@@ -153,7 +153,7 @@ void UDoomMapEditor::Close()
 	}
 	Apply(false); // a fresh start of the edited map, from where the camera is
 	SetPlayerFlying(false);
-	UE_LOG(LogDoom, Log, TEXT("Map editor: playing %s"), EditMap.IsValid() ? *EditMap->Name : TEXT("-"));
+	UE_LOG(LogDoomEditor, Log, TEXT("Map editor: playing %s"), EditMap.IsValid() ? *EditMap->Name : TEXT("-"));
 }
 
 void UDoomMapEditor::SetPlayerFlying(bool bFly)

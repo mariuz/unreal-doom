@@ -184,7 +184,7 @@ int32 FDoomMapInfoSet::Parse(const FString& Text)
 					}
 					else
 					{
-						UE_LOG(LogDoom, Warning, TEXT("UMAPINFO %s: unknown bossaction thing %s"), *Info.Map, *First);
+						UE_LOG(LogDoomMap, Warning, TEXT("UMAPINFO %s: unknown bossaction thing %s"), *Info.Map, *First);
 					}
 				}
 			}

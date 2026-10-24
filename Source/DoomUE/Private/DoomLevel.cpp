@@ -201,7 +201,7 @@ void ADoomLevel::FinishBuild()
 			C.Solid->bUseAsyncCooking = true; // doors and lifts recook every tic they move
 		}
 	}
-	UE_LOG(LogDoom, Log, TEXT("Level geometry: %d chunks, %d materials"), Chunks.Num(), Materials.Num());
+	UE_LOG(LogDoomRender, Log, TEXT("Level geometry: %d chunks, %d materials"), Chunks.Num(), Materials.Num());
 }
 
 void ADoomLevel::ClearGeometry()
@@ -578,7 +578,7 @@ void ADoomLevel::CommitChunk(int32 i, FChunkSections& Sections)
 			int32 Verts = 0;
 			for (const auto& P : Solid) Verts += P.Value.V.Num();
 			for (const auto& P : NonSolid) Verts += P.Value.V.Num();
-			UE_LOG(LogDoom, Log, TEXT("Static chunk: %d + %d sections, %d vertices, signature %08x"), Solid.Num(), NonSolid.Num(), Verts, Sig);
+			UE_LOG(LogDoomRender, Log, TEXT("Static chunk: %d + %d sections, %d vertices, signature %08x"), Solid.Num(), NonSolid.Num(), Verts, Sig);
 			// an imported level's saved tiles (the only way in packaged builds), else bake now
 			TArray<UStaticMesh*> Saved;
 			if (FindSavedTiles(Sig, Saved))
@@ -785,7 +785,7 @@ bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 			UStaticMesh* Mesh = Tile.LoadSynchronous();
 			if (!Mesh)
 			{
-				UE_LOG(LogDoom, Warning, TEXT("%s: missing baked tile %s"), *Map->Name, *Tile.ToString());
+				UE_LOG(LogDoomRender, Warning, TEXT("%s: missing baked tile %s"), *Map->Name, *Tile.ToString());
 				return false;
 			}
 			Out.Add(Mesh);
@@ -800,7 +800,7 @@ bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 		{
 			return Load(MapActor->BakedTiles);
 		}
-		UE_LOG(LogDoom, Warning, TEXT("%s: the level's baked tiles are out of date (baked %08x, now %08x): press Bake Static Meshes on its DoomMap actor"),
+		UE_LOG(LogDoomRender, Warning, TEXT("%s: the level's baked tiles are out of date (baked %08x, now %08x): press Bake Static Meshes on its DoomMap actor"),
 			*Map->Name, (uint32)MapActor->BakedTileSignature, Sig);
 	}
 	// the WAD's tile set (-run=DoomContent -baketiles)
@@ -816,7 +816,7 @@ bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 	}
 	if ((uint32)Set->Signature != Sig)
 	{
-		UE_LOG(LogDoom, Warning, TEXT("%s: the baked tile set %s is out of date (baked %08x, now %08x): run -run=DoomContent -baketiles=%s"),
+		UE_LOG(LogDoomRender, Warning, TEXT("%s: the baked tile set %s is out of date (baked %08x, now %08x): run -run=DoomContent -baketiles=%s"),
 			*Map->Name, *Path.ToString(), (uint32)Set->Signature, Sig, *Map->Name);
 		return false;
 	}
@@ -824,7 +824,7 @@ bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 	{
 		return false;
 	}
-	UE_LOG(LogDoom, Log, TEXT("%s: %d baked tiles from %s"), *Map->Name, Out.Num(), *Path.ToString());
+	UE_LOG(LogDoomRender, Log, TEXT("%s: %d baked tiles from %s"), *Map->Name, Out.Num(), *Path.ToString());
 	return true;
 }
 
@@ -859,7 +859,7 @@ void ADoomLevel::ShowTiles(const TArray<UStaticMesh*>& Meshes, bool bSaved)
 		Chunks[0].NonSolid->SetVisibility(false);
 	}
 	bSavedTiles = bSaved;
-	UE_LOG(LogDoom, Log, TEXT("The static chunk is drawn by %d %s static mesh tiles"), BakedComponents.Num(), bSaved ? TEXT("saved") : TEXT("runtime-baked"));
+	UE_LOG(LogDoomRender, Log, TEXT("The static chunk is drawn by %d %s static mesh tiles"), BakedComponents.Num(), bSaved ? TEXT("saved") : TEXT("runtime-baked"));
 }
 
 void ADoomLevel::BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid)

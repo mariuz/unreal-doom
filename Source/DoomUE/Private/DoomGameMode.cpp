@@ -320,7 +320,7 @@ void ADoomGameMode::StartPlay()
 	UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
 	if (!W || !W->InitWads())
 	{
-		UE_LOG(LogDoom, Error, TEXT("No usable IWAD. Put one in Content/WADs or pass -iwad=<path>"));
+		UE_LOG(LogDoomGame, Error, TEXT("No usable IWAD. Put one in Content/WADs or pass -iwad=<path>"));
 		return;
 	}
 	int32 LoadSlot = -1;
@@ -349,7 +349,7 @@ void ADoomGameMode::StartPlay()
 	W->bFastParam |= bOptFast;
 	if (!OptMap.IsEmpty() || OptRules >= 0)
 	{
-		UE_LOG(LogDoom, Log, TEXT("Hosted game: %s, %s%s%s"), *Warp, OptRules == 2 ? TEXT("deathmatch 2.0") : OptRules == 1 ? TEXT("deathmatch") : TEXT("co-op"),
+		UE_LOG(LogDoomNet, Log, TEXT("Hosted game: %s, %s%s%s"), *Warp, OptRules == 2 ? TEXT("deathmatch 2.0") : OptRules == 1 ? TEXT("deathmatch") : TEXT("co-op"),
 			W->bNoMonsters ? TEXT(", no monsters") : TEXT(""), W->bFastParam ? TEXT(", fast") : TEXT(""));
 	}
 	if (!Warp.IsEmpty())
@@ -388,7 +388,7 @@ void ADoomGameMode::StartPlay()
 			FDoomMap TestMap;
 			const bool bOk = TestMap.Load(TestWad, MapName);
 			const double Area = TestMap.SubsectorArea();
-			UE_LOG(LogDoom, Display, TEXT("Maptest %s %s: %s, %s nodes, %d subsectors, area %.0f"), *FPaths::GetCleanFilename(File), *MapName,
+			UE_LOG(LogDoomTest, Display, TEXT("Maptest %s %s: %s, %s nodes, %d subsectors, area %.0f"), *FPaths::GetCleanFilename(File), *MapName,
 				bOk ? TEXT("ok") : TEXT("FAILED"), *TestMap.NodesFormat, TestMap.Subsectors.Num(), Area);
 		}
 	}
@@ -400,14 +400,14 @@ void ADoomGameMode::StartPlay()
 		const FDoomProjectileDef* Ball = DoomInfo::FindProjectile(TEXT("ImpBall"));
 		const FDoomRules& R = DoomInfo::Rules();
 		const FDoomMapInfo* Info = W->MapInfo(TEXT("E1M1"));
-		UE_LOG(LogDoom, Display, TEXT("Patchtest imp: health %d radius %.0f | rules: health %d bullets %d maxbullets %d clip %d | impball speed %.0f damage %d"),
+		UE_LOG(LogDoomTest, Display, TEXT("Patchtest imp: health %d radius %.0f | rules: health %d bullets %d maxbullets %d clip %d | impball speed %.0f damage %d"),
 			Imp->Health, Imp->Radius, R.InitialHealth, R.InitialBullets, R.MaxAmmo[0], R.ClipAmmo[0], Ball->Speed, Ball->DamageMul);
-		UE_LOG(LogDoom, Display, TEXT("Patchtest E1M1: title \"%s\" par %d music %s sky %s next %s | E1M3 title \"%s\" | GOTCLIP \"%s\""),
+		UE_LOG(LogDoomTest, Display, TEXT("Patchtest E1M1: title \"%s\" par %d music %s sky %s next %s | E1M3 title \"%s\" | GOTCLIP \"%s\""),
 			*W->LevelTitle(TEXT("E1M1")), DoomInfo::ParTime(TEXT("E1M1")), Info ? *Info->Music : TEXT("-"), Info ? *Info->Sky : TEXT("-"),
 			Info ? *Info->Next : TEXT("-"), *W->LevelTitle(TEXT("E1M3")), *DoomInfo::PickupMessage(EPickup::Clip));
-		UE_LOG(LogDoom, Display, TEXT("Patchtest renames: TROO -> %s, BON1 -> %s, sound PISTOL -> %s"),
+		UE_LOG(LogDoomTest, Display, TEXT("Patchtest renames: TROO -> %s, BON1 -> %s, sound PISTOL -> %s"),
 			*DoomInfo::SpriteName(TEXT("TROO")), *DoomInfo::SpriteName(TEXT("BON1")), *DoomInfo::SoundName(TEXT("PISTOL")));
-		UE_LOG(LogDoom, Display, TEXT("Patchtest switches: SW1BRN1 -> %s, SW1GRAY -> %s, SW1HOT -> %s | NUKAGE1 animated %d, FWATER1 animated %d"),
+		UE_LOG(LogDoomTest, Display, TEXT("Patchtest switches: SW1BRN1 -> %s, SW1GRAY -> %s, SW1HOT -> %s | NUKAGE1 animated %d, FWATER1 animated %d"),
 			*W->GetGraphics()->SwitchPartner(TEXT("SW1BRN1")).ToString(), *W->GetGraphics()->SwitchPartner(TEXT("SW1GRAY")).ToString(),
 			*W->GetGraphics()->SwitchPartner(TEXT("SW1HOT")).ToString(), W->GetGraphics()->IsAnimated(TEXT("NUKAGE1"), true), W->GetGraphics()->IsAnimated(TEXT("FWATER1"), true));
 	}
@@ -421,7 +421,7 @@ void ADoomGameMode::StartPlay()
 		FString Stats;
 		const FString Path = FPaths::ProjectSavedDir() / FString::Printf(TEXT("music_%s.wav"), *Lump.ToUpper());
 		const bool bOk = DoomMusic::RenderToWav(*W->GetWad(), Lump.ToUpper(), FCString::Atof(*Secs), Path, Stats);
-		UE_LOG(LogDoom, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
+		UE_LOG(LogDoomTest, Display, TEXT("Dumpmusic %s: %s -> %s"), bOk ? TEXT("ok") : TEXT("FAILED"), *Stats, *Path);
 	}
 
 	// -nettest (listen server): wait for a client, open a door, kill two monsters as the host (in
@@ -440,7 +440,7 @@ void ADoomGameMode::StartPlay()
 				*Waited += 0.5f;
 				if (*Waited > 1800.f)
 				{
-					UE_LOG(LogDoom, Error, TEXT("Nettest server: no client joined"));
+					UE_LOG(LogDoomTest, Error, TEXT("Nettest server: no client joined"));
 					FPlatformMisc::RequestExit(false, TEXT("DoomNettest"));
 				}
 				return;
@@ -452,7 +452,7 @@ void ADoomGameMode::StartPlay()
 			for (ADoomPlayer* P : Players) if (P != Host) Guest = P;
 			if (FMath::IsNearlyEqual(Now, 1.f))
 			{
-				UE_LOG(LogDoom, Display, TEXT("Nettest server: host at (%.0f,%.0f) guest at (%.0f,%.0f), deathmatch %d"),
+				UE_LOG(LogDoomTest, Display, TEXT("Nettest server: host at (%.0f,%.0f) guest at (%.0f,%.0f), deathmatch %d"),
 					Host->DoomPos().X, Host->DoomPos().Y, Guest->DoomPos().X, Guest->DoomPos().Y, (int32)W->IsDeathmatch());
 			}
 			if (FMath::IsNearlyEqual(Now, 2.f))
@@ -484,7 +484,7 @@ void ADoomGameMode::StartPlay()
 			}
 			if (FMath::Fmod(Now, 1.f) < 0.01f)
 			{
-				UE_LOG(LogDoom, Display, TEXT("Nettest server t=%.0f: %s"), Now, *W->NetFingerprint());
+				UE_LOG(LogDoomTest, Display, TEXT("Nettest server t=%.0f: %s"), Now, *W->NetFingerprint());
 			}
 			if (FMath::IsNearlyEqual(Now, 14.f))
 			{
@@ -508,7 +508,7 @@ void ADoomGameMode::StartPlay()
 			ADoomPlayerState* PS = P ? P->GetDoomPlayerState() : nullptr;
 			if (!P || !PS)
 			{
-				UE_LOG(LogDoom, Error, TEXT("Exittest FAIL: no player or no ADoomPlayerState"));
+				UE_LOG(LogDoomTest, Error, TEXT("Exittest FAIL: no player or no ADoomPlayerState"));
 				return;
 			}
 			int32 Killed = 0;
@@ -550,7 +550,7 @@ void ADoomGameMode::StartPlay()
 					}
 					const bool bPass = Kills == 2 && Credit == 2 && bIntermission && InterTics > 30 && bBackground && W->GetMapName() == Pending
 						&& W->GetState() == EDoomGameState::Playing && W->Flow().Kills == 0 && PS->LevelKills == 0 && PS->Inv.Ammo[1] == 17;
-					UE_LOG(LogDoom, Display, TEXT("Exittest %s: %s kills %d (player credit %d), intermission %d (%d tics), next %s -> now %s (loaded in the background: %d, %.0f ms), kills %d / credit %d, shells %d"),
+					UE_LOG(LogDoomTest, Display, TEXT("Exittest %s: %s kills %d (player credit %d), intermission %d (%d tics), next %s -> now %s (loaded in the background: %d, %.0f ms), kills %d / credit %d, shells %d"),
 						bPass ? TEXT("PASS") : TEXT("FAIL"), *From, Kills, Credit, bIntermission, InterTics, *Pending, *W->GetMapName(),
 						bBackground, (FPlatformTime::Seconds() - LoadStart) * 1000, W->Flow().Kills, PS->LevelKills, PS->Inv.Ammo[1]);
 					FPlatformMisc::RequestExit(false, TEXT("exittest"));
@@ -579,7 +579,7 @@ void ADoomGameMode::StartPlay()
 			{
 				W->FinaleTic = 100000; // whole text for the screenshot
 			}
-			UE_LOG(LogDoom, Display, TEXT("Endtest: state %d stage %d picture %s text lines %d cast %s"),
+			UE_LOG(LogDoomTest, Display, TEXT("Endtest: state %d stage %d picture %s text lines %d cast %s"),
 				(int32)W->GetState(), (int32)W->FinaleStage, *W->FinalePicture, W->FinaleText.Num(), *W->CastName());
 		}, 1.f, false);
 	}
@@ -666,7 +666,7 @@ void ADoomGameMode::StartPlay()
 					{
 						NextLog = Now + 0.25;
 						const FVector2f D = P->DoomPos();
-						UE_LOG(LogDoom, Display, TEXT("Steptest t=%.2f doom(%.0f,%.0f) z=%.1f sector %d vel %.0f%s"), Now, D.X, D.Y, P->DoomZ(),
+						UE_LOG(LogDoomTest, Display, TEXT("Steptest t=%.2f doom(%.0f,%.0f) z=%.1f sector %d vel %.0f%s"), Now, D.X, D.Y, P->DoomZ(),
 							W->GetMap()->SectorAt(D), P->GetVelocity().Size2D() / Doom::Scale,
 							WatchSector >= 0 ? *FString::Printf(TEXT(" | sector %d floor %.0f"), WatchSector, W->GetMap()->Sectors[WatchSector].Floor) : TEXT(""));
 					}
@@ -693,12 +693,12 @@ void ADoomGameMode::StartPlay()
 					: FKey(FName(FString(1, &C).ToUpper()));
 				W->Menu.EditKey(*W, Key);
 			}
-			UE_LOG(LogDoom, Display, TEXT("Savename: editing %d, text \"%s\""), W->Menu.bEditing, *W->Menu.EditText);
+			UE_LOG(LogDoomTest, Display, TEXT("Savename: editing %d, text \"%s\""), W->Menu.bEditing, *W->Menu.EditText);
 			if (bCommit)
 			{
 				W->Menu.EditKey(*W, EKeys::Enter);
 				W->RefreshSlots();
-				UE_LOG(LogDoom, Display, TEXT("Savename: slot 1 now \"%s\", state %d"), *W->SlotDescription(1), (int32)W->GetState());
+				UE_LOG(LogDoomTest, Display, TEXT("Savename: slot 1 now \"%s\", state %d"), *W->SlotDescription(1), (int32)W->GetState());
 			}
 		}, 1.f, false);
 	}
@@ -719,7 +719,7 @@ void ADoomGameMode::StartPlay()
 					++Killed;
 				}
 			}
-			UE_LOG(LogDoom, Display, TEXT("Killtype %d: killed %d, active movers %d"), KillType, Killed, W->NumMovers());
+			UE_LOG(LogDoomTest, Display, TEXT("Killtype %d: killed %d, active movers %d"), KillType, Killed, W->NumMovers());
 		}, 2.f, false);
 	}
 
@@ -803,7 +803,7 @@ void ADoomGameMode::StartPlay()
 			{
 				const FString Name = FString::Printf(TEXT("autotest_%s.png"), W->GetMapName().IsEmpty() ? TEXT("title") : *W->GetMapName());
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / Name, true, false);
-				UE_LOG(LogDoom, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Flow().Kills, W->Flow().TotalKills, W->Flow().Items, W->Flow().TotalItems,
+				UE_LOG(LogDoomTest, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Flow().Kills, W->Flow().TotalKills, W->Flow().Items, W->Flow().TotalItems,
 					W->GetLevel() ? W->GetLevel()->NumBakedTiles() : 0, W->GetParticleBursts(), *W->StateFingerprint());
 			});
 		}, Delay, false);

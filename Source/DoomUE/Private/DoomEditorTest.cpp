@@ -41,7 +41,7 @@ namespace DoomEditorTest
 	void Report(FRun& R, const TCHAR* Name, bool bPass, const FString& Msg)
 	{
 		(bPass ? R.Passed : R.Failed)++;
-		UE_LOG(LogDoom, Display, TEXT("Editortest %s %s: %s"), Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
+		UE_LOG(LogDoomTest, Display, TEXT("Editortest %s %s: %s"), Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
 	}
 
 	int32 LiveMonsters(UDoomWorld* W)
@@ -275,7 +275,7 @@ namespace DoomEditorTest
 			return true;
 		}
 		default:
-			UE_LOG(LogDoom, Display, TEXT("Editortest: %d passed, %d failed"), R.Passed, R.Failed);
+			UE_LOG(LogDoomTest, Display, TEXT("Editortest: %d passed, %d failed"), R.Passed, R.Failed);
 			FPlatformMisc::RequestExit(false);
 			return false;
 		}

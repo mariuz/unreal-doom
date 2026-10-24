@@ -274,7 +274,7 @@ bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 	const bool bOk = !Writer.IsError() && UGameplayStatics::SaveGameToSlot(Save, SlotName(Slot), 0);
 	SlotCache.Remove(Slot);
 	ShowMessage(bOk ? (Slot <= 0 ? TEXT("Quicksaved.") : FString::Printf(TEXT("Game saved in slot %d."), Slot)) : TEXT("Save failed."));
-	UE_LOG(LogDoom, Log, TEXT("Save %s: %s (%d bytes)"), *SlotName(Slot), bOk ? TEXT("ok") : TEXT("FAILED"), Save->State.Num());
+	UE_LOG(LogDoomGame, Log, TEXT("Save %s: %s (%d bytes)"), *SlotName(Slot), bOk ? TEXT("ok") : TEXT("FAILED"), Save->State.Num());
 	return bOk;
 }
 
@@ -306,7 +306,7 @@ bool UDoomWorld::LoadGame(int32 Slot)
 	SerializeState(Reader);
 	if (Reader.IsError())
 	{
-		UE_LOG(LogDoom, Error, TEXT("Save %s is damaged; restarting the map"), *Name);
+		UE_LOG(LogDoomGame, Error, TEXT("Save %s is damaged; restarting the map"), *Name);
 		LoadMap(Save->Map, true);
 		return false;
 	}
@@ -314,7 +314,7 @@ bool UDoomWorld::LoadGame(int32 Slot)
 	ResetClock();
 	Flow().Phase = EDoomGameState::Playing;
 	ShowMessage(Slot <= 0 ? TEXT("Quickloaded.") : FString::Printf(TEXT("Loaded slot %d."), Slot));
-	UE_LOG(LogDoom, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
+	UE_LOG(LogDoomGame, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
 	return true;
 }
 
@@ -476,7 +476,7 @@ bool UDoomWorld::RunSaveTest(FString* OutReport)
 	const FString After = StateFingerprint() + FString::Printf(TEXT(" targets%d"), AwakeAfter);
 	const bool bPass = bSaved && bLoaded && Before == After && Before != Scrambled;
 	const FString Report = FString::Printf(TEXT("before:    %s\n  scrambled: %s\n  after:     %s"), *Before, *Scrambled, *After);
-	UE_LOG(LogDoom, Display, TEXT("Savetest %s\n  %s"), bPass ? TEXT("PASS") : TEXT("FAIL"), *Report);
+	UE_LOG(LogDoomTest, Display, TEXT("Savetest %s\n  %s"), bPass ? TEXT("PASS") : TEXT("FAIL"), *Report);
 	if (OutReport)
 	{
 		*OutReport = Report;

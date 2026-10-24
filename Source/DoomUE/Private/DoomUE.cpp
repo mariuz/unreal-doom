@@ -5,6 +5,14 @@
 #include "Components/SphereComponent.h"
 
 DEFINE_LOG_CATEGORY(LogDoom);
+DEFINE_LOG_CATEGORY(LogDoomGame);
+DEFINE_LOG_CATEGORY(LogDoomMap);
+DEFINE_LOG_CATEGORY(LogDoomRender);
+DEFINE_LOG_CATEGORY(LogDoomAudio);
+DEFINE_LOG_CATEGORY(LogDoomNet);
+DEFINE_LOG_CATEGORY(LogDoomAI);
+DEFINE_LOG_CATEGORY(LogDoomEditor);
+DEFINE_LOG_CATEGORY(LogDoomTest);
 
 IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, DoomUE, "DoomUE");
 

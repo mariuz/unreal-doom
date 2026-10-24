@@ -58,8 +58,10 @@ Tools/run_tests.bat DoomUE -NullRHI
     module, 5–10 minutes.
   * MSVC occasionally hits an internal compiler error (C1001) on these big rebuilds. Running the
     build again has fixed it every time.
-* **Logs:** `Saved/Logs/DoomUE.log`. Grep it for `LogDoom` and for the test switches' `PASS` / `FAIL`
-  lines.
+* **Logs:** `Saved/Logs/DoomUE.log`. The game logs by system (`LogDoom`, `LogDoomGame`, `LogDoomMap`,
+  `LogDoomRender`, `LogDoomAudio`, `LogDoomNet`, `LogDoomAI`, `LogDoomEditor`, declared in `DoomUE.h`);
+  grep for `LogDoom` to see all of them. The test switches' `PASS` / `FAIL` lines are `LogDoomTest`.
+  New messages go to their system's category, not `LogDoom`.
 
 ## Working conventions the owner uses
 
@@ -174,6 +176,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * log categories per system (`DoomUE.h`; test results in `LogDoomTest`);
   * smaller files: `DoomWorld*.cpp` (world: setup and tic, Sectors, Specials, Flow, Presentation),
     `DoomContent*.cpp`, `DoomEditor*.cpp`, `DoomMonster*.cpp`, `DoomPlayer*.cpp`, `DoomMap{Actors,Markers,Edits}.cpp`;
     shared helpers in private headers (`DoomWorldSpecialTable.h`, `DoomContentPrivate.h`,

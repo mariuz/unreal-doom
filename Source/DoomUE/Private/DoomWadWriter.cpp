@@ -251,6 +251,6 @@ bool DoomWadWriter::SaveMap(const FDoomMap& Map, const FString& MapName, const F
 		return false;
 	}
 	const bool bOk = SaveWad(Lumps, Path);
-	UE_LOG(LogDoom, Log, TEXT("%s %s as %s: %s"), bOk ? TEXT("Saved") : TEXT("Could not save"), *Path, *MapName.ToUpper(), OutNote ? **OutNote : TEXT(""));
+	UE_LOG(LogDoomMap, Log, TEXT("%s %s as %s: %s"), bOk ? TEXT("Saved") : TEXT("Could not save"), *Path, *MapName.ToUpper(), OutNote ? **OutNote : TEXT(""));
 	return bOk;
 }

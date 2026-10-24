@@ -406,7 +406,7 @@ void UDoomWorld::TicBrain()
 		PlaySound(TEXT("TELEPT"), &C.Target);
 		if (ADoomMonster* M = SpawnMonster(BrainSpawnType(DoomInfo::Random()), C.Target, DoomInfo::Random() * 360.f / 256.f))
 		{
-			UE_LOG(LogDoom, Log, TEXT("Spawn cube hatched a %s"), *M->Def->Name);
+			UE_LOG(LogDoomGame, Log, TEXT("Spawn cube hatched a %s"), *M->Def->Name);
 			--Flow().TotalKills; // spawned monsters do not count towards the level's total
 			if (P)
 			{

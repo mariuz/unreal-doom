@@ -1004,11 +1004,11 @@ bool DoomMapGen::Generate(const FOptions& Options, const FDoomGraphics* Gfx, FDo
 			Gen.Report.Links += L.bUsed ? 1 : 0;
 			Gen.Report.Doors += (L.bUsed && L.bDoor) ? 1 : 0;
 		}
-		UE_LOG(LogDoom, Log, TEXT("%s generated: %s; %d sectors, %d lines, %d things, %s"), *Out.Name, *Gen.Report.ToString(),
+		UE_LOG(LogDoomMap, Log, TEXT("%s generated: %s; %d sectors, %d lines, %d things, %s"), *Out.Name, *Gen.Report.ToString(),
 			Out.Sectors.Num(), Out.Lines.Num(), Out.Things.Num(), *Out.NodesFormat);
 		if (OutReport) *OutReport = Gen.Report;
 		return true;
 	}
-	UE_LOG(LogDoom, Error, TEXT("%s: no valid map in 16 attempts"), *NameForSeed(Options.Seed));
+	UE_LOG(LogDoomMap, Error, TEXT("%s: no valid map in 16 attempts"), *NameForSeed(Options.Seed));
 	return false;
 }

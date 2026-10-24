@@ -452,6 +452,21 @@ split by job, with no change in behaviour:
 
 What the pieces share lives in small private headers, in named namespaces.
 
+Log categories (`feature/log-categories`): the game logs by system instead of everything under
+`LogDoom`, so the Output Log's filters or `-LogCmds="LogDoomAI Verbose"` pick out one area:
+
+* `LogDoom`: boot and the game tables.
+* `LogDoomGame`: the simulation (world, level flow, saves, menu, actors).
+* `LogDoomMap`: WADs and maps (loading, nodes, the generator, the checker, PWADs).
+* `LogDoomRender`: level geometry, pictures, textures, materials and tiles.
+* `LogDoomAudio`: sound effects and music.
+* `LogDoomNet`: hosting, joining and what clients receive.
+* `LogDoomAI`: SMART monsters and their paths.
+* `LogDoomEditor`: the map editor and the editor's map actors.
+* `LogDoomTest`: the test switches' `PASS` / `FAIL` lines (`-playtest`, `-nettest` and the rest).
+
+The editor module keeps `LogDoomContent`.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -561,7 +576,6 @@ Not done yet (roughly in priority order):
    * **Encapsulation**: game state is public and mutable on `UCLASS`es (`ADoomPlayer::bGodMode`, `bFireHeld`, `UDoomWorld`'s test counters and switches). Accessors, or `UPROPERTY` with the right specifiers, plus `friend` for the test runners.
    * **Assertions**: the game module has a single `check`. Invariants (map indices, chunk and sector tables, net struct sizes) want `check` / `ensureMsgf`, which compile out of shipping builds.
    * **Static analysis**: a build with `-StaticAnalyzer=VisualCpp` (or Clang-Tidy) and its warnings fixed, and a `.clang-format` matching Epic's layout (tabs, braces on their own lines).
-   * **Log categories per system**: everything logs to `LogDoom`; `LogDoomAI`, `LogDoomNet`, `LogDoomMap`, `LogDoomRender` and so on would let a log be filtered by area.
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **Reusable plugins**: the WAD reader, the node builder, the map generator and the PWAD writer don't depend on the game; as a plugin they could serve other projects (LyraDoom already copies the game module).
