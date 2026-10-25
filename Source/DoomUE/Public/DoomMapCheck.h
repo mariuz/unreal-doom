@@ -13,7 +13,7 @@ struct FDoomMapIssue
 {
 	enum class ESeverity : uint8 { Error, Warning, Info };
 	ESeverity Severity = ESeverity::Warning;
-	FString Text;
+	FText Text;
 	/** Where to look (Doom map units) and at what height. */
 	FVector2f Where = FVector2f::ZeroVector;
 	float Z = 0;

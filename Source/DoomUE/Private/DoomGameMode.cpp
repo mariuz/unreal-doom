@@ -23,6 +23,8 @@
 #include "TimerManager.h"
 #include "Misc/Paths.h"
 
+#define LOCTEXT_NAMESPACE "DoomGameMode"
+
 ADoomGameMode::ADoomGameMode()
 {
 	DefaultPawnClass = ADoomPlayer::StaticClass();
@@ -834,7 +836,7 @@ void ADoomGameMode::DoomGod()
 			{
 				P->Inv().Health = 100; // IDDQD heals, too
 			}
-			W->ShowMessage(P->IsGodMode() ? TEXT("God mode on") : TEXT("God mode off"));
+			W->ShowMessage(P->IsGodMode() ? LOCTEXT("GodModeOn", "God mode on") : LOCTEXT("GodModeOff", "God mode off"));
 		}
 	}
 }
@@ -851,7 +853,9 @@ void ADoomGameMode::DoomGiveAll()
 			for (bool& K : P->Inv().Keys) K = true;
 			P->Inv().Armor = 200;
 			P->Inv().ArmorClass = 2;
-			W->ShowMessage(TEXT("All weapons, ammo and keys"));
+			W->ShowMessage(LOCTEXT("AllWeapons", "All weapons, ammo and keys"));
 		}
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

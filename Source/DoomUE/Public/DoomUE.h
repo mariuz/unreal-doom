@@ -14,7 +14,14 @@ DECLARE_LOG_CATEGORY_EXTERN(LogDoomAudio, Log, All);  // sound effects and music
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomNet, Log, All);    // network games: hosting, joining, what clients receive
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomAI, Log, All);     // SMART monsters and their paths
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomEditor, Log, All); // the map editor and the editor's map actors
-DECLARE_LOG_CATEGORY_EXTERN(LogDoomTest, Log, All);   // the test switches' PASS / FAIL lines (-playtest, -nettest...)
+DECLARE_LOG_CATEGORY_EXTERN(LogDoomTest, Log, All);
+
+/** Helpers for the port's own text (LOCTEXT; Doom's own strings come from the WAD and DEHACKED). */
+namespace DoomText
+{
+	/** A number in a sentence, without thousands separators (sector 1234, not 1,234). */
+	inline FText Number(int64 Value) { return FText::AsNumber(Value, &FNumberFormattingOptions::DefaultNoGrouping()); }
+}   // the test switches' PASS / FAIL lines (-playtest, -nettest...)
 
 class AActor;
 

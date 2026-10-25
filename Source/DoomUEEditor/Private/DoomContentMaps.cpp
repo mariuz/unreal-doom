@@ -349,7 +349,7 @@ bool DoomContent::EditTest(const FString& InMapName)
 	bool bCheckerOk = TaggedLine < 0;
 	for (int32 i = 0; i < Issues.Num(); ++i)
 	{
-		bCheckerOk |= Issues[i].Line == TaggedLine && Issues[i].Text.Contains(TEXT("tag 999")) && IssueActors[i].Get() == BrokenTag;
+		bCheckerOk |= Issues[i].Line == TaggedLine && Issues[i].Text.ToString().Contains(TEXT("tag 999")) && IssueActors[i].Get() == BrokenTag;
 	}
 	DoomMapCheck::Log(MapName + TEXT("_Edit"), Issues);
 	if (BrokenTag)

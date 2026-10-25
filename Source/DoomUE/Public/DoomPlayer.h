@@ -114,6 +114,8 @@ public:
 	// --- networking ---------------------------------------------------------------------------
 	/** A message on this player's screen (pickups, locked doors, secrets). */
 	void Message(const FString& Text);
+	/** The port's own messages (LOCTEXT). A network game sends them as the server's text. */
+	void Message(const FText& Text) { Message(Text.ToString()); }
 	/** A sound this player makes: heard by them in 2D, by everyone else at their position. */
 	void PlaySelfSound(const FString& Name, float Volume = 1.f);
 	virtual void BeginPlay() override;

@@ -50,6 +50,8 @@
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
 
+#define LOCTEXT_NAMESPACE "DoomWorld"
+
 // ------------------------------------------------------------------------------------------------
 
 UDoomWorld::UDoomWorld() = default;
@@ -167,7 +169,7 @@ void UDoomWorld::StartNewGame(const FString& MapName, int32 InSkill)
 {
 	if (IsNetClient())
 	{
-		ShowMessage(TEXT("Only the server can start a new game."));
+		ShowMessage(LOCTEXT("OnlyServerNewGame", "Only the server can start a new game."));
 		return;
 	}
 	Skill = FMath::Clamp(InSkill, 1, 5);
@@ -185,7 +187,7 @@ void UDoomWorld::SetModern(bool b)
 		}
 		if (IsNetGame())
 		{
-			ShowMessage(TEXT("The renderer changes on the next map.")); // a reload would restart everyone's level
+			ShowMessage(LOCTEXT("RendererNextMap", "The renderer changes on the next map.")); // a reload would restart everyone's level
 			return;
 		}
 		// rebuild with the other material set, keeping the game where it is (the menu is usually open):
@@ -1028,3 +1030,5 @@ const FDoomNav& UDoomWorld::GetNav() const
 	}
 	return Nav;
 }
+
+#undef LOCTEXT_NAMESPACE

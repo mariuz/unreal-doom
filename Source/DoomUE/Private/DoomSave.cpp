@@ -15,6 +15,8 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+#define LOCTEXT_NAMESPACE "DoomSave"
+
 namespace
 {
 	template <typename E>
@@ -253,12 +255,12 @@ bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 	ADoomPlayer* P = GetPlayer();
 	if (IsNetGame())
 	{
-		ShowMessage(TEXT("You can't save a network game."));
+		ShowMessage(LOCTEXT("CantSaveNetGame", "You can't save a network game."));
 		return false;
 	}
 	if (!Map.IsValid() || !P || P->IsDead() || (Flow().Phase != EDoomGameState::Playing && Flow().Phase != EDoomGameState::Menu))
 	{
-		ShowMessage(TEXT("You can't save now."));
+		ShowMessage(LOCTEXT("CantSaveNow", "You can't save now."));
 		return false;
 	}
 	UDoomSaveGame* Save = Cast<UDoomSaveGame>(UGameplayStatics::CreateSaveGameObject(UDoomSaveGame::StaticClass()));
@@ -273,7 +275,7 @@ bool UDoomWorld::SaveGame(int32 Slot, const FString& Name)
 	SerializeState(Writer);
 	const bool bOk = !Writer.IsError() && UGameplayStatics::SaveGameToSlot(Save, SlotName(Slot), 0);
 	SlotCache.Remove(Slot);
-	ShowMessage(bOk ? (Slot <= 0 ? TEXT("Quicksaved.") : FString::Printf(TEXT("Game saved in slot %d."), Slot)) : TEXT("Save failed."));
+	ShowMessage(bOk ? (Slot <= 0 ? LOCTEXT("Quicksaved", "Quicksaved.") : FText::Format(LOCTEXT("SavedInSlot", "Game saved in slot {0}."), Slot)) : LOCTEXT("SaveFailed", "Save failed."));
 	UE_LOG(LogDoomGame, Log, TEXT("Save %s: %s (%d bytes)"), *SlotName(Slot), bOk ? TEXT("ok") : TEXT("FAILED"), Save->State.Num());
 	return bOk;
 }
@@ -282,19 +284,19 @@ bool UDoomWorld::LoadGame(int32 Slot)
 {
 	if (IsNetGame())
 	{
-		ShowMessage(TEXT("You can't load a game during a network game."));
+		ShowMessage(LOCTEXT("CantLoadNetGame", "You can't load a game during a network game."));
 		return false;
 	}
 	const FString Name = SlotName(Slot);
 	UDoomSaveGame* Save = UGameplayStatics::DoesSaveGameExist(Name, 0) ? Cast<UDoomSaveGame>(UGameplayStatics::LoadGameFromSlot(Name, 0)) : nullptr;
 	if (!Save)
 	{
-		ShowMessage(TEXT("Nothing saved there."));
+		ShowMessage(LOCTEXT("NothingSavedThere", "Nothing saved there."));
 		return false;
 	}
 	if (Save->Version != UDoomSaveGame::CurrentVersion || (!Save->IWad.IsEmpty() && Save->IWad != IWadName))
 	{
-		ShowMessage(FString::Printf(TEXT("That save is for %s."), *Save->IWad));
+		ShowMessage(FText::Format(LOCTEXT("SaveForOtherIWad", "That save is for {0}."), FText::FromString(Save->IWad)));
 		return false;
 	}
 	Skill = Save->Skill;
@@ -313,7 +315,7 @@ bool UDoomWorld::LoadGame(int32 Slot)
 	RefreshRestoredLevel();
 	ResetClock();
 	Flow().Phase = EDoomGameState::Playing;
-	ShowMessage(Slot <= 0 ? TEXT("Quickloaded.") : FString::Printf(TEXT("Loaded slot %d."), Slot));
+	ShowMessage(Slot <= 0 ? LOCTEXT("Quickloaded", "Quickloaded.") : FText::Format(LOCTEXT("LoadedSlot", "Loaded slot {0}."), Slot));
 	UE_LOG(LogDoomGame, Log, TEXT("Loaded %s: %s, %d monsters, %d things, %d movers"), *Name, *Save->Description, Monsters.Num(), Things.Num(), Movers.Num());
 	return true;
 }
@@ -483,3 +485,5 @@ bool UDoomWorld::RunSaveTest(FString* OutReport)
 	}
 	return bPass;
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -48,7 +48,7 @@ namespace
 			{
 				Message->AddToken(FUObjectToken::Create(Actors[i].Get()));
 			}
-			Message->AddToken(FTextToken::Create(FText::FromString(I.Text)));
+			Message->AddToken(FTextToken::Create(I.Text));
 			if (I.Line != INDEX_NONE || I.Sector != INDEX_NONE || I.Thing != INDEX_NONE)
 			{
 				const FVector Where = Doom::ToUE(I.Where, I.Z);
@@ -101,7 +101,7 @@ namespace
 		for (const FString& Name : DoomEditorData::MapNames())
 		{
 			const bool bImported = FPackageName::DoesPackageExist(DoomContent::MapPackage(Name));
-			Section.AddMenuEntry(FName(*Name), FText::FromString(bImported ? Name : Name + TEXT("  (import)")), FText::GetEmpty(), FSlateIcon(),
+			Section.AddMenuEntry(FName(*Name), (bImported ? FText::FromString(Name) : FText::Format(LOCTEXT("ImportEntry", "{0}  (import)"), FText::FromString(Name))), FText::GetEmpty(), FSlateIcon(),
 				FUIAction(FExecuteAction::CreateLambda([Name]() { OpenMap(Name); })));
 		}
 	}

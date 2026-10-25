@@ -31,6 +31,8 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 
+#define LOCTEXT_NAMESPACE "DoomEditor"
+
 // ------------------------------------------------------------------------------------------------
 // The editor
 // ------------------------------------------------------------------------------------------------
@@ -124,7 +126,7 @@ void UDoomMapEditor::Open()
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	PC->SetInputMode(InputMode);
 	Widget->GetMapView()->FocusView();
-	Status = FString::Printf(TEXT("Editing %s. Click to select, 1-4 / D for the mode, Tab for 3D, F5 plays it."), *EditMap->Name);
+	Status = FText::Format(LOCTEXT("Editing", "Editing {0}. Click to select, 1-4 / D for the mode, Tab for 3D, F5 plays it."), FText::FromString(EditMap->Name));
 	Refresh();
 	UE_LOG(LogDoomEditor, Log, TEXT("Map editor: editing %s (%d sectors, %d lines, %d things)"), *EditMap->Name, EditMap->Sectors.Num(), EditMap->Lines.Num(), EditMap->Things.Num());
 }
@@ -310,7 +312,7 @@ bool UDoomMapEditor::SetNumber(EDoomEditField Field, float Value)
 	case EDoomEditField::VertexY: if (!bVertex) break; M.Vertices[S].Y = Value; bGeometry = true; break;
 	default: break;
 	}
-	Status = FString::Printf(TEXT("%s = %g"), *StaticEnum<EDoomEditField>()->GetNameStringByValue((int64)Field), Value);
+	Status = FText::AsCultureInvariant(FString::Printf(TEXT("%s = %g"), *StaticEnum<EDoomEditField>()->GetNameStringByValue((int64)Field), Value));
 	Apply(bGeometry);
 	return true;
 }
@@ -363,7 +365,7 @@ bool UDoomMapEditor::SetName(EDoomEditField Field, FName Value)
 			}
 		}
 	}
-	Status = FString::Printf(TEXT("%s = %s"), *StaticEnum<EDoomEditField>()->GetNameStringByValue((int64)Field), *Value.ToString());
+	Status = FText::AsCultureInvariant(FString::Printf(TEXT("%s = %s"), *StaticEnum<EDoomEditField>()->GetNameStringByValue((int64)Field), *Value.ToString()));
 	Apply(false);
 	return true;
 }
@@ -393,7 +395,7 @@ bool UDoomMapEditor::FinishDraw()
 {
 	if (!EditMap.IsValid() || DrawPoints.Num() < 3)
 	{
-		Status = TEXT("A sector needs at least three corners");
+		Status = LOCTEXT("NeedThreeCorners", "A sector needs at least three corners");
 		Refresh();
 		return false;
 	}
@@ -415,7 +417,7 @@ bool UDoomMapEditor::FinishDraw()
 	if (New == INDEX_NONE)
 	{
 		UndoStack.Pop();
-		Status = TEXT("Can't draw that: ") + Error;
+		Status = FText::Format(LOCTEXT("CantDraw", "Can't draw that: {0}"), FText::FromString(Error));
 		Refresh();
 		return false;
 	}
@@ -423,7 +425,7 @@ bool UDoomMapEditor::FinishDraw()
 	Apply(true);
 	Mode = EDoomEditMode::Sectors;
 	Selected = New;
-	Status = FString::Printf(TEXT("New sector %d"), New);
+	Status = FText::Format(LOCTEXT("NewSector", "New sector {0}"), DoomText::Number(New));
 	Refresh();
 	return true;
 }
@@ -444,7 +446,7 @@ bool UDoomMapEditor::AddThing(const FVector2f& P, int32 Type, float Angle)
 	Mode = EDoomEditMode::Things;
 	Selected = EditMap->Things.Num() - 1;
 	const FDoomThingDef* Def = DoomInfo::FindThing(Type);
-	Status = FString::Printf(TEXT("Added %s at %.0f, %.0f"), Def ? *Def->Name : TEXT("thing"), P.X, P.Y);
+	Status = FText::Format(LOCTEXT("AddedThing", "Added {0} at {1}, {2}"), Def ? FText::FromString(Def->Name) : LOCTEXT("ThingWord", "thing"), DoomText::Number(FMath::RoundToInt(P.X)), DoomText::Number(FMath::RoundToInt(P.Y)));
 	Apply(false);
 	return true;
 }
@@ -460,7 +462,7 @@ bool UDoomMapEditor::DeleteSelected()
 		Begin();
 		EditMap->Things.RemoveAt(Selected);
 		Selected = INDEX_NONE;
-		Status = TEXT("Thing deleted");
+		Status = LOCTEXT("ThingDeleted", "Thing deleted");
 		Apply(false);
 		return true;
 	}
@@ -468,18 +470,18 @@ bool UDoomMapEditor::DeleteSelected()
 	{
 		if (EditMap->Sectors.Num() <= 1)
 		{
-			Status = TEXT("The last sector stays");
+			Status = LOCTEXT("LastSectorStays", "The last sector stays");
 			Refresh();
 			return false;
 		}
 		Begin();
 		DoomMapEdit::DeleteSector(*EditMap, Selected);
 		Selected = INDEX_NONE;
-		Status = TEXT("Sector deleted");
+		Status = LOCTEXT("SectorDeleted", "Sector deleted");
 		Apply(true);
 		return true;
 	}
-	Status = TEXT("Select a thing or a sector to delete");
+	Status = LOCTEXT("SelectToDelete", "Select a thing or a sector to delete");
 	Refresh();
 	return false;
 }
@@ -511,14 +513,14 @@ bool UDoomMapEditor::Undo()
 {
 	if (!EditMap.IsValid() || UndoStack.Num() == 0)
 	{
-		Status = TEXT("Nothing to undo");
+		Status = LOCTEXT("NothingToUndo", "Nothing to undo");
 		Refresh();
 		return false;
 	}
 	RedoStack.Add(DoomMapEdit::Take(*EditMap));
 	DoomMapEdit::Restore(*EditMap, UndoStack.Pop());
 	Selected = INDEX_NONE;
-	Status = FString::Printf(TEXT("Undone (%d more)"), UndoStack.Num());
+	Status = FText::Format(LOCTEXT("Undone", "Undone ({0} more)"), UndoStack.Num());
 	Apply(false);
 	return true;
 }
@@ -527,14 +529,14 @@ bool UDoomMapEditor::Redo()
 {
 	if (!EditMap.IsValid() || RedoStack.Num() == 0)
 	{
-		Status = TEXT("Nothing to redo");
+		Status = LOCTEXT("NothingToRedo", "Nothing to redo");
 		Refresh();
 		return false;
 	}
 	UndoStack.Add(DoomMapEdit::Take(*EditMap));
 	DoomMapEdit::Restore(*EditMap, RedoStack.Pop());
 	Selected = INDEX_NONE;
-	Status = TEXT("Redone");
+	Status = LOCTEXT("Redone", "Redone");
 	Apply(false);
 	return true;
 }
@@ -549,7 +551,8 @@ int32 UDoomMapEditor::CheckMap()
 	DoomMapCheck::Log(EditMap->Name, Issues);
 	const int32 Errors = DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Error);
 	const int32 Warnings = DoomMapCheck::Count(Issues, FDoomMapIssue::ESeverity::Warning);
-	Status = FString::Printf(TEXT("Map check: %d errors, %d warnings%s%s"), Errors, Warnings, Issues.Num() ? TEXT(". First: ") : TEXT(""), Issues.Num() ? *Issues[0].Text : TEXT(""));
+	Status = Issues.Num() ? FText::Format(LOCTEXT("MapCheckFirst", "Map check: {0} errors, {1} warnings. First: {2}"), Errors, Warnings, Issues[0].Text)
+		: FText::Format(LOCTEXT("MapCheck", "Map check: {0} errors, {1} warnings"), Errors, Warnings);
 	if (Issues.Num())
 	{
 		ViewCenter = Issues[0].Where;
@@ -575,7 +578,8 @@ bool UDoomMapEditor::SaveWad(const FString& Path)
 	const FString Out = Path.IsEmpty() ? FPaths::ProjectSavedDir() / TEXT("Maps") / Name + TEXT(".wad") : Path;
 	FString Note;
 	const bool bOk = DoomWadWriter::SaveMap(*EditMap, Slot, Out, &Note);
-	Status = bOk ? FString::Printf(TEXT("Saved %s as %s (%s)"), *FPaths::ConvertRelativePathToFull(Out), *Slot, *Note) : FString::Printf(TEXT("Could not save %s"), *Out);
+	Status = bOk ? FText::Format(LOCTEXT("SavedAs", "Saved {0} as {1} ({2})"), FText::FromString(FPaths::ConvertRelativePathToFull(Out)), FText::FromString(Slot), FText::FromString(Note))
+		: FText::Format(LOCTEXT("CouldNotSave", "Could not save {0}"), FText::FromString(Out));
 	Refresh();
 	return bOk;
 }
@@ -591,7 +595,7 @@ void UDoomMapEditor::NewRandomMap(uint32 Seed)
 	LoadFresh(Name);
 	if (EditMap->Name != Name)
 	{
-		Status = FString::Printf(TEXT("No map from seed %s"), *Name);
+		Status = FText::Format(LOCTEXT("NoMapFromSeed", "No map from seed {0}"), FText::FromString(Name));
 		Refresh();
 		return;
 	}
@@ -609,7 +613,7 @@ void UDoomMapEditor::NewRandomMap(uint32 Seed)
 		}
 	}
 	FitView();
-	Status = FString::Printf(TEXT("New random map %s"), *Name);
+	Status = FText::Format(LOCTEXT("NewRandomMap", "New random map {0}"), FText::FromString(Name));
 	Refresh();
 }
 
@@ -638,7 +642,7 @@ void UDoomMapEditor::NewEmptyMap()
 	}
 	Apply(false);
 	FitView();
-	Status = TEXT("A new room: draw sectors around it (D), add things (1, T), F5 to play");
+	Status = LOCTEXT("NewRoom", "A new room: draw sectors around it (D), add things (1, T), F5 to play");
 	Refresh();
 }
 
@@ -686,6 +690,8 @@ void UDoomMapEditor::PickInView(const FVector2D& ScreenPos)
 	// on a wall, the sector is the one in front of it (towards the camera)
 	const FVector2f P = Doom::ToDoom2D(Hit.ImpactPoint - Dir * 2.f);
 	SelectAt(P, Mode == EDoomEditMode::Things ? 48.f : 24.f);
-	Status = FString::Printf(TEXT("Picked %s %d"), *StaticEnum<EDoomEditMode>()->GetNameStringByValue((int64)Mode), Selected);
+	Status = FText::Format(LOCTEXT("Picked", "Picked {0} {1}"), FText::FromString(StaticEnum<EDoomEditMode>()->GetNameStringByValue((int64)Mode)), DoomText::Number(Selected));
 	Refresh();
 }
+
+#undef LOCTEXT_NAMESPACE

@@ -28,6 +28,8 @@
 #include "DoomMapTiles.h"
 #include "UObject/ConstructorHelpers.h"
 
+#define LOCTEXT_NAMESPACE "DoomMapEdits"
+
 // ------------------------------------------------------------------------------------------------
 // ADoomSectorEdit
 // ------------------------------------------------------------------------------------------------
@@ -128,7 +130,7 @@ void ADoomSectorEdit::Refresh(bool bRebuild)
 	{
 		Sector = MapActor->SectorAtLocation(GetActorLocation());
 	}
-	Label->SetText(FText::FromString(Sector >= 0 ? FString::Printf(TEXT("Sector %d"), Sector) : TEXT("outside the map")));
+	Label->SetText(Sector >= 0 ? FText::Format(LOCTEXT("SectorN", "Sector {0}"), DoomText::Number(Sector)) : LOCTEXT("OutsideMap", "outside the map"));
 	if (bRebuild && MapActor)
 	{
 		MapActor->RequestPreview();
@@ -309,8 +311,8 @@ void ADoomLineEdit::Refresh(bool bRebuild, bool bPickLine)
 		Line = MapActor->LineNearLocation(GetActorLocation());
 	}
 	const int32 ShownSpecial = bSpecial ? Special : -1;
-	Label->SetText(FText::FromString(Line < 0 ? FString(TEXT("no line"))
-		: ShownSpecial > 0 ? FString::Printf(TEXT("Line %d: special %d"), Line, ShownSpecial) : FString::Printf(TEXT("Line %d"), Line)));
+	Label->SetText(Line < 0 ? LOCTEXT("NoLine", "no line")
+		: ShownSpecial > 0 ? FText::Format(LOCTEXT("LineSpecial", "Line {0}: special {1}"), DoomText::Number(Line), DoomText::Number(ShownSpecial)) : FText::Format(LOCTEXT("LineN", "Line {0}"), DoomText::Number(Line)));
 	if (bRebuild && MapActor)
 	{
 		MapActor->RequestPreview();
@@ -334,3 +336,4 @@ void ADoomLineEdit::PostEditMove(bool bFinished)
 }
 #endif
 
+#undef LOCTEXT_NAMESPACE

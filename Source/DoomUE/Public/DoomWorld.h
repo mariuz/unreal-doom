@@ -373,6 +373,8 @@ public:
 
 	/** Message for the HUD (pickups, locked doors...). */
 	void ShowMessage(const FString& Msg);
+	/** The port's own messages (LOCTEXT); Doom's come from the WAD and DEHACKED as strings. */
+	void ShowMessage(const FText& Msg) { ShowMessage(Msg.ToString()); }
 	const FString& GetMessage() const { return Message; }
 	/** The message stays up for 4 seconds. */
 	bool IsMessageShowing() const { return MessageTics > 0; }

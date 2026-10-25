@@ -129,6 +129,11 @@ Tools/run_tests.bat DoomUE -NullRHI
   means a picture was missed off the game thread (see map loading), and an ensure in `RunTic` /
   `ADoomPlayer::DoomTic` means a client ran game logic. Assert only the code's own invariants; WAD
   and network data get runtime checks.
+* **Text the player or editor user reads is `LOCTEXT`** (each file defines its `LOCTEXT_NAMESPACE`
+  after the includes and undefines it at the end). Map indices in sentences use `DoomText::Number`
+  (no thousands separators). Never build `FText` in a file-scope static: it runs before the engine
+  starts (the control names live in a function-local static for that reason). Logs, test reports and
+  Doom's own strings (WAD, DEHACKED) stay `FString`.
 * **Game tables are `USTRUCT`s with `FString` fields** (`DoomInfo.h`).
   * Test for empty fields with `.IsEmpty()`. `*Def->Field` compiles but is always true.
   * Compare names with `.Equals()`.
@@ -181,6 +186,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * translatable text: `LOCTEXT` for the port's own words (menus, HUD, editor, map checker);
   * encapsulation of things, monsters, missiles and the menu (accessors; `FDoomHostSettings`);
   * static analysis (`Tools/analyze.bat`, zero warnings) and `.clang-format`;
   * assertions: threads, load stages, network roles, inventory packing, named menu rows;
