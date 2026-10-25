@@ -736,7 +736,7 @@ void ADoomGameMode::StartPlay()
 			W->Menu.NetRules = 1;
 			W->Menu.NetMapIndex = FMath::Max(0, W->GetWad()->MapNames().IndexOfByKey(W->GetWad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")));
 			W->Menu.bNetFast = true;
-			W->Menu.Item = 4; // HOST GAME
+			W->Menu.Item = EMultiplayerRow::Host;
 			W->Menu.Select(*W);
 		}, 2.f, false);
 	}
@@ -747,7 +747,7 @@ void ADoomGameMode::StartPlay()
 		{
 			if (W->IsNetClient()) return;
 			W->Menu.Open(*W, EMenuPage::Multiplayer);
-			W->Menu.Item = 7; // CONNECT (to 127.0.0.1)
+			W->Menu.Item = EMultiplayerRow::Connect; // to 127.0.0.1
 			W->Menu.Select(*W);
 		}, 3.f, false);
 	}

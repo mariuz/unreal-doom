@@ -482,6 +482,19 @@ state.
   * The perf-test counters are `FDoomWorldStats` (`GetStats`).
   * The input lock, the automap, the computer map and the HUD message have accessors.
 
+Assertions (`feature/assertions`): the rules the code relies on are checked in development builds
+(`check` and `ensureMsgf` compile out of shipping ones). Bad WAD data is still handled at run time,
+never asserted.
+
+* **Threads:** pictures and textures are only made on the game thread. A picture the geometry
+  workers miss means `CachePrefetch` didn't run before `GenerateChunks`.
+* **Map loading:** chunks commit only after the workers finish, and `InitWads` leaves no map behind.
+* **Network roles:** clients run no game tics, and only the server runs the marine's.
+* **Network packing:** the inventory's weapons and keys fit its bit masks (`static_assert`).
+* **The effect pool:** pooled effects stay out of the thing list.
+* **The menu:** the Options and Multiplayer pages' rows are named (`EOptionsRow`,
+  `EMultiplayerRow`), and each page checks it builds exactly that many.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -589,7 +602,6 @@ Not done yet (roughly in priority order):
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Localizable text**: the port's own words (the menu's added rows, the map editor's panels, messages that aren't the WAD's) are `TEXT` literals; the game module has no `LOCTEXT`. User-facing text belongs in `FText` with `LOCTEXT` / `NSLOCTEXT` and string tables, so it can be translated. Doom's own strings stay in the WAD's DEHACKED / BEX text.
    * **Encapsulation, the rest**: `ADoomPlayer` and `UDoomWorld` keep their state private now; `ADoomThing` and `ADoomMonster` still expose theirs (`Def`, `Health`, `bDead`, `Target`, the sleep and SMART fields), and `FDoomMenu` its page, item and editing fields.
-   * **Assertions**: the game module has a single `check`. Invariants (map indices, chunk and sector tables, net struct sizes) want `check` / `ensureMsgf`, which compile out of shipping builds.
    * **Static analysis**: a build with `-StaticAnalyzer=VisualCpp` (or Clang-Tidy) and its warnings fixed, and a `.clang-format` matching Epic's layout (tabs, braces on their own lines).
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).

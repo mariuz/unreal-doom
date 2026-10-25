@@ -533,6 +533,7 @@ void FDoomGraphics::CreateTextures(FDoomPicture& Pic, const FDoomPictureMips& Mi
 
 void FDoomGraphics::Upload(FDoomPicture& Pic, bool bWrap, bool bMips)
 {
+	check(IsInGameThread()); // creates UTexture2Ds
 	FDoomPictureMips Mips;
 	PrepareMips(Pic, bMips, Mips);
 	CreateTextures(Pic, Mips, bWrap);
@@ -645,6 +646,9 @@ const FDoomPicture* FDoomGraphics::Texture(FName Name)
 	{
 		return Cached->Get();
 	}
+	// a miss decodes the picture and creates its textures: game thread only. Map loading caches the
+	// map's pictures first (CachePrefetch), so the geometry workers only ever hit the cache.
+	checkf(IsInGameThread(), TEXT("Texture %s is not cached: FDoomGraphics::CachePrefetch must run before GenerateChunks"), *Name.ToString());
 	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
 	if (!ComposeTexture(Name, *Pic))
 	{
@@ -718,6 +722,9 @@ const FDoomPicture* FDoomGraphics::Flat(FName Name)
 	{
 		return Cached->Get();
 	}
+	// a miss decodes the picture and creates its textures: game thread only. Map loading caches the
+	// map's pictures first (CachePrefetch), so the geometry workers only ever hit the cache.
+	checkf(IsInGameThread(), TEXT("Flat %s is not cached: FDoomGraphics::CachePrefetch must run before GenerateChunks"), *Name.ToString());
 	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
 	if (!ComposeFlat(Name, *Pic))
 	{
@@ -755,6 +762,9 @@ const FDoomPicture* FDoomGraphics::Patch(const FString& LumpName)
 	{
 		return Cached->Get();
 	}
+	// a miss decodes the picture and creates its textures: game thread only. Map loading caches the
+	// map's pictures first (CachePrefetch), so the geometry workers only ever hit the cache.
+	checkf(IsInGameThread(), TEXT("Patch %s is not cached: FDoomGraphics::CachePrefetch must run before GenerateChunks"), *LumpName);
 	TSharedPtr<FDoomPicture> Pic = MakeShared<FDoomPicture>();
 	Pic->Name = Key;
 	if (!DecodePatch(Wad.LumpData(LumpName), *Pic))

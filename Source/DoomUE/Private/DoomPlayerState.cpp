@@ -37,6 +37,9 @@ bool FDoomInventory::operator==(const FDoomInventory& O) const
 
 bool FDoomInventory::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
 {
+	static_assert(UE_ARRAY_COUNT(Weapons) <= 16, "the weapon mask is 16 bits");
+	static_assert(UE_ARRAY_COUNT(Keys) <= 8, "the key mask is 8 bits");
+	static_assert((int32)EDoomWeapon::Count <= 255, "the ready weapon is sent as a byte");
 	uint16 W = WeaponMask();
 	uint8 K = KeyMask();
 	uint8 R = (uint8)Ready;

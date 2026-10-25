@@ -121,9 +121,13 @@ Tools/run_tests.bat DoomUE -NullRHI
   Give them file-specific names. A unity build or the shared PCH also hides missing includes.
   `Tools/check_includes.bat` checks both (`names` for the quick name check alone); run it after
   adding files or helpers. It wants the editor closed and takes about 10 minutes the first time.
-* **The Options page's rows are numbered by hand** in `FDoomMenu` (`Rows`, `Adjust`, `Select`,
-  `Activate`) and in the play-test's `rebind` step. Adding a row shifts the ones after it. The page
-  scrolls past 10 rows.
+* **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
+  `DoomMenu.h`): a new row goes into the enum in the order `FDoomMenu::Rows` adds it, or the page's
+  `checkf` fires. The Options page scrolls past 10 rows.
+* **Assertions guard the rules above:** a `checkf` in `FDoomGraphics::Texture` / `Flat` / `Patch`
+  means a picture was missed off the game thread (see map loading), and an ensure in `RunTic` /
+  `ADoomPlayer::DoomTic` means a client ran game logic. Assert only the code's own invariants; WAD
+  and network data get runtime checks.
 * **Game tables are `USTRUCT`s with `FString` fields** (`DoomInfo.h`).
   * Test for empty fields with `.IsEmpty()`. `*Def->Field` compiles but is always true.
   * Compare names with `.Equals()`.
@@ -176,6 +180,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * assertions: threads, load stages, network roles, inventory packing, named menu rows;
   * encapsulation: `ADoomPlayer::GetView()` (its replicated `FDoomPlayerView` is the state itself),
     `UDoomWorld`'s `FDoomGameOptions`, `FFinaleState`, `FDoomWorldStats` and accessors;
   * log categories per system (`DoomUE.h`; test results in `LogDoomTest`);
