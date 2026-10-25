@@ -596,7 +596,7 @@ void ADoomGameMode::StartPlay()
 		GetWorldTimerManager().SetTimer(T, [W, MenuPage, MenuItem]()
 		{
 			W->Menu.Open(*W, (EMenuPage)MenuPage);
-			W->Menu.Item = MenuItem;
+			W->Menu.SetItem(MenuItem);
 		}, 1.f, false);
 	}
 
@@ -686,7 +686,7 @@ void ADoomGameMode::StartPlay()
 		GetWorldTimerManager().SetTimer(T, [W, SaveName, bCommit]()
 		{
 			W->Menu.Open(*W, EMenuPage::Save);
-			W->Menu.Item = 0;
+			W->Menu.SetItem(0);
 			W->Menu.Select(*W);
 			for (TCHAR C : SaveName)
 			{
@@ -695,7 +695,7 @@ void ADoomGameMode::StartPlay()
 					: FKey(FName(FString(1, &C).ToUpper()));
 				W->Menu.EditKey(*W, Key);
 			}
-			UE_LOG(LogDoomTest, Display, TEXT("Savename: editing %d, text \"%s\""), W->Menu.bEditing, *W->Menu.EditText);
+			UE_LOG(LogDoomTest, Display, TEXT("Savename: editing %d, text \"%s\""), W->Menu.IsEditing(), *W->Menu.GetEditText());
 			if (bCommit)
 			{
 				W->Menu.EditKey(*W, EKeys::Enter);
@@ -733,10 +733,12 @@ void ADoomGameMode::StartPlay()
 		GetWorldTimerManager().SetTimer(T, [W]()
 		{
 			W->Menu.Open(*W, EMenuPage::Multiplayer);
-			W->Menu.NetRules = 1;
-			W->Menu.NetMapIndex = FMath::Max(0, W->GetWad()->MapNames().IndexOfByKey(W->GetWad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")));
-			W->Menu.bNetFast = true;
-			W->Menu.Item = EMultiplayerRow::Host;
+			FDoomHostSettings Host = W->Menu.GetHost();
+			Host.Rules = 1;
+			Host.MapIndex = FMath::Max(0, W->GetWad()->MapNames().IndexOfByKey(W->GetWad()->IsDoom2() ? TEXT("MAP01") : TEXT("E1M1")));
+			Host.bFast = true;
+			W->Menu.SetHost(Host);
+			W->Menu.SetItem(EMultiplayerRow::Host);
 			W->Menu.Select(*W);
 		}, 2.f, false);
 	}
@@ -747,7 +749,7 @@ void ADoomGameMode::StartPlay()
 		{
 			if (W->IsNetClient()) return;
 			W->Menu.Open(*W, EMenuPage::Multiplayer);
-			W->Menu.Item = EMultiplayerRow::Connect; // to 127.0.0.1
+			W->Menu.SetItem(EMultiplayerRow::Connect); // to 127.0.0.1
 			W->Menu.Select(*W);
 		}, 3.f, false);
 	}

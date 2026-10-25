@@ -314,7 +314,7 @@ ADoomPlayerState* UDoomWorld::CreditedPlayer(AActor* Actor)
 {
 	if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(Actor))
 	{
-		Actor = Missile->Source.Get();
+		Actor = Missile->GetSource();
 	}
 	if (const AController* C = Cast<AController>(Actor))
 	{
@@ -614,7 +614,7 @@ FString UDoomWorld::NetFingerprint() const
 	}
 	for (TActorIterator<ADoomThing> It(GetWorld()); It; ++It)
 	{
-		if (!It->bEffect && It->Def) ++NumThings;
+		if (!It->IsEffect() && It->GetDef()) ++NumThings;
 	}
 	const int32 Door = NetTestDoorSector();
 	FString Players;

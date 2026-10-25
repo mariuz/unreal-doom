@@ -54,15 +54,6 @@ public:
 	virtual void SetBase(FMovementBaseInterfaceData* MovementBaseInterfaceData, const FName BoneName = NAME_None, bool bNotifyActor = true) override;
 	using ACharacter::SetBase;
 
-	/** Networking: the type (clients set up the same capsule and sprite) and whether it is a corpse. */
-	UPROPERTY(ReplicatedUsing = OnRep_NetType)
-	int32 NetType = 0;
-	UPROPERTY(ReplicatedUsing = OnRep_NetCorpse)
-	bool bNetCorpse = false;
-	UFUNCTION()
-	void OnRep_NetType();
-	UFUNCTION()
-	void OnRep_NetCorpse();
 	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 
 	/** Woken by noise or sight. */
@@ -77,26 +68,16 @@ public:
 	FVector2f DoomPos() const;
 	float DoomZ() const; // feet height in Doom units
 
-	const FDoomThingDef* Def = nullptr;
-	int32 Health = 0;
-	float DoomAngle = 0;
-	bool bAmbush = false;
-	EMonsterState State = EMonsterState::Idle;
-	TWeakObjectPtr<AActor> Target;
-
-	/** Where the map placed it (Nightmare respawning); bCanRespawn is false for spawned extras. */
-	FVector SpawnFeet = FVector::ZeroVector;
-	float SpawnAngle = 0;
-	bool bCanRespawn = false;
-	int32 DeadTics = 0;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UDoomSpriteComponent> Sprite;
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UPointLightComponent> Light;
-	/** Doom's full box width for bullets and missiles, on monsters wider than they are tall. */
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UBoxComponent> HitBox;
+	const FDoomThingDef* GetDef() const { return Def; }
+	int32 GetHealth() const { return Health; }
+	/** Facing, in Doom degrees (0 east, counter-clockwise). */
+	float GetDoomAngle() const { return DoomAngle; }
+	/** The map's "ambush" flag: wakes only on sight, not on noise. */
+	bool IsAmbush() const { return bAmbush; }
+	EMonsterState GetState() const { return State; }
+	AActor* GetTarget() const { return Target.Get(); }
+	UDoomSpriteComponent* GetSprite() const { return Sprite; }
+	UPointLightComponent* GetLight() const { return Light; }
 
 	// SMART mode (Options > Monster AI): an ADoomAIController's Behavior Tree picks where to walk;
 	// Doom's own code still decides when to attack (see DoomAI.h)
@@ -112,6 +93,37 @@ public:
 	UDoomWorld* GetDoomWorld() const { return DoomWorld; }
 
 private:
+	/** Networking: the type (clients set up the same capsule and sprite) and whether it is a corpse. */
+	UPROPERTY(ReplicatedUsing = OnRep_NetType)
+	int32 NetType = 0;
+	UPROPERTY(ReplicatedUsing = OnRep_NetCorpse)
+	bool bNetCorpse = false;
+	UFUNCTION()
+	void OnRep_NetType();
+	UFUNCTION()
+	void OnRep_NetCorpse();
+
+	const FDoomThingDef* Def = nullptr;
+	int32 Health = 0;
+	float DoomAngle = 0;
+	bool bAmbush = false;
+	EMonsterState State = EMonsterState::Idle;
+	TWeakObjectPtr<AActor> Target;
+
+	/** Where the map placed it (Nightmare respawning, UDoomWorld); bCanRespawn is false for spawned extras. */
+	FVector SpawnFeet = FVector::ZeroVector;
+	float SpawnAngle = 0;
+	bool bCanRespawn = false;
+	int32 DeadTics = 0;
+
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UDoomSpriteComponent> Sprite;
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UPointLightComponent> Light;
+	/** Doom's full box width for bullets and missiles, on monsters wider than they are tall. */
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UBoxComponent> HitBox;
+
 	bool bSmart = false;
 	ESmartMove SmartMove = ESmartMove::None;
 	TArray<FVector2f> SmartPath;

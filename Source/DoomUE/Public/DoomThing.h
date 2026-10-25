@@ -37,6 +37,28 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	/** The thing's type (null for effects). */
+	const FDoomThingDef* GetDef() const { return Def; }
+	/** Dropped by a monster (a clip picked up from it holds half). */
+	bool IsDropped() const { return bDropped; }
+	/** A puff, blood or fog: local, short-lived, not in the thing list. */
+	bool IsEffect() const { return bEffect; }
+	/** A finished effect kept hidden for the next one (UDoomWorld's effect pool). */
+	bool IsPooled() const { return bPooled; }
+	void SetPooled(bool bInPooled) { bPooled = bInPooled; }
+	/** A barrel that burst, a pickup taken. */
+	bool IsDead() const { return bDead; }
+	int32 GetHealth() const { return Health; }
+	/** Who shot the barrel (gets the credit for the explosion). */
+	AActor* GetLastAttacker() const { return LastAttacker.Get(); }
+	UDoomSpriteComponent* GetSprite() const { return Sprite; }
+	UPointLightComponent* GetLight() const { return Light; }
+
+protected:
+	friend class ADoomGameMode; // the scripted test runs (-playtest)
+	UFUNCTION()
+	void OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& Sweep);
+
 	/** Networking: things replicate (pickups vanish, barrels burst); effects stay local. */
 	UPROPERTY(ReplicatedUsing = OnRep_NetType)
 	int32 NetType = 0;
@@ -52,7 +74,6 @@ public:
 	const FDoomThingDef* Def = nullptr;
 	bool bDropped = false;
 	bool bEffect = false;
-	/** A finished effect kept hidden for the next one (UDoomWorld's effect pool). */
 	bool bPooled = false;
 	bool bDead = false;
 	int32 Health = 0;
@@ -64,13 +85,7 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> Light;
 
-	/** Who shot the barrel (gets the credit for the explosion). */
 	TWeakObjectPtr<AActor> LastAttacker;
-
-protected:
-	friend class ADoomGameMode; // the scripted test runs (-playtest)
-	UFUNCTION()
-	void OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& Sweep);
 
 	UPROPERTY()
 	TObjectPtr<UDoomWorld> DoomWorld;

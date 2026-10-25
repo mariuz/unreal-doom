@@ -676,7 +676,7 @@ ADoomThing* UDoomWorld::SpawnEffectLocal(const FString& SpriteName, const FStrin
 	if (T)
 	{
 		++Stats.EffectsReused;
-		T->bPooled = false;
+		T->SetPooled(false);
 		T->SetActorLocation(UEPos, false, nullptr, ETeleportType::ResetPhysics);
 		T->SetActorHiddenInGame(false);
 	}
@@ -785,13 +785,13 @@ ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source
 
 void UDoomWorld::RegisterThing(ADoomThing* T)
 {
-	ensureMsgf(!T->bPooled, TEXT("pooled effects stay out of the thing list"));
+	ensureMsgf(!T->IsPooled(), TEXT("pooled effects stay out of the thing list"));
 	Things.Add(T);
 }
 
 void UDoomWorld::ReleaseEffect(ADoomThing* Effect)
 {
-	if (!Effect || Effect->bPooled)
+	if (!Effect || Effect->IsPooled())
 	{
 		return;
 	}
@@ -800,10 +800,10 @@ void UDoomWorld::ReleaseEffect(ADoomThing* Effect)
 		Effect->Destroy();
 		return;
 	}
-	Effect->bPooled = true;
+	Effect->SetPooled(true);
 	Effect->SetActorHiddenInGame(true);
 	Effect->SetActorTickEnabled(false);
-	if (Effect->Light) Effect->Light->SetVisibility(false);
+	if (Effect->GetLight()) Effect->GetLight()->SetVisibility(false);
 	EffectPool.Add(Effect);
 }
 void UDoomWorld::RegisterMonster(ADoomMonster* M) { Monsters.Add(M); }
@@ -813,11 +813,13 @@ AActor* UDoomWorld::DamageSource(AActor* DamageCauser)
 {
 	if (const ADoomProjectile* Missile = Cast<ADoomProjectile>(DamageCauser))
 	{
-		return Missile->Source.IsValid() ? Missile->Source.Get() : DamageCauser;
+		AActor* Shooter = Missile->GetSource();
+		return Shooter ? Shooter : DamageCauser;
 	}
 	if (const ADoomThing* Barrel = Cast<ADoomThing>(DamageCauser))
 	{
-		return Barrel->LastAttacker.IsValid() ? Barrel->LastAttacker.Get() : DamageCauser;
+		AActor* Attacker = Barrel->GetLastAttacker();
+		return Attacker ? Attacker : DamageCauser;
 	}
 	if (const AController* C = Cast<AController>(DamageCauser))
 	{
@@ -866,7 +868,7 @@ void UDoomWorld::RadiusAttack(AActor* Source, AActor* Instigator, const FVector&
 	}
 	for (const TWeakObjectPtr<ADoomThing>& T : Things)
 	{
-		if (T.IsValid() && T.Get() != Source && T->Def && (T->Def->Flags & EThingFlag::Shootable) && !T->bDead) Victims.Add({ T.Get(), T->Def->Radius });
+		if (T.IsValid() && T.Get() != Source && T->GetDef() && (T->GetDef()->Flags & EThingFlag::Shootable) && !T->IsDead()) Victims.Add({ T.Get(), T->GetDef()->Radius });
 	}
 	for (const TPair<AActor*, float>& V : Victims)
 	{
@@ -957,9 +959,9 @@ void UDoomWorld::RunTic()
 	}
 	for (int32 i = Things.Num() - 1; i >= 0; --i)
 	{
-		if (Things[i].IsValid() && !Things[i]->bPooled) Things[i]->DoomTic();
+		if (Things[i].IsValid() && !Things[i]->IsPooled()) Things[i]->DoomTic();
 		if (!Things.IsValidIndex(i)) continue;
-		if (!Things[i].IsValid() || Things[i]->bPooled) Things.RemoveAtSwap(i);
+		if (!Things[i].IsValid() || Things[i]->IsPooled()) Things.RemoveAtSwap(i);
 	}
 	for (int32 i = Projectiles.Num() - 1; i >= 0; --i)
 	{

@@ -213,10 +213,10 @@ void ADoomProjectile::Explode(AActor* HitActor)
 	bool bSameSpecies = false;
 	const ADoomMonster* Shooter = Cast<ADoomMonster>(Source.Get());
 	const ADoomMonster* Victim = Cast<ADoomMonster>(HitActor);
-	if (Shooter && Victim && Shooter->Def && Victim->Def)
+	if (Shooter && Victim && Shooter->GetDef() && Victim->GetDef())
 	{
 		auto Kind = [](const FDoomThingDef* D) { return D->DoomEdNum == 69 ? 3003 : D->DoomEdNum; };
-		bSameSpecies = Kind(Shooter->Def) == Kind(Victim->Def);
+		bSameSpecies = Kind(Shooter->GetDef()) == Kind(Victim->GetDef());
 	}
 	if (HitActor && HitActor != Source.Get() && !bSameSpecies && (HitActor->IsA<ADoomMonster>() || HitActor->IsA<ADoomPlayer>() || HitActor->IsA<ADoomThing>()))
 	{
