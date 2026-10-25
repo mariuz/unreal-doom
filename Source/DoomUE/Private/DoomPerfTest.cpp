@@ -55,7 +55,7 @@ namespace DoomPerfTest
 	{
 		const FPhase& P = R.Phase;
 		const int32 N = FMath::Max(1, P.Frames);
-		const int64 Sights = W->SightChecks - P.SightStart;
+		const int64 Sights = W->GetStats().SightChecks - P.SightStart;
 		TArray<float> Sorted = P.GameFrames;
 		Sorted.Sort();
 		const float Median = Sorted.Num() ? Sorted[Sorted.Num() / 2] : 0.f;
@@ -67,7 +67,7 @@ namespace DoomPerfTest
 			Lv ? Lv->ChunksRegenerated - P.ChunkStart : 0, Lv ? (Lv->FlushSeconds - P.FlushStart) * 1000.0 / N : 0.0);
 		UE_LOG(LogDoomTest, Display, TEXT("Perftest %s %s: game thread median %.2f ms (mean %.2f), frame %.2f ms (%d frames), %.0f sight checks a second (%.0f%% by REJECT), effects %lld new and %lld reused; %s"),
 			*W->GetMapName(), Name, Median, P.GameMs / N, P.FrameMs / N, P.Frames, Sights / FMath::Max(0.001, P.Seconds),
-			Sights ? 100.0 * (W->RejectedSights - P.RejectStart) / Sights : 0.0, W->EffectsSpawned - P.SpawnStart, W->EffectsReused - P.ReuseStart, *Counts(World, W));
+			Sights ? 100.0 * (W->GetStats().RejectedSights - P.RejectStart) / Sights : 0.0, W->GetStats().EffectsSpawned - P.SpawnStart, W->GetStats().EffectsReused - P.ReuseStart, *Counts(World, W));
 	}
 
 	bool Tick(FRun& R, float Dt)
@@ -103,10 +103,10 @@ namespace DoomPerfTest
 			R.Stage = Stage;
 			R.Time = 0;
 			R.Phase = FPhase();
-			R.Phase.SightStart = W->SightChecks;
-			R.Phase.RejectStart = W->RejectedSights;
-			R.Phase.SpawnStart = W->EffectsSpawned;
-			R.Phase.ReuseStart = W->EffectsReused;
+			R.Phase.SightStart = W->GetStats().SightChecks;
+			R.Phase.RejectStart = W->GetStats().RejectedSights;
+			R.Phase.SpawnStart = W->GetStats().EffectsSpawned;
+			R.Phase.ReuseStart = W->GetStats().EffectsReused;
 			R.Phase.ChunkStart = W->GetLevel() ? W->GetLevel()->ChunksRegenerated : 0;
 			R.Phase.FlushStart = W->GetLevel() ? W->GetLevel()->FlushSeconds : 0;
 		};
@@ -143,9 +143,9 @@ namespace DoomPerfTest
 				// then everyone after the player, and the chaingun firing all the while
 				if (ADoomPlayer* P = W->GetPlayer())
 				{
-					P->bGodMode = true;
+					P->SetGodMode(true);
 					for (bool& B : P->Inv().Weapons) B = true;
-					P->PendingWeapon = EDoomWeapon::Chaingun;
+					P->SetPendingWeapon(EDoomWeapon::Chaingun);
 					P->SetFireHeld(true);
 					for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
 					{

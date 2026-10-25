@@ -173,20 +173,20 @@ int32 UDoomWorld::ScreenPalette() const
 		return FMath::Clamp(Forced, 0, Wad->NumPalettes() - 1); // screenshots of a given palette
 	}
 	int32 Palette = 0;
-	int32 Hurt = P->DamageCount;
-	if (P->bBerserk)
+	int32 Hurt = P->GetView().DamageCount;
+	if (P->GetView().bBerserk)
 	{
-		Hurt = FMath::Max(Hurt, 12 - (P->BerserkTics >> 6)); // berserk's fading red
+		Hurt = FMath::Max(Hurt, 12 - (P->GetView().BerserkTics >> 6)); // berserk's fading red
 	}
 	if (Hurt > 0)
 	{
 		Palette = 1 + FMath::Min((Hurt + 7) >> 3, 7);
 	}
-	else if (P->BonusCount > 0)
+	else if (P->GetView().BonusCount > 0)
 	{
-		Palette = 9 + FMath::Min((P->BonusCount + 7) >> 3, 3);
+		Palette = 9 + FMath::Min((P->GetView().BonusCount + 7) >> 3, 3);
 	}
-	else if (P->RadSuit > 4 * 32 || (P->RadSuit & 8))
+	else if (P->GetView().RadSuit > 4 * 32 || (P->GetView().RadSuit & 8))
 	{
 		Palette = 13;
 	}
@@ -215,7 +215,7 @@ void UDoomWorld::ApplyUserSettings()
 	}
 	if (ADoomPlayer* P = GetPlayer())
 	{
-		P->Camera->SetFieldOfView(S->FieldOfView);
+		P->GetCamera()->SetFieldOfView(S->FieldOfView);
 	}
 }
 
@@ -283,12 +283,12 @@ void UDoomWorld::UpdateMaterialGlobals(float SubTic)
 		ADoomPlayer* P = GetPlayer();
 		const float Tic = Flow().LevelTic + SubTic;
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Tic"), Tic);
-		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("ExtraLight"), P ? P->ExtraLight : 0);
+		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("ExtraLight"), P ? P->GetView().ExtraLight : 0);
 		float Fixed = -1.f;
 		if (P)
 		{
-			if (P->Invulnerability > 4 * 32 || (P->Invulnerability & 8)) Fixed = 32.f;
-			else if (P->LightAmp > 4 * 32 || (P->LightAmp & 8)) Fixed = 1.f;
+			if (P->GetView().Invulnerability > 4 * 32 || (P->GetView().Invulnerability & 8)) Fixed = 32.f;
+			else if (P->GetView().LightAmp > 4 * 32 || (P->GetView().LightAmp & 8)) Fixed = 1.f;
 		}
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("FixedColormap"), Fixed);
 		UKismetMaterialLibrary::SetScalarParameterValue(this, MPC, TEXT("Modern"), bModern ? 1.f : 0.f);

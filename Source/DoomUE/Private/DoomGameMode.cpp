@@ -340,17 +340,19 @@ void ADoomGameMode::StartPlay()
 	{
 		Warp = OptMap;
 	}
+	FDoomGameOptions Options = W->GetOptions();
 	if (OptRules >= 0)
 	{
-		W->bDeathmatchParam = OptRules >= 1;
-		W->bAltDeathParam = OptRules == 2;
+		Options.bDeathmatch = OptRules >= 1;
+		Options.bAltDeath = OptRules == 2;
 	}
-	W->bNoMonsters |= bOptNoMonsters;
-	W->bFastParam |= bOptFast;
+	Options.bNoMonsters |= bOptNoMonsters;
+	Options.bFast |= bOptFast;
+	W->SetOptions(Options);
 	if (!OptMap.IsEmpty() || OptRules >= 0)
 	{
 		UE_LOG(LogDoomNet, Log, TEXT("Hosted game: %s, %s%s%s"), *Warp, OptRules == 2 ? TEXT("deathmatch 2.0") : OptRules == 1 ? TEXT("deathmatch") : TEXT("co-op"),
-			W->bNoMonsters ? TEXT(", no monsters") : TEXT(""), W->bFastParam ? TEXT(", fast") : TEXT(""));
+			Options.bNoMonsters ? TEXT(", no monsters") : TEXT(""), Options.bFast ? TEXT(", fast") : TEXT(""));
 	}
 	if (!Warp.IsEmpty())
 	{
@@ -428,7 +430,7 @@ void ADoomGameMode::StartPlay()
 	// deathmatch also the client: a frag), exit to the intermission, quit; logs NetFingerprint
 	if (FParse::Param(FCommandLine::Get(), TEXT("nettest")) && W->IsNetServer())
 	{
-		W->bInputLocked = true; // stray keys on the test window must not play the host
+		W->SetInputLocked(true); // stray keys on the test window must not play the host
 		TSharedRef<float> Clock = MakeShared<float>(0.f);
 		TSharedRef<float> Waited = MakeShared<float>(0.f);
 		FTimerHandle T;
@@ -572,15 +574,15 @@ void ADoomGameMode::StartPlay()
 			W->FinishIntermission();
 			for (int32 i = 0; i < Presses; ++i)
 			{
-				W->FinaleTic = 100000;
+				W->CompleteFinaleText();
 				W->FinaleInput();
 			}
-			if (W->GetState() == EDoomGameState::Finale && W->FinaleStage == UDoomWorld::EFinaleStage::Text)
+			if (W->GetState() == EDoomGameState::Finale && W->GetFinale().Stage == UDoomWorld::EFinaleStage::Text)
 			{
-				W->FinaleTic = 100000; // whole text for the screenshot
+				W->CompleteFinaleText(); // whole text for the screenshot
 			}
 			UE_LOG(LogDoomTest, Display, TEXT("Endtest: state %d stage %d picture %s text lines %d cast %s"),
-				(int32)W->GetState(), (int32)W->FinaleStage, *W->FinalePicture, W->FinaleText.Num(), *W->CastName());
+				(int32)W->GetState(), (int32)W->GetFinale().Stage, *W->GetFinale().Picture, W->GetFinale().Text.Num(), *W->CastName());
 		}, 1.f, false);
 	}
 
@@ -785,7 +787,7 @@ void ADoomGameMode::StartPlay()
 	{
 		const float Delay = AutoTest.IsEmpty() ? 4.f : FCString::Atof(*AutoTest);
 		// deterministic captures: stray clicks or keys on the test window must not play the game
-		W->bInputLocked = true;
+		W->SetInputLocked(true);
 		float Yaw = 0, Pitch = 0;
 		const bool bYaw = FParse::Value(FCommandLine::Get(), TEXT("-autoyaw="), Yaw);
 		const bool bPitch = FParse::Value(FCommandLine::Get(), TEXT("-autopitch="), Pitch);
@@ -804,7 +806,7 @@ void ADoomGameMode::StartPlay()
 				const FString Name = FString::Printf(TEXT("autotest_%s.png"), W->GetMapName().IsEmpty() ? TEXT("title") : *W->GetMapName());
 				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / Name, true, false);
 				UE_LOG(LogDoomTest, Display, TEXT("Autotest: screenshot %s, kills %d/%d items %d/%d, %d mesh tiles, %d particle bursts | %s"), *Name, W->Flow().Kills, W->Flow().TotalKills, W->Flow().Items, W->Flow().TotalItems,
-					W->GetLevel() ? W->GetLevel()->NumBakedTiles() : 0, W->GetParticleBursts(), *W->StateFingerprint());
+					W->GetLevel() ? W->GetLevel()->NumBakedTiles() : 0, W->GetStats().ParticleBursts, *W->StateFingerprint());
 			});
 		}, Delay, false);
 		GetWorldTimerManager().SetTimer(Quit, []() { FPlatformMisc::RequestExit(false, TEXT("DoomAutotest")); }, Delay + 2.f, false);
@@ -825,12 +827,12 @@ void ADoomGameMode::DoomGod()
 	{
 		if (ADoomPlayer* P = W->GetPlayer())
 		{
-			P->bGodMode = !P->bGodMode;
-			if (P->bGodMode && !P->IsDead())
+			P->SetGodMode(!P->IsGodMode());
+			if (P->IsGodMode() && !P->IsDead())
 			{
 				P->Inv().Health = 100; // IDDQD heals, too
 			}
-			W->ShowMessage(P->bGodMode ? TEXT("God mode on") : TEXT("God mode off"));
+			W->ShowMessage(P->IsGodMode() ? TEXT("God mode on") : TEXT("God mode off"));
 		}
 	}
 }

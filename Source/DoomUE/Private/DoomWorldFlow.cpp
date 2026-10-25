@@ -625,11 +625,11 @@ FString UDoomWorld::NetFingerprint() const
 			// the marine's colour as this machine draws it (Doom's translation: 0 green .. 3 red)
 			const ADoomPlayer* Pawn = PS->GetPawn<ADoomPlayer>();
 			Players += FString::Printf(TEXT(" [P%d hp%d am%d w%d k%d f%d c%d]"), PS->PlayerNumber + 1, PS->Inv.Health, PS->Inv.Ammo[0],
-				(int32)PS->Inv.Weapons[(int32)EDoomWeapon::Shotgun], PS->LevelKills, PS->Frags, Pawn && Pawn->Body ? Pawn->Body->Translation : -1);
+				(int32)PS->Inv.Weapons[(int32)EDoomWeapon::Shotgun], PS->LevelKills, PS->Frags, Pawn && Pawn->GetBody() ? Pawn->GetBody()->Translation : -1);
 		}
 		if (Flow().Phase == EDoomGameState::Finale)
 		{
-			Players += FString::Printf(TEXT(" finale stage%d tic%d lines%d"), (int32)FinaleStage, FinaleTic, FinaleText.Num());
+			Players += FString::Printf(TEXT(" finale stage%d tic%d lines%d"), (int32)Finale.Stage, Finale.Tic, Finale.Text.Num());
 		}
 	}
 	return FString::Printf(TEXT("%s level%d phase%d monsters%d/%d things%d door%d ceiling%.0f kills%d/%d%s"),

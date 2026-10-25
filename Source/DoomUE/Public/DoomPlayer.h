@@ -14,7 +14,8 @@
 class UCameraComponent;
 class UDoomSpriteComponent;
 
-/** What the owning player's screen needs from the server-run weapon and powerup logic. */
+/** The marine's weapon sprites (psprites, Doom 320x200 coordinates), powerups (tics remaining), screen
+ *  tints and status-bar face: run by the server, replicated to the owner's HUD. */
 USTRUCT()
 struct FDoomPlayerView
 {
@@ -23,20 +24,20 @@ struct FDoomPlayerView
 	UPROPERTY() FString WeaponSprite;
 	UPROPERTY() FString FlashSprite;
 	UPROPERTY() uint16 WeaponFrame = 'A';
-	UPROPERTY() uint16 FlashFrame = 0;
-	UPROPERTY() float WeaponY = 128.f;
+	UPROPERTY() uint16 FlashFrame = 0;     // 0 = no flash
+	UPROPERTY() float WeaponY = 128.f;     // 32 = up, 128 = down
 	UPROPERTY() float BobX = 0;
 	UPROPERTY() float BobY = 0;
-	UPROPERTY() float CameraZ = 0;
+	UPROPERTY() float CameraZ = 0;         // filled in when published (the server's view height)
 	UPROPERTY() int32 Invulnerability = 0;
 	UPROPERTY() int32 Invisibility = 0;
 	UPROPERTY() int32 RadSuit = 0;
 	UPROPERTY() int32 LightAmp = 0;
-	UPROPERTY() int32 BerserkTics = 0;
-	UPROPERTY() int32 DamageCount = 0;
-	UPROPERTY() int32 BonusCount = 0;
-	UPROPERTY() int32 ExtraLight = 0;
-	UPROPERTY() int32 FaceDamageDir = 0;
+	UPROPERTY() int32 BerserkTics = 0;     // counts up from the pickup (the red tinge fades with it)
+	UPROPERTY() int32 DamageCount = 0;     // red tint
+	UPROPERTY() int32 BonusCount = 0;      // gold tint
+	UPROPERTY() int32 ExtraLight = 0;      // gun flash
+	UPROPERTY() int32 FaceDamageDir = 0;   // -1 left, 1 right
 	UPROPERTY() int32 FaceEvilGrin = 0;
 	UPROPERTY() int32 AttackDown = 0;
 	UPROPERTY() int32 DeathTics = 0;
@@ -96,36 +97,19 @@ public:
 	FDoomInventory& Inv();
 	const FDoomInventory& Inv() const;
 	ADoomPlayerState* GetDoomPlayerState() const;
-	// powerups, in tics remaining
-	int32 Invulnerability = 0, Invisibility = 0, RadSuit = 0, LightAmp = 0;
-	bool bBerserk = false;
-	int32 BerserkTics = 0;   // counts up from the pickup (the red tinge fades with it)
-	int32 DamageCount = 0;   // red tint
-	int32 BonusCount = 0;    // gold tint
-	int32 ExtraLight = 0;    // gun flash
-	int32 AttackDown = 0;
-	int32 FaceDamageDir = 0; // -1 left, 1 right
-	int32 FaceEvilGrin = 0;
-	bool bGodMode = false;
-
-	// psprites (Doom 320x200 coordinates)
-	FString WeaponSprite;
-	TCHAR WeaponFrame = 'A';
-	FString FlashSprite;
-	TCHAR FlashFrame = 0;     // 0 = no flash
-	float WeaponY = 128.f;    // 32 = up, 128 = down
-	float BobX = 0, BobY = 0;
-	EDoomWeapon PendingWeapon = EDoomWeapon::Count;
+	/** The weapon sprites, powerups, tints and face the HUD draws (the owner's copy on a client). */
+	const FDoomPlayerView& GetView() const { return View; }
+	bool IsGodMode() const { return View.bGodMode; }
+	/** IDDQD and the tests; sector special 11 (the exit's damage floor) turns it off. */
+	void SetGodMode(bool bOn) { View.bGodMode = bOn; }
+	/** The weapon to bring up once the current one is lowered (Count: none). */
+	EDoomWeapon GetPendingWeapon() const { return PendingWeapon; }
+	void SetPendingWeapon(EDoomWeapon Weapon) { PendingWeapon = Weapon; }
 	/** The trigger held from code (-perftest): the weapon fires as long as it stays held. */
 	void SetFireHeld(bool bHeld) { bFireHeld = bHeld; }
 
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UCameraComponent> Camera;
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UPointLightComponent> MuzzleLight;
-	/** The marine as other players see them (PLAY sprites); hidden from the owner's own view. */
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UDoomSpriteComponent> Body;
+	UCameraComponent* GetCamera() const { return Camera; }
+	UDoomSpriteComponent* GetBody() const { return Body; }
 
 	// --- networking ---------------------------------------------------------------------------
 	/** A message on this player's screen (pickups, locked doors, secrets). */
@@ -169,11 +153,20 @@ private:
 	void UseLinesOrRespawn();
 	void SelectSlotNow(int32 Slot);
 	void CycleWeaponNow(int32 Dir);
-	/** Server: the weapon and powerup state the owner's HUD draws. */
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UCameraComponent> Camera;
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UPointLightComponent> MuzzleLight;
+	/** The marine as other players see them (PLAY sprites); hidden from the owner's own view. */
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UDoomSpriteComponent> Body;
+
+	/** The weapon and powerup state: the server's own, and replicated to the owner for its HUD. */
 	UPROPERTY(ReplicatedUsing = OnRep_View)
 	FDoomPlayerView View;
+	EDoomWeapon PendingWeapon = EDoomWeapon::Count;
 	UFUNCTION()
-	void OnRep_View();
+	void OnRep_View(const FDoomPlayerView& OldView);
 	void PublishView();
 	void AnimateBody();
 	FString BodySeq;
@@ -206,7 +199,6 @@ private:
 	float ViewHeightOffset = 0;  // units below the eye height (step-ups, landing squat), P_CalcHeight
 	float ViewHeightDelta = 0;   // units per tic it recovers by
 	float LastFeetZ = 0;
-	int32 DeathTics = 0;
 	int32 SawIdle = 0;
 	int32 ReactionTime = 0;
 	float LastLandingVelocity = 0;

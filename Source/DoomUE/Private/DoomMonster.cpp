@@ -467,7 +467,7 @@ void ADoomMonster::FaceTarget()
 	DoomAngle = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
 	if (const ADoomPlayer* P = Cast<ADoomPlayer>(Target.Get()))
 	{
-		if (P->Invisibility > 0)
+		if (P->GetView().Invisibility > 0)
 		{
 			DoomAngle += (DoomMonsterDetail::MonsterRand() - DoomMonsterDetail::MonsterRand()) * 0.09f; // spectral fuzz throws the aim off
 		}

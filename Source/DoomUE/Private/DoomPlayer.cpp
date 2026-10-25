@@ -174,15 +174,15 @@ void ADoomPlayer::InitForLevel(UDoomWorld* InWorld, bool bPistolStart)
 		Inv().Ammo[0] = DoomInfo::Rules().InitialBullets;
 	}
 	for (bool& K : Inv().Keys) K = false;
-	Invulnerability = Invisibility = RadSuit = LightAmp = 0;
-	bBerserk = false;
-	DamageCount = BonusCount = ExtraLight = 0;
-	DeathTics = 0;
+	View.Invulnerability = View.Invisibility = View.RadSuit = View.LightAmp = 0;
+	View.bBerserk = false;
+	View.DamageCount = View.BonusCount = View.ExtraLight = 0;
+	View.DeathTics = 0;
 	ReactionTime = 0;
 	PendingWeapon = EDoomWeapon::Count;
 	Phase = EWeaponPhase::Raising;
-	WeaponY = DoomPlayerDetail::WeaponBottom;
-	FlashFrame = 0;
+	View.WeaponY = DoomPlayerDetail::WeaponBottom;
+	View.FlashFrame = 0;
 	SetWeaponSprite();
 	LastDoomPos = DoomPos();
 	Camera->SetRelativeLocation(FVector(0, 0, (41.f - 28.f) * Doom::Scale));
@@ -216,7 +216,7 @@ bool ADoomPlayer::HasKey(int32 KeyColor) const
 
 bool ADoomPlayer::InputLocked() const
 {
-	return DoomWorld && DoomWorld->bInputLocked;
+	return DoomWorld && DoomWorld->IsInputLocked();
 }
 
 void ADoomPlayer::Move(const FInputActionValue& V)
@@ -289,7 +289,7 @@ void ADoomPlayer::UseLinesOrRespawn()
 	}
 	if (IsDead())
 	{
-		if (DeathTics > Doom::TicRate)
+		if (View.DeathTics > Doom::TicRate)
 		{
 			if (DoomWorld->IsNetGame())
 			{
@@ -361,57 +361,15 @@ void ADoomPlayer::ClientPlaySound_Implementation(const FString& Name, float Volu
 
 void ADoomPlayer::PublishView()
 {
-	View.WeaponSprite = WeaponSprite;
-	View.FlashSprite = FlashSprite;
-	View.WeaponFrame = (uint16)WeaponFrame;
-	View.FlashFrame = (uint16)FlashFrame;
-	View.WeaponY = WeaponY;
-	View.BobX = BobX;
-	View.BobY = BobY;
 	View.CameraZ = Camera->GetRelativeLocation().Z;
-	View.Invulnerability = Invulnerability;
-	View.Invisibility = Invisibility;
-	View.RadSuit = RadSuit;
-	View.LightAmp = LightAmp;
-	View.BerserkTics = BerserkTics;
-	View.DamageCount = DamageCount;
-	View.BonusCount = BonusCount;
-	View.ExtraLight = ExtraLight;
-	View.FaceDamageDir = FaceDamageDir;
-	View.FaceEvilGrin = FaceEvilGrin;
-	View.AttackDown = AttackDown;
-	View.DeathTics = DeathTics;
-	View.bBerserk = bBerserk;
-	View.bGodMode = bGodMode;
 }
 
-void ADoomPlayer::OnRep_View()
+void ADoomPlayer::OnRep_View(const FDoomPlayerView& OldView)
 {
-	if (View.ExtraLight > ExtraLight && MuzzleLight && DoomWorld && DoomWorld->IsModern())
+	if (View.ExtraLight > OldView.ExtraLight && MuzzleLight && DoomWorld && DoomWorld->IsModern())
 	{
 		MuzzleLight->SetIntensity(60000.f);
 	}
-	WeaponSprite = View.WeaponSprite;
-	FlashSprite = View.FlashSprite;
-	WeaponFrame = (TCHAR)View.WeaponFrame;
-	FlashFrame = (TCHAR)View.FlashFrame;
-	WeaponY = View.WeaponY;
-	BobX = View.BobX;
-	BobY = View.BobY;
-	Invulnerability = View.Invulnerability;
-	Invisibility = View.Invisibility;
-	RadSuit = View.RadSuit;
-	LightAmp = View.LightAmp;
-	BerserkTics = View.BerserkTics;
-	DamageCount = View.DamageCount;
-	BonusCount = View.BonusCount;
-	ExtraLight = View.ExtraLight;
-	FaceDamageDir = View.FaceDamageDir;
-	FaceEvilGrin = View.FaceEvilGrin;
-	AttackDown = View.AttackDown;
-	DeathTics = View.DeathTics;
-	bBerserk = View.bBerserk;
-	bGodMode = View.bGodMode;
 	const FVector Rel = Camera->GetRelativeLocation();
 	Camera->SetRelativeLocation(FVector(Rel.X, Rel.Y, View.CameraZ));
 }
@@ -439,9 +397,9 @@ void ADoomPlayer::AnimateBody()
 	}
 	else if (Phase == EWeaponPhase::Firing)
 	{
-		Seq = FlashFrame ? TEXT("F") : TEXT("E");
+		Seq = View.FlashFrame ? TEXT("F") : TEXT("E");
 	}
-	else if (DamageCount > 0 && FaceDamageDir != 0)
+	else if (View.DamageCount > 0 && View.FaceDamageDir != 0)
 	{
 		Seq = TEXT("G");
 	}
@@ -466,7 +424,7 @@ void ADoomPlayer::ToggleAutomap(const FInputActionValue& V)
 {
 	if (DoomWorld)
 	{
-		DoomWorld->bAutomap = !DoomWorld->bAutomap;
+		DoomWorld->SetAutomapOpen(!DoomWorld->IsAutomapOpen());
 	}
 }
 
@@ -554,16 +512,16 @@ void ADoomPlayer::DoomTic()
 	if (Phase == EWeaponPhase::Ready)
 	{
 		// A_WeaponReady moves the weapon; firing, raising and lowering leave it where it was
-		BobX = FMath::Cos(BobPhase) * Bob;
-		BobY = FMath::Abs(FMath::Sin(BobPhase)) * Bob;
+		View.BobX = FMath::Cos(BobPhase) * Bob;
+		View.BobY = FMath::Abs(FMath::Sin(BobPhase)) * Bob;
 	}
 
 	TicWeapon();
 	TicPowerups();
-	if (DamageCount > 0) --DamageCount;
-	if (BonusCount > 0) --BonusCount;
-	if (FaceEvilGrin > 0) --FaceEvilGrin;
-	if (AttackDown > 0) --AttackDown;
+	if (View.DamageCount > 0) --View.DamageCount;
+	if (View.BonusCount > 0) --View.BonusCount;
+	if (View.FaceEvilGrin > 0) --View.FaceEvilGrin;
+	if (View.AttackDown > 0) --View.AttackDown;
 	AnimateBody();
 	if (DoomWorld->IsNetServer())
 	{
@@ -573,16 +531,16 @@ void ADoomPlayer::DoomTic()
 
 void ADoomPlayer::TicPowerups()
 {
-	if (bBerserk) ++BerserkTics;
-	if (Invulnerability > 0) --Invulnerability;
-	if (Invisibility > 0) --Invisibility;
-	if (RadSuit > 0) --RadSuit;
-	if (LightAmp > 0) --LightAmp;
+	if (View.bBerserk) ++View.BerserkTics;
+	if (View.Invulnerability > 0) --View.Invulnerability;
+	if (View.Invisibility > 0) --View.Invisibility;
+	if (View.RadSuit > 0) --View.RadSuit;
+	if (View.LightAmp > 0) --View.LightAmp;
 }
 
 void ADoomPlayer::TicDeath()
 {
-	++DeathTics;
+	++View.DeathTics;
 	// the view sinks to the floor
 	const FVector Rel = Camera->GetRelativeLocation();
 	const float Target = (6.f - 28.f) * Doom::Scale;
@@ -617,7 +575,7 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 		}
 	}
 	// god mode and invulnerability stop everything but a telefrag
-	if ((bGodMode || Invulnerability > 0) && Damage < 1000.f)
+	if ((View.bGodMode || View.Invulnerability > 0) && Damage < 1000.f)
 	{
 		return 0.f;
 	}
@@ -638,18 +596,18 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 		D -= Saved;
 	}
 	Inv().Health -= D;
-	DamageCount = FMath::Min(DamageCount + D, 100);
+	View.DamageCount = FMath::Min(View.DamageCount + D, 100);
 
 	AActor* Source = UDoomWorld::DamageSource(DamageCauser);
 	if (Source && Source != this)
 	{
 		const FVector To = Source->GetActorLocation() - GetActorLocation();
 		const float Rel = FMath::FindDeltaAngleDegrees(GetControlRotation().Yaw, To.Rotation().Yaw);
-		FaceDamageDir = Rel > 45.f ? 1 : Rel < -45.f ? -1 : 0;
+		View.FaceDamageDir = Rel > 45.f ? 1 : Rel < -45.f ? -1 : 0;
 	}
 	else
 	{
-		FaceDamageDir = 0;
+		View.FaceDamageDir = 0;
 	}
 
 	if (Inv().Health <= 0)
@@ -668,7 +626,7 @@ float ADoomPlayer::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 		GetCharacterMovement()->StopMovementImmediately();
 		bFireHeld = false;
 		Phase = EWeaponPhase::Lowering;
-		DeathTics = 0;
+		View.DeathTics = 0;
 	}
 	else
 	{
@@ -712,7 +670,7 @@ void ADoomPlayer::DoomSerialize(FArchive& Ar)
 		int32 Credit[4] = { Defaults->LevelKills, Defaults->LevelItems, Defaults->LevelSecrets, Defaults->Frags };
 		for (int32& C : Credit) Ar << C;
 	}
-	Ar << Invulnerability << Invisibility << RadSuit << LightAmp << bBerserk;
+	Ar << View.Invulnerability << View.Invisibility << View.RadSuit << View.LightAmp << View.bBerserk;
 	if (Ar.IsLoading())
 	{
 		SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
@@ -724,10 +682,10 @@ void ADoomPlayer::DoomSerialize(FArchive& Ar)
 		GetCharacterMovement()->Velocity = Velocity;
 		PendingWeapon = EDoomWeapon::Count;
 		Phase = EWeaponPhase::Ready;
-		WeaponY = DoomPlayerDetail::WeaponTop;
-		FlashFrame = 0;
+		View.WeaponY = DoomPlayerDetail::WeaponTop;
+		View.FlashFrame = 0;
 		bFireHeld = false;
-		DamageCount = BonusCount = ExtraLight = 0;
+		View.DamageCount = View.BonusCount = View.ExtraLight = 0;
 		SetWeaponSprite();
 		LastDoomPos = DoomPos();
 	}
@@ -782,7 +740,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 		{
 			Inv().Weapons[(int32)W] = true;
 			PendingWeapon = W;
-			FaceEvilGrin = 2 * Doom::TicRate;
+			View.FaceEvilGrin = 2 * Doom::TicRate;
 			bGot = true;
 		}
 		return bGot;
@@ -807,18 +765,18 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	case EPickup::Megasphere: Inv().Health = R.MegasphereHealth; Inv().Armor = 100 * R.BlueArmorClass; Inv().ArmorClass = R.BlueArmorClass; Sound = TEXT("GETPOW"); break;
 	case EPickup::GreenArmor: if (Inv().Armor >= 100 * R.GreenArmorClass) return false; Inv().Armor = 100 * R.GreenArmorClass; Inv().ArmorClass = R.GreenArmorClass; break;
 	case EPickup::BlueArmor: if (Inv().Armor >= 100 * R.BlueArmorClass) return false; Inv().Armor = 100 * R.BlueArmorClass; Inv().ArmorClass = R.BlueArmorClass; break;
-	case EPickup::Invulnerability: Invulnerability = 30 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
+	case EPickup::Invulnerability: View.Invulnerability = 30 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::Berserk:
-		bBerserk = true;
-		BerserkTics = 1;
+		View.bBerserk = true;
+		View.BerserkTics = 1;
 		if (Inv().Health < 100) Inv().Health = 100;
 		if (Inv().Ready != EDoomWeapon::Fist) PendingWeapon = EDoomWeapon::Fist;
 		Sound = TEXT("GETPOW");
 		break;
-	case EPickup::Invisibility: Invisibility = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
-	case EPickup::RadSuit: RadSuit = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
-	case EPickup::Map: if (DoomWorld->bFullMap) return false; DoomWorld->bFullMap = true; Sound = TEXT("GETPOW"); break;
-	case EPickup::LightAmp: LightAmp = 120 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
+	case EPickup::Invisibility: View.Invisibility = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
+	case EPickup::RadSuit: View.RadSuit = 60 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
+	case EPickup::Map: if (DoomWorld->HasFullMap()) return false; DoomWorld->SetFullMap(true); Sound = TEXT("GETPOW"); break;
+	case EPickup::LightAmp: View.LightAmp = 120 * Doom::TicRate; Sound = TEXT("GETPOW"); break;
 	case EPickup::BlueCard: Inv().Keys[0] = true; break;
 	case EPickup::YellowCard: Inv().Keys[1] = true; break;
 	case EPickup::RedCard: Inv().Keys[2] = true; break;
@@ -850,7 +808,7 @@ bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 	{
 		return false;
 	}
-	BonusCount = FMath::Min(BonusCount + 6, 24);
+	View.BonusCount = FMath::Min(View.BonusCount + 6, 24);
 	Message(Def.Pickup == EPickup::Health
 		? DoomInfo::Text(Def.DoomEdNum == 2011 ? TEXT("GOTSTIM") : TEXT("GOTMEDIKIT"), DoomInfo::PickupMessage(Def.Pickup))
 		: DoomInfo::PickupMessage(Def.Pickup));

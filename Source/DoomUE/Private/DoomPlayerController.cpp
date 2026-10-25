@@ -172,7 +172,7 @@ void ADoomPlayerController::SetupInputComponent()
 	EIC->BindActionValueLambda(MenuCloseAction, ETriggerEvent::Started, [this](const FInputActionValue& V)
 	{
 		UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-		if (W && !W->bInputLocked && W->GetState() == EDoomGameState::Menu)
+		if (W && !W->IsInputLocked() && W->GetState() == EDoomGameState::Menu)
 		{
 			W->PlaySound(TEXT("SWTCHX"), nullptr);
 			W->Menu.Close(*W); // M_ClearMenus
@@ -186,7 +186,7 @@ void ADoomPlayerController::SetupInputComponent()
 	auto Map = [this]() -> ADoomHUD*
 	{
 		UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>();
-		return W && !W->bInputLocked && W->bAutomap && W->GetState() == EDoomGameState::Playing ? Cast<ADoomHUD>(GetHUD()) : nullptr;
+		return W && !W->IsInputLocked() && W->IsAutomapOpen() && W->GetState() == EDoomGameState::Playing ? Cast<ADoomHUD>(GetHUD()) : nullptr;
 	};
 	EIC->BindActionValueLambda(AutomapZoomAction, ETriggerEvent::Triggered, [this, Map](const FInputActionValue& V)
 	{
@@ -229,7 +229,7 @@ void ADoomPlayerController::ApplyContexts()
 	const bool bMenu = W->GetState() != EDoomGameState::Playing;
 	// the automap with follow mode off takes the arrow keys for panning, ahead of moving and turning
 	const ADoomHUD* H = Cast<ADoomHUD>(GetHUD());
-	const bool bPan = !bMenu && W->bAutomap && H && !H->AutomapFollowing();
+	const bool bPan = !bMenu && W->IsAutomapOpen() && H && !H->AutomapFollowing();
 	if (bContextsInitialized && bMenu == bMenuContextActive && bPan == bPanContextActive)
 	{
 		return;
@@ -264,7 +264,7 @@ namespace
 	UDoomWorld* MenuWorld(UWorld* World)
 	{
 		UDoomWorld* W = World ? World->GetSubsystem<UDoomWorld>() : nullptr;
-		return (W && !W->bInputLocked) ? W : nullptr;
+		return (W && !W->IsInputLocked()) ? W : nullptr;
 	}
 }
 
@@ -350,7 +350,7 @@ void ADoomPlayerController::MenuBack(const FInputActionValue& V)
 bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	UDoomWorld* W = GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
-	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bEditing && !W->bInputLocked)
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bEditing && !W->IsInputLocked())
 	{
 		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
 		{
@@ -360,7 +360,7 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		return Super::InputKey(Params); // releases go through, so no key is left held down
 	}
 	// the Controls page waiting for a key: the next key or mouse button pressed is the new binding
-	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bCapturing && !W->bInputLocked
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bCapturing && !W->IsInputLocked()
 		&& Params.Event == IE_Pressed && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
 	{
 		W->Menu.CaptureKey(*W, Params.Key);
@@ -368,7 +368,7 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 	}
 	// yes/no prompts (quit, end game, nightmare): only Y, Enter or the gamepad's A confirm; any other
 	// key or button cancels, as in Doom, so a stray click can't quit the game
-	if (W && W->GetState() == EDoomGameState::Menu && !W->Menu.Prompt().IsEmpty() && !W->bInputLocked && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
+	if (W && W->GetState() == EDoomGameState::Menu && !W->Menu.Prompt().IsEmpty() && !W->IsInputLocked() && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
 	{
 		if (Params.Event == IE_Pressed)
 		{

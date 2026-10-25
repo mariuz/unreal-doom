@@ -23,18 +23,7 @@ void ADoomGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 void ADoomGameState::PublishFinale(const UDoomWorld& W)
 {
-	FDoomFinaleNet N;
-	N.Stage = (uint8)W.FinaleStage;
-	N.Text = W.FinaleText;
-	N.Backdrop = W.FinaleBackdrop;
-	N.Picture = W.FinalePicture;
-	N.Tic = W.FinaleTic;
-	N.CastIndex = W.CastCall.Index;
-	N.CastSequence = W.CastCall.Sequence;
-	N.CastFrame = W.CastCall.Frame;
-	N.bCastAttacking = W.CastCall.bAttacking;
-	N.bCastDying = W.CastCall.bDying;
-	Finale = MoveTemp(N);
+	Finale = W.MakeFinaleNet();
 }
 
 void ADoomGameState::OnRep_Finale()
@@ -45,16 +34,7 @@ void ADoomGameState::OnRep_Finale()
 		return;
 	}
 	// the client draws what the server shows: text typed out to the server's tic, the picture, the cast
-	W->FinaleStage = (UDoomWorld::EFinaleStage)Finale.Stage;
-	W->FinaleText = Finale.Text;
-	W->FinaleBackdrop = Finale.Backdrop;
-	W->FinalePicture = Finale.Picture;
-	W->FinaleTic = Finale.Tic;
-	W->CastCall.Index = Finale.CastIndex;
-	W->CastCall.Sequence = Finale.CastSequence;
-	W->CastCall.Frame = Finale.CastFrame;
-	W->CastCall.bAttacking = Finale.bCastAttacking;
-	W->CastCall.bDying = Finale.bCastDying;
+	W->ApplyFinaleNet(Finale);
 	if (Finale.Stage != LastFinaleStage)
 	{
 		LastFinaleStage = Finale.Stage;
