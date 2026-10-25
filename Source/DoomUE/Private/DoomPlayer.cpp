@@ -482,6 +482,7 @@ void ADoomPlayer::Landed(const FHitResult& Hit)
 
 void ADoomPlayer::DoomTic()
 {
+	ensureMsgf(HasAuthority(), TEXT("the server runs the marine's tics; the owner gets View"));
 	if (!DoomWorld)
 	{
 		return;

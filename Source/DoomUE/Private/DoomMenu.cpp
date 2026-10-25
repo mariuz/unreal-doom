@@ -97,6 +97,7 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		Join.ValueText = bEditing ? EditText + TEXT("_") : JoinAddress;
 		R.Add(Join);
 		R.Add({ EKind::Choice, FString(), TEXT("CONNECT") });
+		checkf(R.Num() == EMultiplayerRow::Count, TEXT("the Multiplayer page has %d rows, EMultiplayerRow %d"), R.Num(), (int32)EMultiplayerRow::Count);
 		break;
 	}
 	case EMenuPage::Episode:
@@ -132,6 +133,7 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("COLORS: %s"), S->bPaletteExact ? TEXT("EXACT") : TEXT("SMOOTH")) });
 		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTER AI: %s"), W.IsSmartAI() ? TEXT("SMART") : TEXT("CLASSIC")) });
 		R.Add({ EKind::Choice, FString(), TEXT("CONTROLS") });
+		checkf(R.Num() == EOptionsRow::Count, TEXT("the Options page has %d rows, EOptionsRow %d"), R.Num(), (int32)EOptionsRow::Count);
 		break;
 	}
 	case EMenuPage::Controls:
@@ -407,33 +409,33 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 	{
 		switch (Item)
 		{
-		case 1: S->bShowMessages = !S->bShowMessages; break;
-		case 2: S->MouseSensitivity = SensitivityFor(FMath::Clamp(R[Item].Value + Dir, 0, 9)); break;
-		case 5: W.SetModern(!W.IsModern()); S->bModernRenderer = W.IsModern(); break;
-		case 6: S->FieldOfView = FMath::Clamp(S->FieldOfView + Dir * 5.f, 60.f, 130.f); W.ApplyUserSettings(); break;
-		case 7:
+		case EOptionsRow::Messages: S->bShowMessages = !S->bShowMessages; break;
+		case EOptionsRow::Sensitivity: S->MouseSensitivity = SensitivityFor(FMath::Clamp(R[Item].Value + Dir, 0, 9)); break;
+		case EOptionsRow::Renderer: W.SetModern(!W.IsModern()); S->bModernRenderer = W.IsModern(); break;
+		case EOptionsRow::FieldOfView: S->FieldOfView = FMath::Clamp(S->FieldOfView + Dir * 5.f, 60.f, 130.f); W.ApplyUserSettings(); break;
+		case EOptionsRow::WarpTo:
 		{
 			const int32 N = FMath::Max(1, W.GetWad()->MapNames().Num());
 			WarpIndex = (WarpIndex + Dir + N) % N;
 			break;
 		}
-		case 8: S->bPaletteExact = !S->bPaletteExact; break;
-		case 9: W.SetSmartAI(!W.IsSmartAI()); S->bSmartMonsters = W.IsSmartAI(); break;
+		case EOptionsRow::Colors: S->bPaletteExact = !S->bPaletteExact; break;
+		case EOptionsRow::MonsterAI: W.SetSmartAI(!W.IsSmartAI()); S->bSmartMonsters = W.IsSmartAI(); break;
 		default: bChanged = false; break;
 		}
 	}
-	else if (Page == EMenuPage::Multiplayer && Item <= 3)
+	else if (Page == EMenuPage::Multiplayer && Item <= EMultiplayerRow::Fast)
 	{
 		switch (Item)
 		{
-		case 0: NetRules = (NetRules + Dir + 3) % 3; break;
-		case 1:
+		case EMultiplayerRow::Rules: NetRules = (NetRules + Dir + 3) % 3; break;
+		case EMultiplayerRow::Map:
 		{
 			const int32 N = W.GetWad()->MapNames().Num() + 1; // the last choice: a random map
 			NetMapIndex = (NetMapIndex + Dir + N) % N;
 			break;
 		}
-		case 2: bNetNoMonsters = !bNetNoMonsters; break;
+		case EMultiplayerRow::Monsters: bNetNoMonsters = !bNetNoMonsters; break;
 		default: bNetFast = !bNetFast; break;
 		}
 		W.PlaySound(TEXT("STNMOV"), nullptr);
@@ -507,8 +509,8 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == 5 || Item == 6 || Item == 8 || Item == 9))
-		|| (Page == EMenuPage::Multiplayer && Item <= 3))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == EOptionsRow::Renderer || Item == EOptionsRow::FieldOfView || Item == EOptionsRow::Colors || Item == EOptionsRow::MonsterAI))
+		|| (Page == EMenuPage::Multiplayer && Item <= EMultiplayerRow::Fast))
 	{
 		Adjust(W, 1);
 		return;
@@ -552,13 +554,13 @@ void FDoomMenu::Activate(UDoomWorld& W)
 	switch (Page)
 	{
 	case EMenuPage::Multiplayer:
-		if (Item == 4) HostGame(W);
-		else if (Item == 6)
+		if (Item == EMultiplayerRow::Host) HostGame(W);
+		else if (Item == EMultiplayerRow::JoinAddress)
 		{
 			EditText = JoinAddress;
 			bEditing = true; // typed like a save name; Enter keeps it
 		}
-		else if (Item == 7) JoinGame(W);
+		else if (Item == EMultiplayerRow::Connect) JoinGame(W);
 		return;
 	case EMenuPage::Controls:
 		if (Item >= DoomInput::Mappables().Num())
@@ -615,10 +617,10 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		else StartGame(W, Item);
 		break;
 	case EMenuPage::Options:
-		if (Item == 0) Push(W, EMenuPage::EndGame);
-		else if (Item == 4) Push(W, EMenuPage::Sound);
-		else if (Item == 10) Push(W, EMenuPage::Controls);
-		else if (Item == 7 && W.GetWad()->MapNames().IsValidIndex(WarpIndex))
+		if (Item == EOptionsRow::EndGame) Push(W, EMenuPage::EndGame);
+		else if (Item == EOptionsRow::Sound) Push(W, EMenuPage::Sound);
+		else if (Item == EOptionsRow::Controls) Push(W, EMenuPage::Controls);
+		else if (Item == EOptionsRow::WarpTo && W.GetWad()->MapNames().IsValidIndex(WarpIndex))
 		{
 			Stack.Reset();
 			W.StartNewGame(W.GetWad()->MapNames()[WarpIndex], W.GetSkill());

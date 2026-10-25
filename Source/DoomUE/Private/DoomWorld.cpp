@@ -75,6 +75,7 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 {
 	// the level, things and sprites point into the old graphics: a loaded map cannot outlive them
 	UnloadMap();
+	check(!Map.IsValid() && !Level && !PendingLoad.IsValid() && Things.Num() == 0);
 	if (Wad.IsValid())
 	{
 		SetState(EDoomGameState::Title);
@@ -412,6 +413,7 @@ bool UDoomWorld::StepLoad(double Deadline)
 			return false;
 		}
 	}
+	check(L.Stage == FDoomMapLoad::EStage::Commit && L.Task.IsCompleted()); // the workers are done with the sections
 	if (!Level->CommitChunks(L.Sections, L.NextChunk, Deadline))
 	{
 		return false;
@@ -781,7 +783,11 @@ ADoomProjectile* UDoomWorld::SpawnProjectile(const FString& Type, AActor* Source
 	return P;
 }
 
-void UDoomWorld::RegisterThing(ADoomThing* T) { Things.Add(T); }
+void UDoomWorld::RegisterThing(ADoomThing* T)
+{
+	ensureMsgf(!T->bPooled, TEXT("pooled effects stay out of the thing list"));
+	Things.Add(T);
+}
 
 void UDoomWorld::ReleaseEffect(ADoomThing* Effect)
 {
@@ -924,6 +930,7 @@ void UDoomWorld::QueueRespawn(int32 DoomEdNum, const FVector& UEFeet, float Doom
 
 void UDoomWorld::RunTic()
 {
+	ensureMsgf(!IsNetClient(), TEXT("network clients run no game tics (ClientTick shows the server's game)"));
 	++Flow().LevelTic;
 	if (MessageTics > 0) --MessageTics;
 	// -altdeath: items back after 30 s, with the teleport fog and its sound (P_RespawnSpecials)

@@ -12,6 +12,18 @@ class UDoomWorld;
 
 enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, Load, Save, ReadThis, Quit, EndGame, Controls, Multiplayer };
 
+/** The Options page's rows, in the order FDoomMenu::Rows builds them. */
+namespace EOptionsRow
+{
+	enum Type : int32 { EndGame, Messages, Sensitivity, SensitivityBar, Sound, Renderer, FieldOfView, WarpTo, Colors, MonsterAI, Controls, Count };
+}
+
+/** The Multiplayer page's rows, in the order FDoomMenu::Rows builds them. */
+namespace EMultiplayerRow
+{
+	enum Type : int32 { Rules, Map, Monsters, Fast, Host, Gap, JoinAddress, Connect, Count };
+}
+
 struct FMenuRow
 {
 	enum class EKind : uint8 { Action, Slider, Toggle, Choice, Gap };
