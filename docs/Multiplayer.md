@@ -74,7 +74,9 @@ with the sprite). Any player can press Enter to leave the intermission.
     keys into bit masks.
   * Credit and frags replicate with the player state.
   * The owner alone receives `FDoomPlayerView`: weapon and flash sprites, bob, powerup and
-    palette counters, face state and death view height.
+    palette counters, face state and death view height. It is the player's own state, not a
+    copy (`ADoomPlayer::View`, read through `GetView()`): the server runs it, and the client's
+    `OnRep_View` only sets the view height and the muzzle light.
   * Other players see the marine's `Body` sprite (Doom's `PLAY` frames: run, attack, pain,
     death, gibs).
   * Fire, use and weapon changes are server RPCs. Movement and view use `CharacterMovement`

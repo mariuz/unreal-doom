@@ -53,10 +53,10 @@ namespace
 
 void UDoomWorld::StartFinaleText(const TArray<FString>& Lines, const FString& Backdrop)
 {
-	FinaleText = Lines;
-	FinaleBackdrop = Backdrop;
-	FinaleTic = 0;
-	FinaleStage = EFinaleStage::Text;
+	Finale.Text = Lines;
+	Finale.Backdrop = Backdrop;
+	Finale.Tic = 0;
+	Finale.Stage = EFinaleStage::Text;
 	Flow().Phase = EDoomGameState::Finale;
 	PlayMusic(Wad->IsDoom2() ? TEXT("D_READ_M") : TEXT("D_VICTOR"));
 }
@@ -99,65 +99,65 @@ bool UDoomWorld::StartVanillaText()
 bool UDoomWorld::IsFinaleTextComplete() const
 {
 	int32 Chars = 0;
-	for (const FString& L : FinaleText) Chars += L.Len();
-	return FinaleTic / 3 >= Chars;
+	for (const FString& L : Finale.Text) Chars += L.Len();
+	return Finale.Tic / 3 >= Chars;
 }
 
 void UDoomWorld::StartEnding()
 {
-	FinaleTic = 0;
+	Finale.Tic = 0;
 	const FDoomMapInfo* Info = MapInfo(Flow().CurrentMap);
 	const bool bDoom2 = Wad->IsDoom2();
 	Flow().Phase = EDoomGameState::Finale;
 
 	if ((Info && Info->bEndCast) || (!Info && bDoom2 && Flow().CurrentMap == TEXT("MAP30")) || (Info && !Info->bEndBunny && Info->EndPic.IsEmpty() && bDoom2 && Flow().CurrentMap == TEXT("MAP30")))
 	{
-		FinaleStage = EFinaleStage::Cast;
+		Finale.Stage = EFinaleStage::Cast;
 		PlayMusic(TEXT("D_EVIL"));
 		StartCastMember(0);
 		return;
 	}
 	if ((Info && Info->bEndBunny) || (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E3"))))
 	{
-		FinaleStage = EFinaleStage::Bunny;
+		Finale.Stage = EFinaleStage::Bunny;
 		PlayMusic(TEXT("D_BUNNY"));
 		return;
 	}
-	FinaleStage = EFinaleStage::Picture;
+	Finale.Stage = EFinaleStage::Picture;
 	if (Info && !Info->EndPic.IsEmpty())
 	{
-		FinalePicture = Info->EndPic;
+		Finale.Picture = Info->EndPic;
 	}
 	else if (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E2")))
 	{
-		FinalePicture = TEXT("VICTORY2");
+		Finale.Picture = TEXT("VICTORY2");
 	}
 	else if (!bDoom2 && Flow().CurrentMap.StartsWith(TEXT("E4")))
 	{
-		FinalePicture = TEXT("ENDPIC");
+		Finale.Picture = TEXT("ENDPIC");
 	}
 	else
 	{
-		FinalePicture = Gfx->Patch(TEXT("CREDIT")) ? TEXT("CREDIT") : TEXT("HELP2");
+		Finale.Picture = Gfx->Patch(TEXT("CREDIT")) ? TEXT("CREDIT") : TEXT("HELP2");
 	}
 }
 
 void UDoomWorld::FinishFinale()
 {
-	if (FinaleStage == EFinaleStage::Text && !Flow().PendingMap.IsEmpty())
+	if (Finale.Stage == EFinaleStage::Text && !Flow().PendingMap.IsEmpty())
 	{
-		FinaleText.Reset();
+		Finale.Text.Reset();
 		LoadMapAsync(Flow().PendingMap, false);
 		return;
 	}
-	if (FinaleStage == EFinaleStage::Text)
+	if (Finale.Stage == EFinaleStage::Text)
 	{
-		FinaleText.Reset();
+		Finale.Text.Reset();
 		StartEnding();
 		return;
 	}
 	// the end: back to the title screen
-	FinaleText.Reset();
+	Finale.Text.Reset();
 	UnloadMap();
 	Flow().Phase = EDoomGameState::Title;
 	PlayTitleMusic();
@@ -165,12 +165,12 @@ void UDoomWorld::FinishFinale()
 
 void UDoomWorld::FinaleInput()
 {
-	switch (FinaleStage)
+	switch (Finale.Stage)
 	{
 	case EFinaleStage::Text:
 		if (!IsFinaleTextComplete())
 		{
-			FinaleTic = 1000000; // show the whole text at once
+			Finale.Tic = 1000000; // show the whole text at once
 		}
 		else
 		{
@@ -178,18 +178,18 @@ void UDoomWorld::FinaleInput()
 		}
 		break;
 	case EFinaleStage::Picture:
-		if (FinaleTic > Doom::TicRate) FinishFinale();
+		if (Finale.Tic > Doom::TicRate) FinishFinale();
 		break;
 	case EFinaleStage::Bunny:
-		if (FinaleTic > 1180) FinishFinale(); // after THE END
+		if (Finale.Tic > 1180) FinishFinale(); // after THE END
 		break;
 	case EFinaleStage::Cast:
-		if (!CastCall.bDying)
+		if (!Finale.Cast.bDying)
 		{
 			// the player shoots the cast member
-			const FDoomThingDef* Def = GCast[CastCall.Index].DoomEdNum ? DoomInfo::FindThing(GCast[CastCall.Index].DoomEdNum) : nullptr;
-			CastCall.bDying = true;
-			CastCall.DeadTics = 0;
+			const FDoomThingDef* Def = GCast[Finale.Cast.Index].DoomEdNum ? DoomInfo::FindThing(GCast[Finale.Cast.Index].DoomEdNum) : nullptr;
+			Finale.Cast.bDying = true;
+			Finale.Cast.DeadTics = 0;
 			PlaySound(TEXT("SHOTGN"), nullptr);
 			PlaySound(Def ? Def->DeathSound : TEXT("PLDETH"), nullptr);
 			SetCastSequence(Def ? (!Def->XDeath.IsEmpty() && DoomInfo::Random() < 64 ? Def->XDeath : Def->Death) : TEXT("HIJKLMN"));
@@ -204,14 +204,14 @@ void UDoomWorld::FinaleInput()
 
 FString UDoomWorld::CastSprite() const
 {
-	const int32 Ed = GCast[FMath::Clamp(CastCall.Index, 0, CastCount - 1)].DoomEdNum;
+	const int32 Ed = GCast[FMath::Clamp(Finale.Cast.Index, 0, CastCount - 1)].DoomEdNum;
 	const FDoomThingDef* Def = Ed ? DoomInfo::FindThing(Ed) : nullptr;
 	return Def ? FString(Def->Sprite) : FString(TEXT("PLAY"));
 }
 
 FString UDoomWorld::CastName() const
 {
-	const FCastMember& M = GCast[FMath::Clamp(CastCall.Index, 0, CastCount - 1)];
+	const FCastMember& M = GCast[FMath::Clamp(Finale.Cast.Index, 0, CastCount - 1)];
 	const FDoomThingDef* Def = M.DoomEdNum ? DoomInfo::FindThing(M.DoomEdNum) : nullptr;
 	FString Fallback = Def ? FString(Def->Name) : FString(TEXT("The Marine"));
 	return DoomInfo::Text(M.Mnemonic, Fallback);
@@ -219,16 +219,16 @@ FString UDoomWorld::CastName() const
 
 void UDoomWorld::SetCastSequence(const FString& Frames)
 {
-	CastCall.Sequence = Frames.IsEmpty() ? FString(TEXT("A")) : Frames;
-	CastCall.Frame = 0;
-	CastCall.FrameTics = CastFrameTics;
+	Finale.Cast.Sequence = Frames.IsEmpty() ? FString(TEXT("A")) : Frames;
+	Finale.Cast.Frame = 0;
+	Finale.Cast.FrameTics = CastFrameTics;
 }
 
 void UDoomWorld::StartCastMember(int32 Index)
 {
-	CastCall = FCastState();
-	CastCall.Index = Index % CastCount;
-	const int32 Ed = GCast[CastCall.Index].DoomEdNum;
+	Finale.Cast = FCastState();
+	Finale.Cast.Index = Index % CastCount;
+	const int32 Ed = GCast[Finale.Cast.Index].DoomEdNum;
 	const FDoomThingDef* Def = Ed ? DoomInfo::FindThing(Ed) : nullptr;
 	SetCastSequence(Def ? (!Def->Run.IsEmpty() ? Def->Run : Def->Idle) : TEXT("ABCD"));
 	if (Def && !Def->SeeSound.IsEmpty())
@@ -239,61 +239,61 @@ void UDoomWorld::StartCastMember(int32 Index)
 
 void UDoomWorld::TicFinale()
 {
-	++FinaleTic;
-	if (FinaleStage == EFinaleStage::Bunny)
+	++Finale.Tic;
+	if (Finale.Stage == EFinaleStage::Bunny)
 	{
 		// the letters of THE END appear one by one with a shot each
-		const int32 Stage = (FinaleTic - 1180) / 5;
-		if (FinaleTic >= 1180 && (FinaleTic - 1180) % 5 == 0 && Stage <= 6)
+		const int32 Stage = (Finale.Tic - 1180) / 5;
+		if (Finale.Tic >= 1180 && (Finale.Tic - 1180) % 5 == 0 && Stage <= 6)
 		{
 			PlaySound(TEXT("PISTOL"), nullptr);
 		}
 		return;
 	}
-	if (FinaleStage != EFinaleStage::Cast)
+	if (Finale.Stage != EFinaleStage::Cast)
 	{
 		return;
 	}
-	const int32 Ed = GCast[CastCall.Index].DoomEdNum;
+	const int32 Ed = GCast[Finale.Cast.Index].DoomEdNum;
 	const FDoomThingDef* Def = Ed ? DoomInfo::FindThing(Ed) : nullptr;
-	if (--CastCall.FrameTics > 0)
+	if (--Finale.Cast.FrameTics > 0)
 	{
 		return;
 	}
-	CastCall.FrameTics = CastFrameTics;
-	if (CastCall.Frame + 1 < CastCall.Sequence.Len())
+	Finale.Cast.FrameTics = CastFrameTics;
+	if (Finale.Cast.Frame + 1 < Finale.Cast.Sequence.Len())
 	{
-		++CastCall.Frame;
+		++Finale.Cast.Frame;
 		return;
 	}
-	if (CastCall.bDying)
+	if (Finale.Cast.bDying)
 	{
 		// hold the corpse a moment, then the next member walks on
-		if (++CastCall.DeadTics > 6)
+		if (++Finale.Cast.DeadTics > 6)
 		{
-			StartCastMember(CastCall.Index + 1);
+			StartCastMember(Finale.Cast.Index + 1);
 		}
 		return;
 	}
-	if (CastCall.bAttacking)
+	if (Finale.Cast.bAttacking)
 	{
-		CastCall.bAttacking = false;
+		Finale.Cast.bAttacking = false;
 		SetCastSequence(Def ? (!Def->Run.IsEmpty() ? Def->Run : Def->Idle) : TEXT("ABCD"));
 		return;
 	}
 	// walked a while: show off an attack
-	if (++CastCall.Walked % 3 == 0)
+	if (++Finale.Cast.Walked % 3 == 0)
 	{
 		const FString Attack = Def ? (!Def->Attack.IsEmpty() ? FString(Def->Attack) : FString(Def->Melee)) : FString(TEXT("EF"));
 		if (!Attack.IsEmpty())
 		{
-			CastCall.bAttacking = true;
+			Finale.Cast.bAttacking = true;
 			SetCastSequence(Attack);
 			PlaySound(Def ? (!Def->AttackSound.IsEmpty() ? Def->AttackSound : TEXT("FIRSHT")) : TEXT("PISTOL"), nullptr);
 			return;
 		}
 	}
-	CastCall.Frame = 0;
+	Finale.Cast.Frame = 0;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -415,4 +415,34 @@ void UDoomWorld::TicBrain()
 		}
 		BrainCubes.RemoveAtSwap(i);
 	}
+}
+
+FDoomFinaleNet UDoomWorld::MakeFinaleNet() const
+{
+	FDoomFinaleNet N;
+	N.Stage = (uint8)Finale.Stage;
+	N.Text = Finale.Text;
+	N.Backdrop = Finale.Backdrop;
+	N.Picture = Finale.Picture;
+	N.Tic = Finale.Tic;
+	N.CastIndex = Finale.Cast.Index;
+	N.CastSequence = Finale.Cast.Sequence;
+	N.CastFrame = Finale.Cast.Frame;
+	N.bCastAttacking = Finale.Cast.bAttacking;
+	N.bCastDying = Finale.Cast.bDying;
+	return N;
+}
+
+void UDoomWorld::ApplyFinaleNet(const FDoomFinaleNet& N)
+{
+	Finale.Stage = (EFinaleStage)N.Stage;
+	Finale.Text = N.Text;
+	Finale.Backdrop = N.Backdrop;
+	Finale.Picture = N.Picture;
+	Finale.Tic = N.Tic;
+	Finale.Cast.Index = N.CastIndex;
+	Finale.Cast.Sequence = N.CastSequence;
+	Finale.Cast.Frame = N.CastFrame;
+	Finale.Cast.bAttacking = N.bCastAttacking;
+	Finale.Cast.bDying = N.bCastDying;
 }

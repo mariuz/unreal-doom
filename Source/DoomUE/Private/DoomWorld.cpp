@@ -149,10 +149,10 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 	bSmartAI = Settings->bSmartMonsters || FParse::Param(FCommandLine::Get(), TEXT("smartai"));
 	if (FParse::Param(FCommandLine::Get(), TEXT("classicai"))) bSmartAI = false;
 	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
-	bAltDeathParam = FParse::Param(FCommandLine::Get(), TEXT("altdeath"));
-	bDeathmatchParam = FParse::Param(FCommandLine::Get(), TEXT("deathmatch")) || bAltDeathParam;
-	bNoMonsters = FParse::Param(FCommandLine::Get(), TEXT("nomonsters"));
-	bFastParam = FParse::Param(FCommandLine::Get(), TEXT("fast"));
+	Options.bAltDeath = FParse::Param(FCommandLine::Get(), TEXT("altdeath"));
+	Options.bDeathmatch = FParse::Param(FCommandLine::Get(), TEXT("deathmatch")) || Options.bAltDeath;
+	Options.bNoMonsters = FParse::Param(FCommandLine::Get(), TEXT("nomonsters"));
+	Options.bFast = FParse::Param(FCommandLine::Get(), TEXT("fast"));
 	UE_LOG(LogDoomMap, Log, TEXT("%s: %d maps (%s)"), *IWad, Wad->MapNames().Num(), Wad->IsDoom2() ? TEXT("Doom 2") : TEXT("Doom 1"));
 	return true;
 }
@@ -327,7 +327,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	{
 		Flow().StartLevel(Map->Name);
 		++Flow().LevelSerial;
-		Flow().bDeathmatch = bDeathmatchParam && IsNetGame();
+		Flow().bDeathmatch = Options.bDeathmatch && IsNetGame();
 		if (ADoomGameState* GS = GetDoomGameState())
 		{
 			GS->ResetWorldNet();
@@ -593,7 +593,7 @@ void UDoomWorld::SpawnMapThings()
 		{
 			continue; // Doom's MF_NOTDMATCH: no keys in deathmatch
 		}
-		if ((Def->Flags & EThingFlag::Monster) && bNoMonsters)
+		if ((Def->Flags & EThingFlag::Monster) && Options.bNoMonsters)
 		{
 			continue; // -nomonsters
 		}
@@ -673,7 +673,7 @@ ADoomThing* UDoomWorld::SpawnEffectLocal(const FString& SpriteName, const FStrin
 	}
 	if (T)
 	{
-		++EffectsReused;
+		++Stats.EffectsReused;
 		T->bPooled = false;
 		T->SetActorLocation(UEPos, false, nullptr, ETeleportType::ResetPhysics);
 		T->SetActorHiddenInGame(false);
@@ -683,7 +683,7 @@ ADoomThing* UDoomWorld::SpawnEffectLocal(const FString& SpriteName, const FStrin
 		FActorSpawnParameters SP;
 		SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		T = GetWorld()->SpawnActor<ADoomThing>(ADoomThing::StaticClass(), FTransform(UEPos), SP);
-		EffectsSpawned += T ? 1 : 0;
+		Stats.EffectsSpawned += T ? 1 : 0;
 	}
 	if (T)
 	{
@@ -725,7 +725,7 @@ void UDoomWorld::SpawnParticlesLocal(EDoomParticles Kind, const FVector& UEPos, 
 		// the bursts spray along the emitter's +Z
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Sys, UEPos, FRotationMatrix::MakeFromZ(Up).Rotator(), FVector::OneVector,
 			true, true, ENCPoolMethod::AutoRelease);
-		++ParticleBursts;
+		++Stats.ParticleBursts;
 	}
 }
 
@@ -870,7 +870,7 @@ void UDoomWorld::RadiusAttack(AActor* Source, AActor* Instigator, const FVector&
 
 bool UDoomWorld::CheckSight(const AActor* From, const AActor* To) const
 {
-	++SightChecks;
+	++Stats.SightChecks;
 	if (!From || !To)
 	{
 		return false;
@@ -878,7 +878,7 @@ bool UDoomWorld::CheckSight(const AActor* From, const AActor* To) const
 	// P_CheckSight: REJECT rules most pairs out without a trace
 	if (Map.IsValid() && Map->Reject.Num() && !Doom::PerfBaseline() && Map->RejectsSight(SectorAt(From->GetActorLocation()), SectorAt(To->GetActorLocation())))
 	{
-		++RejectedSights;
+		++Stats.RejectedSights;
 		return false;
 	}
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomSight), false, From);

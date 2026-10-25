@@ -29,6 +29,14 @@
 #include "UnrealClient.h"
 #include "TimerManager.h"
 
+/** Turns one game option on or off (the -fast and -altdeath steps). */
+static void PlayTestSetOption(UDoomWorld* W, bool FDoomGameOptions::*Option, bool bOn)
+{
+	FDoomGameOptions Options = W->GetOptions();
+	Options.*Option = bOn;
+	W->SetOptions(Options);
+}
+
 namespace
 {
 	enum class EStep : uint8 { Running, Pass, Fail, Skip };
@@ -60,7 +68,7 @@ void ADoomGameMode::StartPlayTest()
 {
 	UDoomWorld* W = DoomWorld();
 	TSharedRef<FPlayRun> Run = MakeShared<FPlayRun>();
-	W->bInputLocked = true; // stray keys on the test window must not play
+	W->SetInputLocked(true); // stray keys on the test window must not play
 
 	auto Player = [W]() { return W->GetPlayer(); };
 	// puts the player back at the map's start, healthy and still, so steps don't depend on each other
@@ -75,7 +83,7 @@ void ADoomGameMode::StartPlayTest()
 		P->Inv().Health = 100;
 		P->Inv().Armor = 0;
 		P->Inv().ArmorClass = 0;
-		P->bGodMode = false;
+		P->SetGodMode(false);
 		P->bFireHeld = false;
 		P->ReactionTime = 0;
 	};
@@ -314,13 +322,13 @@ void ADoomGameMode::StartPlayTest()
 				{
 					GoHome();
 					ADoomPlayer* P = Player();
-					P->bGodMode = true;
+					P->SetGodMode(true);
 					for (bool& B : P->Inv().Weapons) B = true;
 					P->Inv().bBackpack = true;
 					for (int32 i = 0; i < 4; ++i) P->Inv().Ammo[i] = DoomInfo::MaxAmmo((EDoomAmmo)i, true);
 					// face up into the air so rockets fly off instead of blowing up at our feet
 					P->GetController()->SetControlRotation(FRotator(60.f, P->GetControlRotation().Yaw, 0));
-					P->PendingWeapon = G.Weapon;
+					P->SetPendingWeapon(G.Weapon);
 					R->FireTic = -1;
 					return true;
 				},
@@ -360,7 +368,7 @@ void ADoomGameMode::StartPlayTest()
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				P->bGodMode = true;
+				P->SetGodMode(true);
 				const FVector Fwd = FRotator(0, P->GetControlRotation().Yaw, 0).Vector();
 				const FVector Feet = P->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(P)) + Fwd * 96.f * Doom::Scale;
 				*Caco = W->SpawnMonster(3005, Feet, Doom::YawToAngle(P->GetControlRotation().Yaw) + 180.f);
@@ -389,7 +397,7 @@ void ADoomGameMode::StartPlayTest()
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				P->bGodMode = true;
+				P->SetGodMode(true);
 				// face the open side of the start, so the baron stands in the open
 				float Clear = 0;
 				const float Yaw = ClearestYaw(P, Clear);
@@ -400,7 +408,7 @@ void ADoomGameMode::StartPlayTest()
 				T->M = W->SpawnMonster(3003, Feet, Doom::YawToAngle(Yaw) + 180.f); // a baron: 1000 health
 				if (!T->M.IsValid()) { Msg = TEXT("could not spawn a baron"); return false; }
 				T->Health0 = T->M->Health;
-				P->PendingWeapon = EDoomWeapon::Plasma;
+				P->SetPendingWeapon(EDoomWeapon::Plasma);
 				return true;
 			},
 			[W, T, Player, Shot](int32 Tics, FString& Msg)
@@ -465,7 +473,7 @@ void ADoomGameMode::StartPlayTest()
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				P->bGodMode = true;
+				P->SetGodMode(true);
 				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
 				{
 					if (M.IsValid() && !M->IsDead() && M->Def->Speed > 0)
@@ -540,7 +548,7 @@ void ADoomGameMode::StartPlayTest()
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				P->bGodMode = true;
+				P->SetGodMode(true);
 				C->bWasSmart = W->IsSmartAI();
 				// -smartbaseline: the same measure with CLASSIC monsters, to compare
 				W->SetSmartAI(!FParse::Param(FCommandLine::Get(), TEXT("smartbaseline")));
@@ -598,7 +606,7 @@ void ADoomGameMode::StartPlayTest()
 		[W, Map, GoHome](FString& Msg)
 		{
 			GoHome();
-			W->bAutomap = false;
+			W->SetAutomapOpen(false);
 			for (FDoomLine& L : Map->Lines) L.bSeen = false;
 			return true;
 		},
@@ -609,7 +617,7 @@ void ADoomGameMode::StartPlayTest()
 			ADoomHUD* HUD = Cast<ADoomHUD>(Cast<APlayerController>(Player()->GetController())->GetHUD());
 			if (Tics == 20 && HUD)
 			{
-				W->bAutomap = true;
+				W->SetAutomapOpen(true);
 				HUD->AutomapZoom(-1.f, 1.f);
 				HUD->AutomapToggleGrid();
 				HUD->AutomapMark();
@@ -622,7 +630,7 @@ void ADoomGameMode::StartPlayTest()
 				HUD->AutomapClearMarks();
 				HUD->AutomapZoom(1.f, 1.f);
 			}
-			W->bAutomap = false;
+			W->SetAutomapOpen(false);
 			const int32 Here = Map->SectorAt(Player()->DoomPos());
 			int32 Seen = 0, Away = 0;
 			for (int32 i = 0; i < Map->Lines.Num(); ++i)
@@ -644,10 +652,10 @@ void ADoomGameMode::StartPlayTest()
 			W->Menu.Open(*W, EMenuPage::Quit);
 			APlayerController* PC = Cast<APlayerController>(Player()->GetController());
 			if (W->Menu.Prompt().IsEmpty() || !PC) { Msg = TEXT("the quit page has no prompt"); return false; }
-			W->bInputLocked = false;
+			W->SetInputLocked(false);
 			PC->InputKey(FInputKeyEventArgs(nullptr, FInputDeviceId::CreateFromInternalId(0), EKeys::LeftMouseButton, IE_Pressed, FPlatformTime::Cycles64()));
 			PC->InputKey(FInputKeyEventArgs(nullptr, FInputDeviceId::CreateFromInternalId(0), EKeys::LeftMouseButton, IE_Released, FPlatformTime::Cycles64()));
-			W->bInputLocked = true;
+			W->SetInputLocked(true);
 			return true;
 		},
 		[W](int32 Tics, FString& Msg)
@@ -718,18 +726,18 @@ void ADoomGameMode::StartPlayTest()
 			auto Try = [&](const FDoomThingDef* Def, EDoomAmmo A, EDoomWeapon Expect, const TCHAR* Label)
 			{
 				P->Inv().Ready = EDoomWeapon::Pistol;
-				P->PendingWeapon = EDoomWeapon::Count;
+				P->SetPendingWeapon(EDoomWeapon::Count);
 				for (bool& B : P->Inv().Weapons) B = true;
 				P->Inv().Ammo[(int32)A] = 0;
 				P->TryPickup(*Def, false);
-				const bool bOk = P->PendingWeapon == Expect;
-				Got += FString::Printf(TEXT("%s -> %s%s; "), Label, P->PendingWeapon == EDoomWeapon::Count ? TEXT("stay") : *UEnum::GetDisplayValueAsText(P->PendingWeapon).ToString(), bOk ? TEXT("") : TEXT(" (wrong)"));
+				const bool bOk = P->GetPendingWeapon() == Expect;
+				Got += FString::Printf(TEXT("%s -> %s%s; "), Label, P->GetPendingWeapon() == EDoomWeapon::Count ? TEXT("stay") : *UEnum::GetDisplayValueAsText(P->GetPendingWeapon()).ToString(), bOk ? TEXT("") : TEXT(" (wrong)"));
 				return bOk;
 			};
 			bool bAll = Try(Shells, EDoomAmmo::Shells, EDoomWeapon::Shotgun, TEXT("shells"));
 			bAll &= Try(Clip, EDoomAmmo::Bullets, EDoomWeapon::Count, TEXT("clip"));
 			bAll &= Try(Rocket, EDoomAmmo::Rockets, EDoomWeapon::Count, TEXT("rocket"));
-			P->PendingWeapon = EDoomWeapon::Count;
+			P->SetPendingWeapon(EDoomWeapon::Count);
 			*AmmoResult = Got + (bAll ? TEXT("as vanilla") : TEXT("not vanilla"));
 			return true;
 		},
@@ -1022,13 +1030,13 @@ void ADoomGameMode::StartPlayTest()
 		[](FString& Msg) { return true; },
 		[W, Player](int32 Tics, FString& Msg)
 		{
-			const bool bWas = W->bFastParam;
-			W->bFastParam = false;
+			const bool bWas = W->GetOptions().bFast;
+			PlayTestSetOption(W, &FDoomGameOptions::bFast, false);
 			ADoomPlayer* P = Player();
 			const FVector At = P->GetActorLocation() + P->GetActorForwardVector() * 96.f * Doom::Scale;
 			ADoomMonster* Slow = W->SpawnMonster(3002, At, 0);
 			const int32 SlowTics = Slow ? Slow->RunTics() : -1; // read before -fast goes on
-			W->bFastParam = true;
+			PlayTestSetOption(W, &FDoomGameOptions::bFast, true);
 			ADoomMonster* Fast = W->SpawnMonster(3002, At + FVector(0, 0, 80.f * Doom::Scale), 0);
 			const bool bOk = Slow && Fast && Fast->RunTics() * 2 == SlowTics
 				&& FMath::IsNearlyEqual(Fast->GetCharacterMovement()->MaxWalkSpeed, Slow->GetCharacterMovement()->MaxWalkSpeed * 2.f, 1.f) && W->IsFast();
@@ -1036,7 +1044,7 @@ void ADoomGameMode::StartPlayTest()
 				Slow ? Slow->GetCharacterMovement()->MaxWalkSpeed : 0.f, Fast ? Fast->GetCharacterMovement()->MaxWalkSpeed : 0.f);
 			if (Slow) Slow->Destroy();
 			if (Fast) Fast->Destroy();
-			W->bFastParam = bWas;
+			PlayTestSetOption(W, &FDoomGameOptions::bFast, bWas);
 			return bOk ? EStep::Pass : EStep::Fail;
 		} });
 
@@ -1048,9 +1056,9 @@ void ADoomGameMode::StartPlayTest()
 			[W, A, Player](FString& Msg)
 			{
 				A->bWasDM = W->Flow().bDeathmatch;
-				A->bWasAlt = W->bAltDeathParam;
+				A->bWasAlt = W->GetOptions().bAltDeath;
 				W->Flow().bDeathmatch = true;
-				W->bAltDeathParam = true;
+				PlayTestSetOption(W, &FDoomGameOptions::bAltDeath, true);
 				ADoomPlayer* P = Player();
 				P->Inv().Ammo[(int32)EDoomAmmo::Bullets] = 0;
 				for (const TWeakObjectPtr<ADoomThing>& T : W->GetThings())
@@ -1061,7 +1069,7 @@ void ADoomGameMode::StartPlayTest()
 					T->OnOverlap(nullptr, P, nullptr, 0, false, FHitResult());
 					break;
 				}
-				if (!A->Type) { Msg = TEXT("no clip on the map"); W->Flow().bDeathmatch = A->bWasDM; W->bAltDeathParam = A->bWasAlt; return false; }
+				if (!A->Type) { Msg = TEXT("no clip on the map"); W->Flow().bDeathmatch = A->bWasDM; PlayTestSetOption(W, &FDoomGameOptions::bAltDeath, A->bWasAlt); return false; }
 				return true;
 			},
 			[W, A](int32 Tics, FString& Msg)
@@ -1074,12 +1082,12 @@ void ADoomGameMode::StartPlayTest()
 					}
 					return false;
 				};
-				if (Tics == 5 && ClipThere()) { Msg = TEXT("the clip was not taken"); W->Flow().bDeathmatch = A->bWasDM; W->bAltDeathParam = A->bWasAlt; return EStep::Fail; }
+				if (Tics == 5 && ClipThere()) { Msg = TEXT("the clip was not taken"); W->Flow().bDeathmatch = A->bWasDM; PlayTestSetOption(W, &FDoomGameOptions::bAltDeath, A->bWasAlt); return EStep::Fail; }
 				if (Tics < 30 * 35 + 5) return EStep::Running;
 				const bool bBack = ClipThere();
 				Msg = FString::Printf(TEXT("a clip taken at (%.0f,%.0f): back after 30 s: %d"), Doom::ToDoom2D(A->At).X, Doom::ToDoom2D(A->At).Y, bBack);
 				W->Flow().bDeathmatch = A->bWasDM;
-				W->bAltDeathParam = A->bWasAlt;
+				PlayTestSetOption(W, &FDoomGameOptions::bAltDeath, A->bWasAlt);
 				return bBack ? EStep::Pass : EStep::Fail;
 			} });
 	}

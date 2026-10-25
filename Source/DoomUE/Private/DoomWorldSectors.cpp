@@ -647,10 +647,10 @@ void UDoomWorld::TicSectorDamage(ADoomPlayer* P, int32 Sec)
 	const bool bTic = (Flow().LevelTic & 31) == 0;
 	switch (S.Special)
 	{
-	case 5: if (bTic && !P->RadSuit) UGameplayStatics::ApplyDamage(P, 10, nullptr, nullptr, nullptr); break;
-	case 7: if (bTic && !P->RadSuit) UGameplayStatics::ApplyDamage(P, 5, nullptr, nullptr, nullptr); break;
+	case 5: if (bTic && !P->GetView().RadSuit) UGameplayStatics::ApplyDamage(P, 10, nullptr, nullptr, nullptr); break;
+	case 7: if (bTic && !P->GetView().RadSuit) UGameplayStatics::ApplyDamage(P, 5, nullptr, nullptr, nullptr); break;
 	case 4:
-	case 16: if (bTic && (!P->RadSuit || DoomInfo::Random() < 5)) UGameplayStatics::ApplyDamage(P, 20, nullptr, nullptr, nullptr); break;
+	case 16: if (bTic && (!P->GetView().RadSuit || DoomInfo::Random() < 5)) UGameplayStatics::ApplyDamage(P, 20, nullptr, nullptr, nullptr); break;
 	case 9:
 		CreditSecret(P);
 		S.Special = 0;
@@ -658,7 +658,7 @@ void UDoomWorld::TicSectorDamage(ADoomPlayer* P, int32 Sec)
 		P->PlaySelfSound(TEXT("GETPOW"));
 		break;
 	case 11:
-		P->bGodMode = false;
+		P->SetGodMode(false);
 		if (bTic) UGameplayStatics::ApplyDamage(P, 20, nullptr, nullptr, nullptr);
 		if (P->Inv().Health <= 10) ExitLevel(false);
 		break;

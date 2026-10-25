@@ -85,6 +85,29 @@ struct FDoomWadSetup
 	TArray<FString> DehFiles;
 };
 
+/** Doom's game options from the command line (UDoomWorld::GetOptions); the host page sets them too. */
+struct FDoomGameOptions
+{
+	/** -deathmatch: a network game plays deathmatch. */
+	bool bDeathmatch = false;
+	/** -altdeath: deathmatch 2.0 (pickups come back after 30 s, weapons don't stay). */
+	bool bAltDeath = false;
+	bool bNoMonsters = false;
+	/** -fast: Nightmare's fast monsters and missiles on any skill. */
+	bool bFast = false;
+};
+
+/** What -perftest and the tests count. */
+struct FDoomWorldStats
+{
+	/** CheckSight calls, and of them the ones the REJECT table answered without a trace. */
+	int64 SightChecks = 0, RejectedSights = 0;
+	/** Effects made new and taken from the pool. */
+	int64 EffectsSpawned = 0, EffectsReused = 0;
+	/** Niagara bursts spawned. */
+	int32 ParticleBursts = 0;
+};
+
 UCLASS()
 class DOOMUE_API UDoomWorld : public UTickableWorldSubsystem
 {
@@ -171,14 +194,12 @@ public:
 	void CreditItem(ADoomPlayer* Player);
 	void CreditSecret(ADoomPlayer* Player);
 
-	/** Doom's -deathmatch, read when the game boots. */
-	bool bDeathmatchParam = false;
-	/** -altdeath (deathmatch 2.0: pickups come back after 30 s, weapons don't stay), -nomonsters,
-	 *  -fast (Nightmare's fast monsters and missiles on any skill). The host page sets them too. */
-	bool bAltDeathParam = false, bNoMonsters = false, bFastParam = false;
-	bool IsAltDeath() const { return IsDeathmatch() && bAltDeathParam; }
+	/** The game options, read from the command line when the game boots. */
+	const FDoomGameOptions& GetOptions() const { return Options; }
+	void SetOptions(const FDoomGameOptions& InOptions) { Options = InOptions; }
+	bool IsAltDeath() const { return IsDeathmatch() && Options.bAltDeath; }
 	/** Doom's fastparm: -fast or Nightmare. */
-	bool IsFast() const { return bFastParam || GetSkill() >= 5; }
+	bool IsFast() const { return Options.bFast || GetSkill() >= 5; }
 	/** -altdeath: a picked-up item comes back where it was, 30 s later (P_RespawnSpecials). */
 	void QueueRespawn(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 
@@ -239,15 +260,6 @@ public:
 
 	/** Story text screen and endings (EDoomGameState::Finale; DoomFinale.cpp). */
 	enum class EFinaleStage : uint8 { Text, Picture, Bunny, Cast };
-	EFinaleStage FinaleStage = EFinaleStage::Text;
-	TArray<FString> FinaleText;
-	FString FinaleBackdrop;
-	FString FinalePicture;
-	int32 FinaleTic = 0;
-	/** Enter / fire on a finale screen: finish typing, go on, or kill the cast member. */
-	void FinaleInput();
-	bool IsFinaleTextComplete() const;
-
 	/** Doom 2 cast call. */
 	struct FCastState
 	{
@@ -259,12 +271,33 @@ public:
 		bool bAttacking = false;
 		bool bDying = false;
 		int32 DeadTics = 0;
-	} CastCall;
+	};
+	/** What the finale screen shows. */
+	struct FFinaleState
+	{
+		EFinaleStage Stage = EFinaleStage::Text;
+		TArray<FString> Text;
+		FString Backdrop;
+		FString Picture;
+		int32 Tic = 0;
+		FCastState Cast;
+	};
+	const FFinaleState& GetFinale() const { return Finale; }
+	/** Server: the finale screen for clients (ADoomGameState::PublishFinale). */
+	FDoomFinaleNet MakeFinaleNet() const;
+	/** Client: shows the finale screen the server sent. */
+	void ApplyFinaleNet(const FDoomFinaleNet& Net);
+	/** Types the whole story text out at once (-endtest's screenshot). */
+	void CompleteFinaleText() { Finale.Tic = 100000; }
+	/** Enter / fire on a finale screen: finish typing, go on, or kill the cast member. */
+	void FinaleInput();
+	bool IsFinaleTextComplete() const;
 	FString CastSprite() const;
 	FString CastName() const;
 
 	/** Test runs: ignore all player input (-autotest). */
-	bool bInputLocked = false;
+	bool IsInputLocked() const { return bInputLocked; }
+	void SetInputLocked(bool bLocked) { bInputLocked = bLocked; }
 
 	// --- queries ----------------------------------------------------------------------------------
 	FDoomMap* GetMap() const { return Map.Get(); }
@@ -283,8 +316,8 @@ public:
 	void SetSmartAI(bool bOn);
 	/** Monster paths over the current map (built the first time they're asked for). */
 	const FDoomNav& GetNav() const;
-	/** Niagara bursts spawned so far (tests). */
-	int32 GetParticleBursts() const { return ParticleBursts; }
+	/** Sight checks, effects and particle bursts so far (-perftest, the tests). */
+	const FDoomWorldStats& GetStats() const { return Stats; }
 	/** The phase this machine shows: the game state's, or Menu while this player's menu is open in a
 	    network game (where the menu never pauses the shared game). */
 	EDoomGameState GetState() const { return bNetMenu ? EDoomGameState::Menu : Flow().Phase; }
@@ -320,8 +353,6 @@ public:
 	/** A finished effect: hidden and kept for the next SpawnEffectLocal (puffs and blood come by the
 	 *  dozen a second), or destroyed when the pool is full. */
 	void ReleaseEffect(ADoomThing* Effect);
-	/** Effects made new and taken from the pool (-perftest). */
-	int64 EffectsSpawned = 0, EffectsReused = 0;
 	ADoomThing* SpawnEffectLocal(const FString& Sprite, const FString& Frames, int32 Tics, const FVector& UEPos, bool bFullBright = true, bool bLoop = false);
 	/** Modern renderer only: a Niagara burst on top of Doom's sprite effect, sprayed around Up. */
 	void SpawnParticles(EDoomParticles Kind, const FVector& UEPos, const FVector& Up = FVector::UpVector);
@@ -330,11 +361,6 @@ public:
 	ADoomMonster* SpawnMonster(int32 DoomEdNum, const FVector& UEFeet, float DoomAngle);
 	void RadiusAttack(AActor* Source, AActor* Instigator, const FVector& Where, float Damage);
 	bool CheckSight(const AActor* From, const AActor* To) const;
-	/** CheckSight calls so far (-perftest). */
-	mutable int64 SightChecks = 0;
-	/** Of them, answered by the REJECT table without a trace. */
-	mutable int64 RejectedSights = 0;
-	TArray<TWeakObjectPtr<ADoomThing>> EffectPool;
 
 	/** Kill bookkeeping and the boss-death map events (A_BossDeath, A_KeenDie). */
 	void OnMonsterDied(ADoomMonster* M);
@@ -347,12 +373,15 @@ public:
 
 	/** Message for the HUD (pickups, locked doors...). */
 	void ShowMessage(const FString& Msg);
-	FString Message;
-	int32 MessageTics = 0;
+	const FString& GetMessage() const { return Message; }
+	/** The message stays up for 4 seconds. */
+	bool IsMessageShowing() const { return MessageTics > 0; }
 
 	/** Automap: lines seen by the player, or all with the computer map. */
-	bool bAutomap = false;
-	bool bFullMap = false;
+	bool IsAutomapOpen() const { return bAutomap; }
+	void SetAutomapOpen(bool bOpen) { bAutomap = bOpen; }
+	bool HasFullMap() const { return bFullMap; }
+	void SetFullMap(bool bOn) { bFullMap = bOn; }
 
 	// menu state (drawn by ADoomHUD, driven by ADoomPlayerController)
 	/** Doom's menu (DoomMenu.cpp), drawn by ADoomHUD and driven by ADoomPlayerController. */
@@ -457,6 +486,15 @@ private:
 	bool bLightsDirty = false;
 
 	FDoomLevelFlow LocalFlow; // only used without an ADoomGameState
+	FDoomGameOptions Options;
+	FFinaleState Finale;
+	bool bInputLocked = false;
+	FString Message;
+	int32 MessageTics = 0;
+	bool bAutomap = false;
+	bool bFullMap = false;
+	mutable FDoomWorldStats Stats; // CheckSight is const
+	TArray<TWeakObjectPtr<ADoomThing>> EffectPool;
 	int32 Skill = 3;
 	bool bModern = false;
 	bool bSmartAI = false;
@@ -466,7 +504,6 @@ private:
 	mutable FDoomNav Nav;
 	mutable bool bNavBuilt = false;
 	bool bNoParticles = false; // -noparticles
-	int32 ParticleBursts = 0;
 	// networking
 	void ClientTick(float DeltaTime);
 	TArray<FDoomSector> BaselineSectors; // server: the level as loaded, to publish only changes

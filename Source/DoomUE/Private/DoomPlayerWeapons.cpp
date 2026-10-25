@@ -49,7 +49,7 @@ void ADoomPlayer::SelectSlotNow(int32 Slot)
 	switch (Slot)
 	{
 	case 1:
-		W = (Inv().Weapons[(int32)EDoomWeapon::Chainsaw] && !(Inv().Ready == EDoomWeapon::Chainsaw && bBerserk)) && Inv().Ready != EDoomWeapon::Chainsaw
+		W = (Inv().Weapons[(int32)EDoomWeapon::Chainsaw] && !(Inv().Ready == EDoomWeapon::Chainsaw && View.bBerserk)) && Inv().Ready != EDoomWeapon::Chainsaw
 			? EDoomWeapon::Chainsaw : EDoomWeapon::Fist;
 		break;
 	case 2: W = EDoomWeapon::Pistol; break;
@@ -98,9 +98,9 @@ void ADoomPlayer::CycleWeaponNow(int32 Dir)
 void ADoomPlayer::SetWeaponSprite()
 {
 	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
-	WeaponSprite = D.Sprite;
-	FlashSprite = D.FlashSprite;
-	WeaponFrame = D.ReadyLetter();
+	View.WeaponSprite = D.Sprite;
+	View.FlashSprite = D.FlashSprite;
+	View.WeaponFrame = D.ReadyLetter();
 }
 
 bool ADoomPlayer::CheckAmmo()
@@ -130,25 +130,25 @@ void ADoomPlayer::TicWeapon()
 	const FDoomWeaponDef& D = DoomInfo::Weapon(Inv().Ready);
 	if (FlashTics > 0 && --FlashTics == 0)
 	{
-		FlashFrame = 0;
-		ExtraLight = 0;
+		View.FlashFrame = 0;
+		View.ExtraLight = 0;
 	}
 
 	switch (Phase)
 	{
 	case EWeaponPhase::Raising:
-		WeaponY -= DoomPlayerDetail::RaiseSpeed;
-		if (WeaponY <= DoomPlayerDetail::WeaponTop)
+		View.WeaponY -= DoomPlayerDetail::RaiseSpeed;
+		if (View.WeaponY <= DoomPlayerDetail::WeaponTop)
 		{
-			WeaponY = DoomPlayerDetail::WeaponTop;
+			View.WeaponY = DoomPlayerDetail::WeaponTop;
 			Phase = EWeaponPhase::Ready;
 		}
 		break;
 	case EWeaponPhase::Lowering:
-		WeaponY += DoomPlayerDetail::RaiseSpeed;
-		if (WeaponY >= DoomPlayerDetail::WeaponBottom)
+		View.WeaponY += DoomPlayerDetail::RaiseSpeed;
+		if (View.WeaponY >= DoomPlayerDetail::WeaponBottom)
 		{
-			WeaponY = DoomPlayerDetail::WeaponBottom;
+			View.WeaponY = DoomPlayerDetail::WeaponBottom;
 			if (IsDead())
 			{
 				break;
@@ -169,12 +169,12 @@ void ADoomPlayer::TicWeapon()
 	case EWeaponPhase::Ready:
 		if (Inv().Ready == EDoomWeapon::Chainsaw)
 		{
-			WeaponFrame = ((DoomWorld->GetTic() / 4) & 1) ? 'D' : 'C';
+			View.WeaponFrame = ((DoomWorld->GetTic() / 4) & 1) ? 'D' : 'C';
 			if ((DoomWorld->GetTic() % 8) == 0) PlaySelfSound(TEXT("SAWIDL"), 0.6f);
 		}
 		else
 		{
-			WeaponFrame = D.ReadyLetter();
+			View.WeaponFrame = D.ReadyLetter();
 		}
 		if (IsDead() || PendingWeapon != EDoomWeapon::Count)
 		{
@@ -218,13 +218,13 @@ void ADoomPlayer::TicWeapon()
 			{
 				bRefire = false;
 				Phase = EWeaponPhase::Ready;
-				WeaponFrame = D.ReadyLetter();
+				View.WeaponFrame = D.ReadyLetter();
 			}
 			break;
 		}
 		{
 			const FDoomWeaponFrame& F = D.Fire[FireIndex];
-			WeaponFrame = F.Letter();
+			View.WeaponFrame = F.Letter();
 			FrameTics = FMath::Max(1, F.Tics);
 			if (F.bFire)
 			{
@@ -232,7 +232,7 @@ void ADoomPlayer::TicWeapon()
 			}
 			else if (F.Flash >= 0)
 			{
-				FlashFrame = 'A' + F.Flash; // A_GunFlash on a frame of its own (the BFG's charge-up)
+				View.FlashFrame = 'A' + F.Flash; // A_GunFlash on a frame of its own (the BFG's charge-up)
 				FlashTics = FMath::Max(4, F.Tics);
 			}
 			if (Inv().Ready == EDoomWeapon::SuperShotgun)
@@ -256,7 +256,7 @@ void ADoomPlayer::StartFire()
 	Phase = EWeaponPhase::Firing;
 	FireIndex = 0;
 	const FDoomWeaponFrame& F = D.Fire[0];
-	WeaponFrame = F.Letter();
+	View.WeaponFrame = F.Letter();
 	FrameTics = FMath::Max(1, F.Tics);
 	if (Inv().Ready == EDoomWeapon::BFG)
 	{
@@ -268,7 +268,7 @@ void ADoomPlayer::StartFire()
 	}
 	else if (F.Flash >= 0)
 	{
-		FlashFrame = 'A' + F.Flash;
+		View.FlashFrame = 'A' + F.Flash;
 		FlashTics = FMath::Max(4, F.Tics);
 	}
 }
@@ -287,9 +287,9 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 	}
 	if (F.Flash >= 0)
 	{
-		FlashFrame = 'A' + (Inv().Ready == EDoomWeapon::Plasma ? (DoomPlayerDetail::PlayerRand() & 1) : F.Flash);
+		View.FlashFrame = 'A' + (Inv().Ready == EDoomWeapon::Plasma ? (DoomPlayerDetail::PlayerRand() & 1) : F.Flash);
 		FlashTics = Inv().Ready == EDoomWeapon::Pistol ? 7 : 5;
-		ExtraLight = (Inv().Ready == EDoomWeapon::Rocket || Inv().Ready == EDoomWeapon::BFG || Inv().Ready == EDoomWeapon::SuperShotgun) ? 2 : 1;
+		View.ExtraLight = (Inv().Ready == EDoomWeapon::Rocket || Inv().Ready == EDoomWeapon::BFG || Inv().Ready == EDoomWeapon::SuperShotgun) ? 2 : 1;
 		if (DoomWorld->IsModern())
 		{
 			MuzzleLight->SetIntensity(Inv().Ready == EDoomWeapon::Plasma ? 30000.f : 60000.f);
@@ -297,7 +297,7 @@ void ADoomPlayer::FireWeapon(int32 FrameIndex)
 				Inv().Ready == EDoomWeapon::BFG ? FLinearColor(0.4f, 1.f, 0.4f) : FLinearColor(1.f, 0.75f, 0.45f));
 		}
 	}
-	AttackDown = 4;
+	View.AttackDown = 4;
 	DoomWorld->NoiseAlert(this, GetActorLocation());
 	if (!D.Sound.IsEmpty() && Inv().Ready != EDoomWeapon::Chainsaw && Inv().Ready != EDoomWeapon::Fist && Inv().Ready != EDoomWeapon::BFG)
 	{
@@ -457,7 +457,7 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 void ADoomPlayer::MeleeAttack(bool bSaw)
 {
 	int32 Damage = 2 * ((DoomPlayerDetail::PlayerRand() % 10) + 1);
-	if (!bSaw && bBerserk)
+	if (!bSaw && View.bBerserk)
 	{
 		Damage *= 10;
 	}

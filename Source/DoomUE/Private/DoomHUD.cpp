@@ -184,7 +184,7 @@ void ADoomHUD::DrawHUD()
 		Automap = FAutomapView(); // a new map: following, default zoom, no marks
 		Automap.Map = W->GetMapName();
 	}
-	if (W->bAutomap)
+	if (W->IsAutomapOpen())
 	{
 		DrawAutomap(P);
 	}
@@ -198,46 +198,46 @@ void ADoomHUD::DrawHUD()
 	}
 	DrawTint(P);
 	DrawStatusBar(P);
-	if (W->MessageTics > 0 && GetDefault<UDoomSettings>()->bShowMessages)
+	if (W->IsMessageShowing() && GetDefault<UDoomSettings>()->bShowMessages)
 	{
-		DrawText(W->Message, 2, 2);
+		DrawText(W->GetMessage(), 2, 2);
 	}
 }
 
 void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 {
 	UDoomWorld* W = DW();
-	if (P->WeaponSprite.IsEmpty())
+	if (P->GetView().WeaponSprite.IsEmpty())
 	{
 		return;
 	}
 	// light the weapon with the player's sector, like Doom's spritelights for the psprites
 	const int32 Sec = W->SectorAt(P->GetActorLocation());
 	float Light = Sec >= 0 ? W->GetMap()->Sectors[Sec].Light / 255.f : 1.f;
-	Light = FMath::Clamp(Light + P->ExtraLight * 0.12f + 0.1f, 0.1f, 1.f);
-	if (P->LightAmp > 0 || P->Invulnerability > 0 || W->IsModern())
+	Light = FMath::Clamp(Light + P->GetView().ExtraLight * 0.12f + 0.1f, 0.1f, 1.f);
+	if (P->GetView().LightAmp > 0 || P->GetView().Invulnerability > 0 || W->IsModern())
 	{
 		Light = 1.f;
 	}
 	FLinearColor Tint(Light, Light, Light, 1.f);
-	if (P->Invisibility > 4 * 32 || (P->Invisibility & 8))
+	if (P->GetView().Invisibility > 4 * 32 || (P->GetView().Invisibility & 8))
 	{
 		Tint = FLinearColor(0.05f, 0.05f, 0.05f, 0.45f);
 	}
-	const float SXp = 1 + P->BobX;
-	const float SYp = P->WeaponY + P->BobY - 16.f;
-	const FDoomSpriteFrame F = W->GetGraphics()->SpriteFrame(P->WeaponSprite, P->WeaponFrame, 0);
+	const float SXp = 1 + P->GetView().BobX;
+	const float SYp = P->GetView().WeaponY + P->GetView().BobY - 16.f;
+	const FDoomSpriteFrame F = W->GetGraphics()->SpriteFrame(P->GetView().WeaponSprite, P->GetView().WeaponFrame, 0);
 	const bool bExact = !W->IsModern() && GetDefault<UDoomSettings>()->bPaletteExact && Tint.A >= 1.f;
 	if (F.Picture && bExact)
 	{
 		// Doom lights the weapon with spritelights[MAXLIGHTSCALE-1] of the player's sector
 		int32 Row;
-		if (P->Invulnerability > 4 * 32 || (P->Invulnerability & 8)) Row = 32;
-		else if (P->LightAmp > 4 * 32 || (P->LightAmp & 8)) Row = 1;
+		if (P->GetView().Invulnerability > 4 * 32 || (P->GetView().Invulnerability & 8)) Row = 32;
+		else if (P->GetView().LightAmp > 4 * 32 || (P->GetView().LightAmp & 8)) Row = 1;
 		else
 		{
 			const int32 SecLight = Sec >= 0 ? W->GetMap()->Sectors[Sec].Light : 255;
-			const int32 LightNum = FMath::Clamp(SecLight / 16 + P->ExtraLight, 0, 15);
+			const int32 LightNum = FMath::Clamp(SecLight / 16 + P->GetView().ExtraLight, 0, 15);
 			Row = FMath::Clamp((15 - LightNum) * 4 - 23, 0, 31);
 		}
 		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row, ScreenPal))
@@ -250,9 +250,9 @@ void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 	{
 		DrawPatch(F.Picture, SXp, SYp, true, Tint);
 	}
-	if (P->FlashFrame && !P->FlashSprite.IsEmpty())
+	if (P->GetView().FlashFrame && !P->GetView().FlashSprite.IsEmpty())
 	{
-		const FDoomSpriteFrame FF = W->GetGraphics()->SpriteFrame(P->FlashSprite, P->FlashFrame, 0);
+		const FDoomSpriteFrame FF = W->GetGraphics()->SpriteFrame(P->GetView().FlashSprite, P->GetView().FlashFrame, 0);
 		if (FF.Picture)
 		{
 			DrawPatch(FF.Picture, SXp, SYp, true, FLinearColor::White);
@@ -267,21 +267,21 @@ void ADoomHUD::DrawTint(ADoomPlayer* P)
 		return; // the real PLAYPAL palettes are applied to the world and the 2D graphics instead
 	}
 	// PLAYPAL's red, gold and green palettes as screen overlays
-	if (P->DamageCount > 0)
+	if (P->GetView().DamageCount > 0)
 	{
-		const int32 Pal = FMath::Min((P->DamageCount + 7) / 8, 8);
+		const int32 Pal = FMath::Min((P->GetView().DamageCount + 7) / 8, 8);
 		DrawRect(FLinearColor(1.f, 0.f, 0.f, Pal * 0.09f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
-	else if (P->bBerserk && P->Inv().Ready == EDoomWeapon::Fist)
+	else if (P->GetView().bBerserk && P->Inv().Ready == EDoomWeapon::Fist)
 	{
 		DrawRect(FLinearColor(1.f, 0.f, 0.f, 0.08f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
-	if (P->BonusCount > 0)
+	if (P->GetView().BonusCount > 0)
 	{
-		const int32 Pal = FMath::Min((P->BonusCount + 7) / 8, 4);
+		const int32 Pal = FMath::Min((P->GetView().BonusCount + 7) / 8, 4);
 		DrawRect(FLinearColor(1.f, 0.85f, 0.3f, Pal * 0.05f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
-	if (P->RadSuit > 4 * 32 || (P->RadSuit & 8))
+	if (P->GetView().RadSuit > 4 * 32 || (P->GetView().RadSuit & 8))
 	{
 		DrawRect(FLinearColor(0.f, 1.f, 0.f, 0.12f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
@@ -300,27 +300,27 @@ void ADoomHUD::DrawFace(ADoomPlayer* P)
 	{
 		Face = TEXT("STFDEAD0");
 	}
-	else if (P->Invulnerability > 0 || P->bGodMode)
+	else if (P->GetView().Invulnerability > 0 || P->IsGodMode())
 	{
 		Face = TEXT("STFGOD0");
 	}
-	else if (P->FaceEvilGrin > 0)
+	else if (P->GetView().FaceEvilGrin > 0)
 	{
 		Face = FString::Printf(TEXT("STFEVL%d"), Bracket);
 	}
-	else if (P->DamageCount > 20)
+	else if (P->GetView().DamageCount > 20)
 	{
 		Face = FString::Printf(TEXT("STFOUCH%d"), Bracket);
 	}
-	else if (P->DamageCount > 0 && P->FaceDamageDir != 0)
+	else if (P->GetView().DamageCount > 0 && P->GetView().FaceDamageDir != 0)
 	{
-		Face = P->FaceDamageDir > 0 ? FString::Printf(TEXT("STFTR%d0"), Bracket) : FString::Printf(TEXT("STFTL%d0"), Bracket);
+		Face = P->GetView().FaceDamageDir > 0 ? FString::Printf(TEXT("STFTR%d0"), Bracket) : FString::Printf(TEXT("STFTL%d0"), Bracket);
 	}
-	else if (P->DamageCount > 0)
+	else if (P->GetView().DamageCount > 0)
 	{
 		Face = FString::Printf(TEXT("STFKILL%d"), Bracket); // hit head-on, or hurt by the floor
 	}
-	else if (P->AttackDown > 0 && P->Inv().Ready == EDoomWeapon::Chaingun)
+	else if (P->GetView().AttackDown > 0 && P->Inv().Ready == EDoomWeapon::Chaingun)
 	{
 		Face = FString::Printf(TEXT("STFKILL%d"), Bracket);
 	}
@@ -566,7 +566,7 @@ void ADoomHUD::DrawAutomap(ADoomPlayer* P)
 			continue;
 		}
 		const bool bKnown = L.bSeen || (L.Flags & DoomLineFlags::Mapped);
-		if (!bKnown && !W->bFullMap)
+		if (!bKnown && !W->HasFullMap())
 		{
 			continue;
 		}
@@ -960,16 +960,16 @@ void ADoomHUD::DrawFinale()
 	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY);
 	using EStage = UDoomWorld::EFinaleStage;
 
-	if (W->FinaleStage == EStage::Picture)
+	if (W->GetFinale().Stage == EStage::Picture)
 	{
-		DrawPatchByName(W->FinalePicture, 0, 0, false);
+		DrawPatchByName(W->GetFinale().Picture, 0, 0, false);
 		return;
 	}
-	if (W->FinaleStage == EStage::Bunny)
+	if (W->GetFinale().Stage == EStage::Bunny)
 	{
 		// F_BunnyScroll: PFUB1 first, sliding right as PFUB2 comes in from the left, then THE END is
 		// spelled out; Scrolled counts down from 320 (all PFUB1) to 0 (all PFUB2)
-		const float Scrolled = 320.f - FMath::Clamp((W->FinaleTic - 230) / 2.f, 0.f, 320.f);
+		const float Scrolled = 320.f - FMath::Clamp((W->GetFinale().Tic - 230) / 2.f, 0.f, 320.f);
 		const FDoomPicture* P2 = W->GetGraphics()->Patch(TEXT("PFUB2"));
 		const FDoomPicture* P1 = W->GetGraphics()->Patch(TEXT("PFUB1"));
 		if (P2 && P2->Texture && Scrolled < 320.f)
@@ -981,17 +981,17 @@ void ADoomHUD::DrawFinale()
 		{
 			DrawTexture(P1->Texture, OX + (320.f - Scrolled) * SX, OY, Scrolled * SX, 200 * SY, 0, 0, Scrolled / P1->Width, 1, FLinearColor::White, BLEND_Opaque);
 		}
-		if (W->FinaleTic >= 1180)
+		if (W->GetFinale().Tic >= 1180)
 		{
-			const int32 Stage = FMath::Min((W->FinaleTic - 1180) / 5, 6);
+			const int32 Stage = FMath::Min((W->GetFinale().Tic - 1180) / 5, 6);
 			DrawPatchByName(FString::Printf(TEXT("END%d"), Stage), (320 - 13 * 8) / 2, (200 - 8 * 8) / 2, true);
 		}
 		return;
 	}
-	if (W->FinaleStage == EStage::Cast)
+	if (W->GetFinale().Stage == EStage::Cast)
 	{
 		DrawPatchByName(TEXT("BOSSBACK"), 0, 0, false);
-		const UDoomWorld::FCastState& C = W->CastCall;
+		const UDoomWorld::FCastState& C = W->GetFinale().Cast;
 		const TCHAR Frame = C.Sequence.IsValidIndex(C.Frame) ? C.Sequence[C.Frame] : TEXT('A');
 		const FDoomSpriteFrame F = W->GetGraphics()->SpriteFrame(W->CastSprite(), Frame, 1);
 		if (F.Picture && F.Picture->Texture)
@@ -1008,7 +1008,7 @@ void ADoomHUD::DrawFinale()
 	}
 
 	// story text, typed out a character every 3 tics on the tiled backdrop flat
-	if (const FDoomPicture* Flat = W->GetGraphics()->Flat(FName(*W->FinaleBackdrop)))
+	if (const FDoomPicture* Flat = W->GetGraphics()->Flat(FName(*W->GetFinale().Backdrop)))
 	{
 		for (int32 Y = 0; Y < 200; Y += 64)
 		{
@@ -1019,9 +1019,9 @@ void ADoomHUD::DrawFinale()
 			}
 		}
 	}
-	const int32 Shown = W->FinaleTic / 3;
+	const int32 Shown = W->GetFinale().Tic / 3;
 	TArray<FString> Parts;
-	for (const FString& Line : W->FinaleText)
+	for (const FString& Line : W->GetFinale().Text)
 	{
 		TArray<FString> Split;
 		Line.ParseIntoArray(Split, TEXT("\n"), false);

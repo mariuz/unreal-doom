@@ -467,6 +467,21 @@ Log categories (`feature/log-categories`): the game logs by system instead of ev
 
 The editor module keeps `LogDoomContent`.
 
+Encapsulation (`feature/encapsulation`): `ADoomPlayer` and `UDoomWorld` no longer expose mutable
+state.
+
+* **The player:** the weapon, powerup, tint and face state is `FDoomPlayerView` itself, the struct
+  that replicates to the owner. It is read through `GetView()`, and nothing copies it field by
+  field any more. God mode and the pending weapon have setters. The camera and the body sprite have
+  getters.
+* **The world:**
+  * `-deathmatch`, `-altdeath`, `-nomonsters` and `-fast` are `FDoomGameOptions`
+    (`GetOptions` / `SetOptions`).
+  * The finale screen is `FFinaleState` (`GetFinale`), sent to clients by
+    `MakeFinaleNet` / `ApplyFinaleNet`.
+  * The perf-test counters are `FDoomWorldStats` (`GetStats`).
+  * The input lock, the automap, the computer map and the HUD message have accessors.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -573,7 +588,7 @@ Not done yet (roughly in priority order):
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Localizable text**: the port's own words (the menu's added rows, the map editor's panels, messages that aren't the WAD's) are `TEXT` literals; the game module has no `LOCTEXT`. User-facing text belongs in `FText` with `LOCTEXT` / `NSLOCTEXT` and string tables, so it can be translated. Doom's own strings stay in the WAD's DEHACKED / BEX text.
-   * **Encapsulation**: game state is public and mutable on `UCLASS`es (`ADoomPlayer::bGodMode`, `bFireHeld`, `UDoomWorld`'s test counters and switches). Accessors, or `UPROPERTY` with the right specifiers, plus `friend` for the test runners.
+   * **Encapsulation, the rest**: `ADoomPlayer` and `UDoomWorld` keep their state private now; `ADoomThing` and `ADoomMonster` still expose theirs (`Def`, `Health`, `bDead`, `Target`, the sleep and SMART fields), and `FDoomMenu` its page, item and editing fields.
    * **Assertions**: the game module has a single `check`. Invariants (map indices, chunk and sector tables, net struct sizes) want `check` / `ensureMsgf`, which compile out of shipping builds.
    * **Static analysis**: a build with `-StaticAnalyzer=VisualCpp` (or Clang-Tidy) and its warnings fixed, and a `.clang-format` matching Epic's layout (tabs, braces on their own lines).
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.

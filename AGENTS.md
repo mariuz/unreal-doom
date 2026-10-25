@@ -176,6 +176,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * encapsulation: `ADoomPlayer::GetView()` (its replicated `FDoomPlayerView` is the state itself),
+    `UDoomWorld`'s `FDoomGameOptions`, `FFinaleState`, `FDoomWorldStats` and accessors;
   * log categories per system (`DoomUE.h`; test results in `LogDoomTest`);
   * smaller files: `DoomWorld*.cpp` (world: setup and tic, Sectors, Specials, Flow, Presentation),
     `DoomContent*.cpp`, `DoomEditor*.cpp`, `DoomMonster*.cpp`, `DoomPlayer*.cpp`, `DoomMap{Actors,Markers,Edits}.cpp`;
