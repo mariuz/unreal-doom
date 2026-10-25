@@ -338,17 +338,17 @@ void ADoomAIController::OnPerceived(AActor* Actor, FAIStimulus Stimulus)
 	if (!Stimulus.WasSuccessfullySensed())
 	{
 		// out of sight: remember where it went
-		if (BB && M->Target.Get() == P) BB->SetValueAsVector(DoomAIKeys::LastKnown, Stimulus.StimulusLocation);
+		if (BB && M->GetTarget() == P) BB->SetValueAsVector(DoomAIKeys::LastKnown, Stimulus.StimulusLocation);
 		return;
 	}
 	++NumSensed;
-	if (M->State == EMonsterState::Idle)
+	if (M->GetState() == EMonsterState::Idle)
 	{
 		// sight wakes a monster (Doom's own noise flood still wakes it by sound)
 		if (!bHeard) M->WakeUp(P, false);
 		return;
 	}
-	if (BB && (M->Target.Get() == P || !M->Target.IsValid()))
+	if (BB && (M->GetTarget() == P || !M->GetTarget()))
 	{
 		// an awake monster follows the sound of the fight, or the last sight of it
 		BB->SetValueAsVector(DoomAIKeys::LastKnown, Stimulus.StimulusLocation);
@@ -368,7 +368,7 @@ namespace
 	}
 	bool IsAwake(const ADoomMonster* M)
 	{
-		return M && !M->IsDead() && M->State != EMonsterState::Idle;
+		return M && !M->IsDead() && M->GetState() != EMonsterState::Idle;
 	}
 }
 
@@ -389,7 +389,7 @@ void UBTService_DoomTrackTarget::TickNode(UBehaviorTreeComponent& OwnerComp, uin
 	{
 		return;
 	}
-	AActor* T = M->IsDead() ? nullptr : M->Target.Get();
+	AActor* T = M->IsDead() ? nullptr : M->GetTarget();
 	BB->SetValueAsObject(DoomAIKeys::Target, T);
 	const bool bSee = T && M->GetDoomWorld() && M->GetDoomWorld()->CheckSight(M, T);
 	BB->SetValueAsBool(DoomAIKeys::CanSee, bSee);
@@ -409,15 +409,15 @@ bool UBTDecorator_DoomCondition::CalculateRawConditionValue(UBehaviorTreeCompone
 	const ADoomMonster* M = MonsterOf(OwnerComp);
 	const UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
 	bool bValue = false;
-	if (M && BB && M->Def)
+	if (M && BB && M->GetDef())
 	{
 		switch (Condition)
 		{
 		case EDoomAICondition::CanSeeTarget: bValue = BB->GetValueAsBool(DoomAIKeys::CanSee); break;
 		case EDoomAICondition::HasTarget: bValue = BB->GetValueAsObject(DoomAIKeys::Target) != nullptr; break;
 		case EDoomAICondition::KnowsWhere: bValue = BB->IsVectorValueSet(DoomAIKeys::LastKnown); break;
-		case EDoomAICondition::MeleeOnly: bValue = DoomAI::IsMeleeOnly(M->Def); break;
-		case EDoomAICondition::Hurt: bValue = M->Health * 3 < M->Def->Health; break;
+		case EDoomAICondition::MeleeOnly: bValue = DoomAI::IsMeleeOnly(M->GetDef()); break;
+		case EDoomAICondition::Hurt: bValue = M->GetHealth() * 3 < M->GetDef()->Health; break;
 		}
 	}
 	return bValue != bNot;
@@ -588,7 +588,7 @@ void UEnvQueryContext_DoomTarget::ProvideContext(FEnvQueryInstance& QueryInstanc
 {
 	if (const ADoomMonster* M = QueryMonster(QueryInstance))
 	{
-		if (AActor* T = M->Target.Get())
+		if (AActor* T = M->GetTarget())
 		{
 			UEnvQueryItemType_Actor::SetContextHelper(ContextData, T);
 		}
@@ -604,12 +604,12 @@ void UEnvQueryGenerator_DoomSpots::GenerateItems(FEnvQueryInstance& QueryInstanc
 {
 	const ADoomMonster* M = QueryMonster(QueryInstance);
 	const FDoomMap* Map = QueryMap(M);
-	if (!Map || !M->Def)
+	if (!Map || !M->GetDef())
 	{
 		return;
 	}
 	const FVector2f Pos = M->DoomPos();
-	const float Radius = M->Def->Radius + 4.f;
+	const float Radius = M->GetDef()->Radius + 4.f;
 	// where it stands counts too: staying put is a choice
 	QueryInstance.AddItemData<UEnvQueryItemType_Point>(M->GetActorLocation());
 	const int32 NRings = FMath::Max(1, Rings);
@@ -645,11 +645,11 @@ UEnvQueryTest_DoomSight::UEnvQueryTest_DoomSight()
 void UEnvQueryTest_DoomSight::RunTest(FEnvQueryInstance& QueryInstance) const
 {
 	const ADoomMonster* M = QueryMonster(QueryInstance);
-	const AActor* T = M ? M->Target.Get() : nullptr;
+	const AActor* T = M ? M->GetTarget() : nullptr;
 	UObject* Owner = QueryInstance.Owner.Get();
 	BoolValue.BindData(Owner, QueryInstance.QueryID);
 	const bool bWanted = BoolValue.GetValue();
-	if (!M || !T || !M->Def)
+	if (!M || !T || !M->GetDef())
 	{
 		for (FEnvQueryInstance::ItemIterator It(this, QueryInstance); It; ++It) It.ForceItemState(EEnvItemStatus::Failed);
 		return;
@@ -657,7 +657,7 @@ void UEnvQueryTest_DoomSight::RunTest(FEnvQueryInstance& QueryInstance) const
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomEqsSight), false, M);
 	Q.AddIgnoredActor(T);
 	const FVector Eye = T->GetActorLocation();
-	const float EyeUp = M->Def->Height * 0.75f * Doom::Scale;
+	const float EyeUp = M->GetDef()->Height * 0.75f * Doom::Scale;
 	for (FEnvQueryInstance::ItemIterator It(this, QueryInstance); It; ++It)
 	{
 		const FVector P = GetItemLocation(QueryInstance, It.GetIndex()) + FVector(0, 0, EyeUp);
@@ -684,8 +684,8 @@ UEnvQueryTest_DoomRange::UEnvQueryTest_DoomRange()
 void UEnvQueryTest_DoomRange::RunTest(FEnvQueryInstance& QueryInstance) const
 {
 	const ADoomMonster* M = QueryMonster(QueryInstance);
-	const AActor* T = M ? M->Target.Get() : nullptr;
-	const float Want = M ? DoomAI::PreferredRange(M->Def) : 0.f;
+	const AActor* T = M ? M->GetTarget() : nullptr;
+	const float Want = M ? DoomAI::PreferredRange(M->GetDef()) : 0.f;
 	for (FEnvQueryInstance::ItemIterator It(this, QueryInstance); It; ++It)
 	{
 		float Score = 0.f;
@@ -714,7 +714,7 @@ void UEnvQueryTest_DoomCrowd::RunTest(FEnvQueryInstance& QueryInstance) const
 	{
 		for (const TWeakObjectPtr<ADoomMonster>& O : M->GetDoomWorld()->GetMonsters())
 		{
-			if (O.IsValid() && O.Get() != M && !O->IsDead() && O->State != EMonsterState::Idle)
+			if (O.IsValid() && O.Get() != M && !O->IsDead() && O->GetState() != EMonsterState::Idle)
 			{
 				Others.Add(O->DoomPos());
 				if (O->GetSmartMove() == ADoomMonster::ESmartMove::Moving) Others.Add(O->GetSmartGoal());
@@ -749,15 +749,15 @@ void UEnvQueryTest_DoomReachable::RunTest(FEnvQueryInstance& QueryInstance) cons
 	UObject* Owner = QueryInstance.Owner.Get();
 	FloatValueMin.BindData(Owner, QueryInstance.QueryID);
 	const float Min = FloatValueMin.GetValue();
-	const bool bFloat = M && M->Def && (M->Def->Flags & EThingFlag::Float);
+	const bool bFloat = M && M->GetDef() && (M->GetDef()->Flags & EThingFlag::Float);
 	TArray<FVector2f> Path;
 	for (FEnvQueryInstance::ItemIterator It(this, QueryInstance); It; ++It)
 	{
 		float Score = 0.f;
-		if (Map && Nav && M->Def)
+		if (Map && Nav && M->GetDef())
 		{
 			const FVector2f From = M->DoomPos(), To = Doom::ToDoom2D(GetItemLocation(QueryInstance, It.GetIndex()));
-			if (Nav->FindPath(*Map, From, To, M->Def->Radius, M->Def->Height, bFloat, Path, 600))
+			if (Nav->FindPath(*Map, From, To, M->GetDef()->Radius, M->GetDef()->Height, bFloat, Path, 600))
 			{
 				float Len = 0.f;
 				FVector2f Prev = From;

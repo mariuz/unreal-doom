@@ -353,11 +353,11 @@ float ADoomPlayer::AimSlope(float AngleDeg, float Range, AActor*& OutTarget, flo
 	TArray<TPair<AActor*, float>> Candidates;
 	for (const TWeakObjectPtr<ADoomMonster>& M : DoomWorld->GetMonsters())
 	{
-		if (M.IsValid() && !M->IsDead()) Candidates.Add({ M.Get(), M->Def->Radius });
+		if (M.IsValid() && !M->IsDead()) Candidates.Add({ M.Get(), M->GetDef()->Radius });
 	}
 	for (const TWeakObjectPtr<ADoomThing>& T : DoomWorld->GetThings())
 	{
-		if (T.IsValid() && !T->bDead && T->Def && (T->Def->Flags & EThingFlag::Shootable)) Candidates.Add({ T.Get(), T->Def->Radius });
+		if (T.IsValid() && !T->IsDead() && T->GetDef() && (T->GetDef()->Flags & EThingFlag::Shootable)) Candidates.Add({ T.Get(), T->GetDef()->Radius });
 	}
 	for (ADoomPlayer* P : DoomWorld->GetPlayers())
 	{
@@ -429,7 +429,7 @@ void ADoomPlayer::HitscanAttack(int32 Pellets, float SpreadYaw, float SpreadPitc
 		{
 			UGameplayStatics::ApplyPointDamage(A, Damage, Dir, Hit, GetController(), this, nullptr);
 			const ADoomMonster* M = Cast<ADoomMonster>(A);
-			const bool bBlood = M && !(M->Def->Flags & EThingFlag::NoBlood);
+			const bool bBlood = M && !(M->GetDef()->Flags & EThingFlag::NoBlood);
 			if (bBlood)
 			{
 				DoomWorld->SpawnEffect(TEXT("BLUD"), Damage > 12 ? TEXT("ABC") : Damage >= 9 ? TEXT("BC") : TEXT("C"), 8, Hit.ImpactPoint, false);

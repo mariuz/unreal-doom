@@ -163,7 +163,7 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 	{
 		for (const TWeakObjectPtr<ADoomThing>& T : Things)
 		{
-			if (T.IsValid() && T->Def && !T->bEffect && !T->bDead && !T->IsActorBeingDestroyed()) ThingList.Add(T.Get());
+			if (T.IsValid() && T->GetDef() && !T->IsEffect() && !T->IsDead() && !T->IsActorBeingDestroyed()) ThingList.Add(T.Get());
 		}
 	}
 	N = ThingList.Num();
@@ -175,9 +175,9 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 		bool bWasDropped = false;
 		if (Ar.IsSaving())
 		{
-			Type = ThingList[i]->Def->DoomEdNum;
+			Type = ThingList[i]->GetDef()->DoomEdNum;
 			Feet = FeetOf(ThingList[i]);
-			bWasDropped = ThingList[i]->bDropped;
+			bWasDropped = ThingList[i]->IsDropped();
 		}
 		Ar << Type << Feet << bWasDropped;
 		if (Ar.IsLoading())
@@ -208,7 +208,7 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 	{
 		for (const TWeakObjectPtr<ADoomProjectile>& P : Projectiles)
 		{
-			if (P.IsValid() && P->Def && !P->bExploded && !P->IsActorBeingDestroyed()) Missiles.Add(P.Get());
+			if (P.IsValid() && P->GetDef() && !P->HasExploded() && !P->IsActorBeingDestroyed()) Missiles.Add(P.Get());
 		}
 	}
 	N = Missiles.Num();
@@ -221,11 +221,11 @@ void UDoomWorld::SerializeState(FArchive& Ar)
 		if (Ar.IsSaving())
 		{
 			ADoomProjectile* P = Missiles[i];
-			Type = P->Def->Name;
+			Type = P->GetDef()->Name;
 			Where = P->GetActorLocation();
-			Dir = P->Movement->Velocity.GetSafeNormal(); // the actor reports no velocity before its first tick
-			SourceCode = ActorCode(P->Source.Get());
-			TracerCode = ActorCode(P->Tracer.Get());
+			Dir = P->GetMovement()->Velocity.GetSafeNormal(); // the actor reports no velocity before its first tick
+			SourceCode = ActorCode(P->GetSource());
+			TracerCode = ActorCode(P->GetTracer());
 		}
 		Ar << Type << Where << Dir << SourceCode << TracerCode;
 		if (Ar.IsLoading())
@@ -379,16 +379,16 @@ FString UDoomWorld::StateFingerprint() const
 	int32 NumThings = 0;
 	for (const TWeakObjectPtr<ADoomThing>& T : Things)
 	{
-		if (T.IsValid() && !T->bEffect) ++NumThings;
+		if (T.IsValid() && !T->IsEffect()) ++NumThings;
 	}
 	int32 NumMissiles = 0;
 	FVector MissileSum = FVector::ZeroVector, MissileVel = FVector::ZeroVector;
 	for (const TWeakObjectPtr<ADoomProjectile>& P : Projectiles)
 	{
-		if (!P.IsValid() || P->bExploded) continue;
+		if (!P.IsValid() || P->HasExploded()) continue;
 		++NumMissiles;
 		MissileSum += P->GetActorLocation();
-		MissileVel += P->Movement->Velocity;
+		MissileVel += P->GetMovement()->Velocity;
 	}
 	FString Player = TEXT("none");
 	if (const ADoomPlayer* P = GetPlayer())

@@ -504,6 +504,14 @@ code analysis (`-StaticAnalyzer=VisualCpp`) and fails on any warning. It found f
 edited code. The existing files weren't reformatted: they differ in about 4% of lines, mostly
 several statements on one line.
 
+Encapsulation, the rest (`feature/encapsulation-things`): `ADoomThing`, `ADoomMonster`,
+`ADoomProjectile` and `FDoomMenu` keep their fields private too.
+* Readers use accessors: `GetDef`, `GetHealth`, `IsDead`, `GetTarget`, `GetSource`, `GetSprite` and
+  so on.
+* The few outside writers use setters: `SetPooled` (the effect pool) and `FDoomMenu::SetItem`.
+* The menu's host and join choices are an `FDoomHostSettings` (`GetHost` / `SetHost`).
+* Replicated properties and their `OnRep` functions are private as well.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -610,7 +618,6 @@ Not done yet (roughly in priority order):
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Localizable text**: the port's own words (the menu's added rows, the map editor's panels, messages that aren't the WAD's) are `TEXT` literals; the game module has no `LOCTEXT`. User-facing text belongs in `FText` with `LOCTEXT` / `NSLOCTEXT` and string tables, so it can be translated. Doom's own strings stay in the WAD's DEHACKED / BEX text.
-   * **Encapsulation, the rest**: `ADoomPlayer` and `UDoomWorld` keep their state private now; `ADoomThing` and `ADoomMonster` still expose theirs (`Def`, `Health`, `bDead`, `Target`, the sleep and SMART fields), and `FDoomMenu` its page, item and editing fields.
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **Reusable plugins**: the WAD reader, the node builder, the map generator and the PWAD writer don't depend on the game; as a plugin they could serve other projects (LyraDoom already copies the game module).

@@ -350,7 +350,7 @@ void ADoomPlayerController::MenuBack(const FInputActionValue& V)
 bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 {
 	UDoomWorld* W = GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
-	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bEditing && !W->IsInputLocked())
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.IsEditing() && !W->IsInputLocked())
 	{
 		if (Params.Event == IE_Pressed || Params.Event == IE_Repeat)
 		{
@@ -360,7 +360,7 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 		return Super::InputKey(Params); // releases go through, so no key is left held down
 	}
 	// the Controls page waiting for a key: the next key or mouse button pressed is the new binding
-	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.bCapturing && !W->IsInputLocked()
+	if (W && W->GetState() == EDoomGameState::Menu && W->Menu.IsCapturing() && !W->IsInputLocked()
 		&& Params.Event == IE_Pressed && !Params.Key.IsAxis1D() && !Params.Key.IsAxis2D())
 	{
 		W->Menu.CaptureKey(*W, Params.Key);

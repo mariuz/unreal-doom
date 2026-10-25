@@ -27,6 +27,21 @@ public:
 	/** Save games: age, velocity (Nightmare speed, homing turns) and the sprite's animation. */
 	void DoomSerialize(FArchive& Ar);
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	const FDoomProjectileDef* GetDef() const { return Def; }
+	/** Who fired it (gets the credit, isn't hit by it). */
+	AActor* GetSource() const { return Source.Get(); }
+	/** A revenant missile's homing target. */
+	AActor* GetTracer() const { return Tracer.Get(); }
+	bool HasExploded() const { return bExploded; }
+	/** The BFG ball's flight direction when it burst: its tracers fan out around it. */
+	const TOptional<float>& GetSprayYaw() const { return SprayYaw; }
+	UProjectileMovementComponent* GetMovement() const { return Movement; }
+	UDoomSpriteComponent* GetSprite() const { return Sprite; }
+	UPointLightComponent* GetLight() const { return Light; }
+
+private:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Sphere;
 	UPROPERTY(VisibleAnywhere)
@@ -36,7 +51,6 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UPointLightComponent> Light;
 
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	/** Networking: the missile type; clients show it and follow the replicated movement. */
 	UPROPERTY(ReplicatedUsing = OnRep_NetType)
 	FString NetType;
@@ -47,10 +61,8 @@ public:
 	TWeakObjectPtr<AActor> Source;
 	TWeakObjectPtr<AActor> Tracer;
 	bool bExploded = false;
-	/** The BFG ball's flight direction when it burst: its tracers fan out around it. */
 	TOptional<float> SprayYaw;
 
-private:
 	UFUNCTION()
 	void OnStop(const FHitResult& Hit);
 	void Explode(AActor* HitActor);

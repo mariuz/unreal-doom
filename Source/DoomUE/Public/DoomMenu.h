@@ -43,21 +43,29 @@ struct FMenuTitle
 	int32 X, Y;
 };
 
+/** The Multiplayer page's choices: the game to host and the address to join. */
+struct FDoomHostSettings
+{
+	/** 0 co-op, 1 deathmatch, 2 deathmatch 2.0. */
+	int32 Rules = 0;
+	/** A map from the WAD, or past the last one a random map. */
+	int32 MapIndex = 0;
+	bool bNoMonsters = false;
+	bool bFast = false;
+	FString JoinAddress = TEXT("127.0.0.1");
+};
+
 class DOOMUE_API FDoomMenu
 {
 public:
-	EMenuPage Page = EMenuPage::Main;
-	int32 Item = 0;
-	int32 HelpPage = 0;
-	int32 WarpIndex = 0;
-
-	/** The Multiplayer page: the game to host (rules 0 co-op, 1 deathmatch, 2 deathmatch 2.0; a map
-	 *  from the WAD, or past the last one a random map; -nomonsters, -fast) and the address to join. */
-	int32 NetRules = 0;
-	int32 NetMapIndex = 0;
-	bool bNetNoMonsters = false;
-	bool bNetFast = false;
-	FString JoinAddress = TEXT("127.0.0.1");
+	EMenuPage GetPage() const { return Page; }
+	/** The selected row. */
+	int32 GetItem() const { return Item; }
+	void SetItem(int32 InItem) { Item = InItem; }
+	/** The Read This! page shown. */
+	int32 GetHelpPage() const { return HelpPage; }
+	const FDoomHostSettings& GetHost() const { return Host; }
+	void SetHost(const FDoomHostSettings& InHost) { Host = InHost; }
 	/** The host page's choices as travel options (DoomMap, DoomRules, NoMonsters, Fast). */
 	FString HostOptions(UDoomWorld& W) const;
 	void HostGame(UDoomWorld& W);
@@ -89,19 +97,28 @@ public:
 	FString Prompt() const;
 	bool IsSaveLoad() const { return Page == EMenuPage::Load || Page == EMenuPage::Save; }
 
-	/** Typing a save name (Doom's string entry): the slot being named and the text so far. */
-	bool bEditing = false;
-	FString EditText;
+	/** Typing a save name or the join address (Doom's string entry), and the text so far. */
+	bool IsEditing() const { return bEditing; }
+	const FString& GetEditText() const { return EditText; }
 	static constexpr int32 MaxNameLength = 24;
 	/** A key while typing: Enter saves, Escape cancels, Backspace deletes, printable keys type. */
 	void EditKey(UDoomWorld& W, const FKey& Key);
 
 	/** The Controls page waits for the key to bind to the selected control. */
-	bool bCapturing = false;
+	bool IsCapturing() const { return bCapturing; }
 	/** That key: binds it (Escape cancels). */
 	void CaptureKey(UDoomWorld& W, const FKey& Key);
 
 private:
+	EMenuPage Page = EMenuPage::Main;
+	int32 Item = 0;
+	int32 HelpPage = 0;
+	int32 WarpIndex = 0;
+	FDoomHostSettings Host;
+	bool bEditing = false;
+	FString EditText;
+	bool bCapturing = false;
+
 	void Push(UDoomWorld& W, EMenuPage P);
 	void Adjust(UDoomWorld& W, int32 Dir);
 	void Activate(UDoomWorld& W);

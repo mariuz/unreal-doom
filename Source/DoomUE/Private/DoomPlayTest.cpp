@@ -693,7 +693,7 @@ void ADoomGameMode::StartPlayTest()
 			[W, X, Shot](int32 Tics, FString& Msg)
 			{
 				// the Options page itself (playtest_options.png): every row fits above the status bar
-				if (Tics < 10) W->Menu.Item = EOptionsRow::Controls; // the last row: the page scrolls to it
+				if (Tics < 10) W->Menu.SetItem(EOptionsRow::Controls); // the last row: the page scrolls to it
 				if (Tics == 10) Shot(TEXT("options"));
 				if (Tics < 14) return EStep::Running;
 				ADoomPlayer* P = W->GetPlayer();
@@ -966,13 +966,13 @@ void ADoomGameMode::StartPlayTest()
 					B->bOk &= Has(EKeys::F) && !Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl);
 					// the Controls page as the player sees it, on the Fire row
 					W->Menu.Open(*W, EMenuPage::Options);
-					W->Menu.Item = EOptionsRow::Controls;
+					W->Menu.SetItem(EOptionsRow::Controls);
 					W->Menu.Select(*W);
-					W->Menu.Item = DoomInput::Mappables().IndexOfByPredicate([](const DoomInput::FMappable& M) { return M.Name == TEXT("Fire"); });
+					W->Menu.SetItem(DoomInput::Mappables().IndexOfByPredicate([](const DoomInput::FMappable& M) { return M.Name == TEXT("Fire"); }));
 					const TArray<FMenuRow> Rows = W->Menu.Rows(*W);
-					B->bOk &= W->Menu.Page == EMenuPage::Controls && Rows.IsValidIndex(W->Menu.Item) && Rows[W->Menu.Item].ValueText.StartsWith(TEXT("F,"));
-					B->Report += FString::Printf(TEXT("; the menu row reads \"%s  %s\""), Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].Text : TEXT("?"),
-						Rows.IsValidIndex(W->Menu.Item) ? *Rows[W->Menu.Item].ValueText : TEXT("?"));
+					B->bOk &= W->Menu.GetPage() == EMenuPage::Controls && Rows.IsValidIndex(W->Menu.GetItem()) && Rows[W->Menu.GetItem()].ValueText.StartsWith(TEXT("F,"));
+					B->Report += FString::Printf(TEXT("; the menu row reads \"%s  %s\""), Rows.IsValidIndex(W->Menu.GetItem()) ? *Rows[W->Menu.GetItem()].Text : TEXT("?"),
+						Rows.IsValidIndex(W->Menu.GetItem()) ? *Rows[W->Menu.GetItem()].ValueText : TEXT("?"));
 					Shot(TEXT("controls"));
 					// the gamepad's fire button, from the right trigger to the left
 					B->bOk &= PC->Rebind(TEXT("PadFire"), EKeys::Gamepad_LeftTrigger);

@@ -87,14 +87,14 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 	{
 		static const TCHAR* Rules[] = { TEXT("CO-OP"), TEXT("DEATHMATCH"), TEXT("DEATHMATCH 2.0") };
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("GAME: %s"), Rules[FMath::Clamp(NetRules, 0, 2)]) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MAP: < %s >"), Maps.IsValidIndex(NetMapIndex) ? *Maps[NetMapIndex] : TEXT("RANDOM")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTERS: %s"), bNetNoMonsters ? TEXT("NONE") : TEXT("YES")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FAST MONSTERS: %s"), bNetFast ? TEXT("YES") : TEXT("NO")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("GAME: %s"), Rules[FMath::Clamp(Host.Rules, 0, 2)]) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MAP: < %s >"), Maps.IsValidIndex(Host.MapIndex) ? *Maps[Host.MapIndex] : TEXT("RANDOM")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTERS: %s"), Host.bNoMonsters ? TEXT("NONE") : TEXT("YES")) });
+		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FAST MONSTERS: %s"), Host.bFast ? TEXT("YES") : TEXT("NO")) });
 		R.Add({ EKind::Choice, FString(), TEXT("HOST GAME") });
 		R.Add({ EKind::Gap });
 		FMenuRow Join{ EKind::Choice, FString(), TEXT("JOIN ADDRESS:") };
-		Join.ValueText = bEditing ? EditText + TEXT("_") : JoinAddress;
+		Join.ValueText = bEditing ? EditText + TEXT("_") : Host.JoinAddress;
 		R.Add(Join);
 		R.Add({ EKind::Choice, FString(), TEXT("CONNECT") });
 		checkf(R.Num() == EMultiplayerRow::Count, TEXT("the Multiplayer page has %d rows, EMultiplayerRow %d"), R.Num(), (int32)EMultiplayerRow::Count);
@@ -251,7 +251,7 @@ void FDoomMenu::EditKey(UDoomWorld& W, const FKey& Key)
 		if (Page == EMenuPage::Multiplayer)
 		{
 			// the address to join
-			if (!EditText.IsEmpty()) JoinAddress = EditText;
+			if (!EditText.IsEmpty()) Host.JoinAddress = EditText;
 			W.PlaySound(TEXT("PISTOL"), nullptr);
 			return;
 		}
@@ -428,15 +428,15 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 	{
 		switch (Item)
 		{
-		case EMultiplayerRow::Rules: NetRules = (NetRules + Dir + 3) % 3; break;
+		case EMultiplayerRow::Rules: Host.Rules = (Host.Rules + Dir + 3) % 3; break;
 		case EMultiplayerRow::Map:
 		{
 			const int32 N = W.GetWad()->MapNames().Num() + 1; // the last choice: a random map
-			NetMapIndex = (NetMapIndex + Dir + N) % N;
+			Host.MapIndex = (Host.MapIndex + Dir + N) % N;
 			break;
 		}
-		case EMultiplayerRow::Monsters: bNetNoMonsters = !bNetNoMonsters; break;
-		default: bNetFast = !bNetFast; break;
+		case EMultiplayerRow::Monsters: Host.bNoMonsters = !Host.bNoMonsters; break;
+		default: Host.bFast = !Host.bFast; break;
 		}
 		W.PlaySound(TEXT("STNMOV"), nullptr);
 		return;
@@ -521,8 +521,8 @@ void FDoomMenu::Select(UDoomWorld& W)
 FString FDoomMenu::HostOptions(UDoomWorld& W) const
 {
 	const TArray<FString>& Maps = W.GetWad()->MapNames();
-	const FString Map = Maps.IsValidIndex(NetMapIndex) ? Maps[NetMapIndex] : DoomMapGen::NameForSeed((uint32)FMath::RandRange(1, 0xFFFFF));
-	return FString::Printf(TEXT("listen?DoomMap=%s?DoomRules=%d%s%s"), *Map, NetRules, bNetNoMonsters ? TEXT("?NoMonsters") : TEXT(""), bNetFast ? TEXT("?Fast") : TEXT(""));
+	const FString Map = Maps.IsValidIndex(Host.MapIndex) ? Maps[Host.MapIndex] : DoomMapGen::NameForSeed((uint32)FMath::RandRange(1, 0xFFFFF));
+	return FString::Printf(TEXT("listen?DoomMap=%s?DoomRules=%d%s%s"), *Map, Host.Rules, Host.bNoMonsters ? TEXT("?NoMonsters") : TEXT(""), Host.bFast ? TEXT("?Fast") : TEXT(""));
 }
 
 void FDoomMenu::HostGame(UDoomWorld& W)
@@ -538,15 +538,15 @@ void FDoomMenu::HostGame(UDoomWorld& W)
 void FDoomMenu::JoinGame(UDoomWorld& W)
 {
 	APlayerController* PC = UGameplayStatics::GetPlayerController(W.GetWorld(), 0);
-	if (!PC || JoinAddress.IsEmpty())
+	if (!PC || Host.JoinAddress.IsEmpty())
 	{
 		W.PlaySound(TEXT("OOF"), nullptr);
 		return;
 	}
-	UE_LOG(LogDoomNet, Log, TEXT("Joining %s"), *JoinAddress);
+	UE_LOG(LogDoomNet, Log, TEXT("Joining %s"), *Host.JoinAddress);
 	Stack.Reset();
 	Close(W);
-	PC->ClientTravel(JoinAddress, TRAVEL_Absolute);
+	PC->ClientTravel(Host.JoinAddress, TRAVEL_Absolute);
 }
 
 void FDoomMenu::Activate(UDoomWorld& W)
@@ -557,7 +557,7 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		if (Item == EMultiplayerRow::Host) HostGame(W);
 		else if (Item == EMultiplayerRow::JoinAddress)
 		{
-			EditText = JoinAddress;
+			EditText = Host.JoinAddress;
 			bEditing = true; // typed like a save name; Enter keeps it
 		}
 		else if (Item == EMultiplayerRow::Connect) JoinGame(W);

@@ -109,7 +109,7 @@ bool UDoomWorld::ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool
 	}
 	for (const TWeakObjectPtr<ADoomThing>& T : Things)
 	{
-		if (T.IsValid() && T->Def && (T->Def->Flags & EThingFlag::Solid) && !T->bDead) Check(T.Get(), T->Def->Height, T->Def->Radius, true);
+		if (T.IsValid() && T->GetDef() && (T->GetDef()->Flags & EThingFlag::Solid) && !T->IsDead()) Check(T.Get(), T->GetDef()->Height, T->GetDef()->Radius, true);
 	}
 	return bBlocked;
 }
@@ -188,7 +188,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 		}
 		for (const TWeakObjectPtr<ADoomThing>& T : Things)
 		{
-			if (T.IsValid() && !T->bEffect && Map->SectorAt(Doom::ToDoom2D(T->GetActorLocation())) == M.Sector) T->SnapToPlanes();
+			if (T.IsValid() && !T->IsEffect() && Map->SectorAt(Doom::ToDoom2D(T->GetActorLocation())) == M.Sector) T->SnapToPlanes();
 		}
 	}
 	if (!M.bSilent && M.Type != FSectorMover::EType::Door && M.Type != FSectorMover::EType::Plat && (Flow().LevelTic & 7) == 0)

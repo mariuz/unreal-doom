@@ -744,17 +744,17 @@ void ADoomHUD::DrawMenu()
 	UDoomWorld* W = DW();
 	FDoomMenu& M = W->Menu;
 	// over the game, or over the title picture on sub-pages (their titles share its logo's spot)
-	if (W->GetMap() || M.Page != EMenuPage::Main)
+	if (W->GetMap() || M.GetPage() != EMenuPage::Main)
 	{
 		DrawRect(FLinearColor(0, 0, 0, W->GetMap() ? 0.45f : 0.6f), 0, 0, Canvas->ClipX, Canvas->ClipY);
 	}
 
-	if (M.Page == EMenuPage::ReadThis)
+	if (M.GetPage() == EMenuPage::ReadThis)
 	{
 		const TArray<FString> Pages = M.HelpPages(*W);
-		if (Pages.IsValidIndex(M.HelpPage))
+		if (Pages.IsValidIndex(M.GetHelpPage()))
 		{
-			DrawFullscreenPic(Pages[M.HelpPage]);
+			DrawFullscreenPic(Pages[M.GetHelpPage()]);
 		}
 		return;
 	}
@@ -776,7 +776,7 @@ void ADoomHUD::DrawMenu()
 	{
 		DrawPatchByName(T.Patch, T.X, T.Y, true);
 	}
-	if (M.Page == EMenuPage::Controls)
+	if (M.GetPage() == EMenuPage::Controls)
 	{
 		// no M_ graphic for it: the title in the menu font
 		const FString Title = TEXT("CONTROLS");
@@ -798,13 +798,13 @@ void ADoomHUD::DrawMenu()
 			DrawPatchByName(TEXT("M_LSLEFT"), O.X - 8, Y + 7, true);
 			for (int32 k = 0; k < 24; ++k) DrawPatchByName(TEXT("M_LSCNTR"), O.X + k * 8, Y + 7, true);
 			DrawPatchByName(TEXT("M_LSRGHT"), O.X + 24 * 8, Y + 7, true);
-			if (M.bEditing && M.Page == EMenuPage::Save && i == M.Item)
+			if (M.IsEditing() && M.GetPage() == EMenuPage::Save && i == M.GetItem())
 			{
 				const bool bCursor = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
-				DrawText(M.EditText + (bCursor ? TEXT("_") : TEXT("")), O.X, Y);
+				DrawText(M.GetEditText() + (bCursor ? TEXT("_") : TEXT("")), O.X, Y);
 				continue;
 			}
-			DrawText(R.Text, O.X, Y, 1.f, R.bEnabled || M.Page == EMenuPage::Save ? FLinearColor::White : Dim);
+			DrawText(R.Text, O.X, Y, 1.f, R.bEnabled || M.GetPage() == EMenuPage::Save ? FLinearColor::White : Dim);
 			continue;
 		}
 		if (R.Kind == FMenuRow::EKind::Gap)
@@ -820,7 +820,7 @@ void ADoomHUD::DrawMenu()
 		else
 		{
 			DrawText(R.Text, O.X, Y + 3, 1.f, R.bEnabled ? FLinearColor(0.9f, 0.15f, 0.1f) : Dim);
-			if (M.bCapturing && i == M.Item)
+			if (M.IsCapturing() && i == M.GetItem())
 			{
 				// waiting for the new key
 				const bool bOn = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
@@ -852,11 +852,11 @@ void ADoomHUD::DrawMenu()
 	if (M.RowHeight() < 16)
 	{
 		// tight rows: a small arrow, the skull would cover its neighbours
-		DrawText(bBlink ? TEXT(">") : TEXT(""), O.X - 10, O.Y + 3 + (M.Item - First) * M.RowHeight());
+		DrawText(bBlink ? TEXT(">") : TEXT(""), O.X - 10, O.Y + 3 + (M.GetItem() - First) * M.RowHeight());
 	}
 	else
 	{
-		DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + (M.Item - First) * M.RowHeight(), true);
+		DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + (M.GetItem() - First) * M.RowHeight(), true);
 	}
 }
 
