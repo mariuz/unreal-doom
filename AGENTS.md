@@ -120,7 +120,8 @@ Tools/run_tests.bat DoomUE -NullRHI
   or file-level statics then clash with another file's (`Walls`, `Fire`, `IsManualDoor` so far).
   Give them file-specific names. A unity build or the shared PCH also hides missing includes.
   `Tools/check_includes.bat` checks both (`names` for the quick name check alone); run it after
-  adding files or helpers. It wants the editor closed and takes about 10 minutes the first time.
+  adding files or helpers. `Tools/analyze.bat` is the static analysis (no warnings allowed).
+  Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
   `DoomMenu.h`): a new row goes into the enum in the order `FDoomMenu::Rows` adds it, or the page's
   `checkf` fires. The Options page scrolls past 10 rows.
@@ -180,6 +181,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * static analysis (`Tools/analyze.bat`, zero warnings) and `.clang-format`;
   * assertions: threads, load stages, network roles, inventory packing, named menu rows;
   * encapsulation: `ADoomPlayer::GetView()` (its replicated `FDoomPlayerView` is the state itself),
     `UDoomWorld`'s `FDoomGameOptions`, `FFinaleState`, `FDoomWorldStats` and accessors;

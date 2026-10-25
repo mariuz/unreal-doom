@@ -130,7 +130,11 @@ bool DoomEditorData::ReloadIfChanged()
 FString DoomEditorData::MapSource(const FString& MapName)
 {
 	const FDoomWad* W = Wad();
-	const int32 Lump = W ? W->FindLump(MapName.ToUpper()) : INDEX_NONE;
+	if (!W)
+	{
+		return FString();
+	}
+	const int32 Lump = W->FindLump(MapName.ToUpper());
 	return Lump != INDEX_NONE ? W->FilePaths()[W->Lump(Lump).FileIndex] : FString();
 }
 

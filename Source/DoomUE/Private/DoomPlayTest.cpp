@@ -810,7 +810,10 @@ void ADoomGameMode::StartPlayTest()
 						C->bAsleep = true;
 						W->ActivateSpecial(C->Line, 0, Player(), EActivation::Use, true); // down it goes
 					}
-					return Tics > 200 ? EStep::Fail : EStep::Running;
+					if (Tics <= 200) return EStep::Running;
+					Msg = FString::Printf(TEXT("the corpse never fell asleep: at z %.1f on a floor of %.0f, speed %.1f, sector moving %d"),
+						C->M->DoomZ(), S.Floor, C->M->GetVelocity().Size(), W->SectorHasMover(C->Sector));
+					return EStep::Fail;
 				}
 				// while the lift waits at the bottom the corpse must come to lie on the floor, not float
 				// where the lift was (the gap at the bottom: its smallest value once it has fallen)

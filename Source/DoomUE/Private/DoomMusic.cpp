@@ -14,8 +14,8 @@ namespace
 	const double KslPerOctave[4] = { 0.0, 3.0, 1.5, 6.0 };
 
 	// Envelope timing modelled on the OPL's rates: each rate step halves the time.
-	double AttackSeconds(int32 Rate) { return Rate == 0 ? 1e9 : Rate >= 15 ? 0.0 : 2.826 / double(1 << (Rate - 1)); }
-	double DecaySeconds(int32 Rate) { return Rate == 0 ? 1e9 : 39.28 / double(1 << (Rate - 1)); } // time for 96 dB
+	double AttackSeconds(int32 Rate) { return Rate == 0 ? 1e9 : Rate >= 15 ? 0.0 : 2.826 / double(int64(1) << (Rate - 1)); }
+	double DecaySeconds(int32 Rate) { return Rate == 0 ? 1e9 : 39.28 / double(int64(1) << (Rate - 1)); } // time for 96 dB
 
 	constexpr int32 SineSize = 4096;
 	struct FSine
@@ -469,7 +469,7 @@ bool FDoomMusicPlayer::Render(int16* Out, int32 Frames)
 			};
 
 			const int32 Fb = (P.Feedback >> 1) & 7;
-			const double FbMod = Fb ? (V.Mod.Out + V.Mod.PrevOut) * double(1 << Fb) / 128.0 : 0.0;
+			const double FbMod = Fb ? (V.Mod.Out + V.Mod.PrevOut) * double(int64(1) << Fb) / 128.0 : 0.0;
 			const double ModOut = Operator(V.Mod, P.ModChar, P.ModAttack, P.ModSustain, P.ModWave, P.ModKsl, P.ModLevel, FbMod);
 			V.Mod.PrevOut = V.Mod.Out;
 			V.Mod.Out = ModOut;

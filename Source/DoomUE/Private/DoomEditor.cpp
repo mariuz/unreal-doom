@@ -646,7 +646,7 @@ void UDoomMapEditor::FlyTick(float DeltaSeconds, const FVector& Move, const FVec
 {
 	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 	APawn* P = PC ? PC->GetPawn() : nullptr;
-	if (!P)
+	if (!PC || !P)
 	{
 		return;
 	}

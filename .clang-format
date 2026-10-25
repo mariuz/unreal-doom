@@ -1,0 +1,60 @@
+# Epic's C++ layout (https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine):
+# tabs of width 4, braces on their own lines, pointers and references next to the type. No column
+# limit: long lines are broken by hand. For new and edited code; the existing files are not
+# reformatted wholesale.
+Language: Cpp
+Standard: c++20
+BasedOnStyle: Microsoft
+
+UseTab: ForContinuationAndIndentation
+TabWidth: 4
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 0
+
+BreakBeforeBraces: Allman
+AccessModifierOffset: -4
+IndentCaseLabels: false
+NamespaceIndentation: All
+IndentPPDirectives: None
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceBeforeParens: ControlStatements
+SpacesInParens: Never
+Cpp11BracedListStyle: false
+
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: true
+AlwaysBreakTemplateDeclarations: Yes
+
+AlignAfterOpenBracket: DontAlign
+AlignOperands: DontAlign
+AlignTrailingComments:
+  Kind: Leave
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+LambdaBodyIndentation: Signature
+
+# Unreal's macros: GENERATED_BODY() and friends stand alone; UPROPERTY() / UFUNCTION() lines keep
+# their declarations on the next line.
+StatementMacros: [GENERATED_BODY, GENERATED_UCLASS_BODY, GENERATED_USTRUCT_BODY, UE_DEPRECATED]
+AttributeMacros: [DOOMUE_API, DOOMUEEDITOR_API]
+MacroBlockBegin: "^BEGIN_DEFINE_SPEC|^BEGIN_SHADER_PARAMETER_STRUCT"
+MacroBlockEnd: "^END_DEFINE_SPEC|^END_SHADER_PARAMETER_STRUCT"
+
+SortIncludes: Never
+IncludeBlocks: Preserve
+ReflowComments: false
+KeepEmptyLines:
+  AtStartOfFile: false
+  AtStartOfBlock: false
+MaxEmptyLinesToKeep: 1
+FixNamespaceComments: false
+InsertNewlineAtEOF: false
