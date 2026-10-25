@@ -524,6 +524,18 @@ Doom's own strings (pickups, obituaries, level names) still come from the WAD an
 Doom's own way of replacing them. Numbers in sentences go through `DoomText::Number`, which leaves
 out thousands separators: "sector 1234", not "sector 1,234".
 
+A project plugin (`feature/wad-plugin`): `Plugins/DoomWadTools` holds Doom's data without the game,
+so other projects can use it (LyraDoom copies the game module today):
+* the WAD reader (`DoomWad.h`);
+* maps in every format the port reads (`DoomMap.h`), with the node builder;
+* the random map generator (`DoomMapGen.h`);
+* the PWAD writer (`DoomWadWriter.h`).
+
+It depends only on Core and CoreUObject, so a game include in it doesn't compile. The generator asks a
+function whether a texture exists (the game passes `FDoomGraphics::PictureCheck`). `LogDoomMap`
+moved with it. One tie to the game is left: a sector's sound target (`FDoomSector::SoundTarget`, an
+actor) is runtime state kept in the map data.
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -632,6 +644,5 @@ Not done yet (roughly in priority order):
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
-   * **Reusable plugins**: the WAD reader, the node builder, the map generator and the PWAD writer don't depend on the game; as a plugin they could serve other projects (LyraDoom already copies the game module).
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
    * **UI framework**: the menus are drawn by hand in the HUD and the map editor's panels are UMG built in code; Epic's CommonUI would give them gamepad navigation, input routing and styling the same way.

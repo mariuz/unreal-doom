@@ -12,7 +12,7 @@ struct FWadLump
 	int32 Size = 0;
 };
 
-class DOOMUE_API FDoomWad
+class DOOMWADTOOLS_API FDoomWad
 {
 public:
 	/** Adds a WAD file; later files override earlier ones. */
@@ -62,5 +62,5 @@ namespace WadRead
 	inline int16 S16(const uint8* P) { return (int16)(P[0] | (P[1] << 8)); }
 	inline uint16 U16(const uint8* P) { return (uint16)(P[0] | (P[1] << 8)); }
 	inline int32 S32(const uint8* P) { return (int32)(P[0] | (P[1] << 8) | (P[2] << 16) | ((uint32)P[3] << 24)); }
-	FString Name8(const uint8* P);
+	DOOMWADTOOLS_API FString Name8(const uint8* P);
 }

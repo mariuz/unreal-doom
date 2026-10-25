@@ -53,6 +53,9 @@ struct FDoomSpriteFrame
 class DOOMUE_API FDoomGraphics : public FGCObject
 {
 public:
+	/** For the map generator (DoomMapGen::Generate): whether these graphics have a wall texture or flat
+	 *  of that name. Null graphics: no check. */
+	static TFunction<bool(FName, bool)> PictureCheck(const FDoomGraphics* Gfx);
 	explicit FDoomGraphics(const FDoomWad& InWad);
 	virtual ~FDoomGraphics() override;
 

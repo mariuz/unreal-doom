@@ -5,7 +5,7 @@
 // balances best becomes a node's partition. No minisegs: FDoomMap::BuildSubsectorPolygons clips the
 // subsector polygons from the node partitions and the segs, as it does for vanilla nodes.
 #include "DoomMap.h"
-#include "DoomUE.h"
+#include "DoomWadTools.h"
 
 namespace
 {

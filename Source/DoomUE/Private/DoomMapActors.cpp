@@ -210,7 +210,7 @@ bool ADoomMapActor::LoadEditedMap(FDoomMap& Out) const
 	}
 	uint32 GenSeed = 0;
 	const bool bLoaded = DoomMapGen::ParseName(MapName, GenSeed)
-		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), DoomEditorData::Graphics(), Out)
+		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), FDoomGraphics::PictureCheck(DoomEditorData::Graphics()), Out)
 		: Out.Load(*W, MapName);
 	if (bLoaded)
 	{
@@ -435,7 +435,7 @@ void ADoomMapActor::RebuildPreview()
 	PreviewMap = MakeUnique<FDoomMap>();
 	uint32 GenSeed = 0;
 	const bool bLoaded = DoomMapGen::ParseName(MapName, GenSeed)
-		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), G, *PreviewMap)
+		? DoomMapGen::Generate(DoomMapGen::DefaultOptions(GenSeed, W->IsDoom2()), FDoomGraphics::PictureCheck(G), *PreviewMap)
 		: PreviewMap->Load(*W, MapName);
 	if (!bLoaded)
 	{

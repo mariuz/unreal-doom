@@ -94,7 +94,7 @@ struct FLineHit
 	int32 Side = 0;     // side of the line the trace started on
 };
 
-class DOOMUE_API FDoomMap
+class DOOMWADTOOLS_API FDoomMap
 {
 public:
 	bool Load(const FDoomWad& Wad, const FString& MapName);

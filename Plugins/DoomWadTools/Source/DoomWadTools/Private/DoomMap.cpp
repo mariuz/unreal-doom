@@ -1,6 +1,6 @@
 #include "DoomMap.h"
 #include "DoomWad.h"
-#include "DoomUE.h"
+#include "DoomWadTools.h"
 #include "zlib.h"
 
 using namespace WadRead;

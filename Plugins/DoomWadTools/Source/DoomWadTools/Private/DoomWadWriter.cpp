@@ -1,7 +1,7 @@
 // Writing maps as PWADs (see DoomWadWriter.h).
 #include "DoomWadWriter.h"
 #include "DoomMap.h"
-#include "DoomUE.h"
+#include "DoomWadTools.h"
 #include "Misc/FileHelper.h"
 
 namespace

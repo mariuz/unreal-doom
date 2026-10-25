@@ -636,6 +636,15 @@ UTexture2D* FDoomGraphics::ColormappedPicture(const FDoomPicture& Pic, int32 Row
 	return Tex;
 }
 
+TFunction<bool(FName, bool)> FDoomGraphics::PictureCheck(const FDoomGraphics* Gfx)
+{
+	if (!Gfx)
+	{
+		return nullptr;
+	}
+	return [Gfx](FName Name, bool bFlat) { return bFlat ? Gfx->FlatNames().Contains(Name) : Gfx->HasTexture(Name); };
+}
+
 const FDoomPicture* FDoomGraphics::Texture(FName Name)
 {
 	if (Name.IsNone())

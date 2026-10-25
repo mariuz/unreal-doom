@@ -8,9 +8,9 @@ public class DoomUE : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags",
 			"ProceduralMeshComponent", "DeveloperSettings", "AudioMixer", "AudioExtensions", "AIModule", "GameplayTasks",
-			"MeshDescription", "StaticMeshDescription", "Niagara", "NetCore", "UMG", "Slate", "SlateCore"
+			"MeshDescription", "StaticMeshDescription", "Niagara", "NetCore", "UMG", "Slate", "SlateCore",
+			"DoomWadTools" // Plugins/DoomWadTools: WADs, maps, nodes, the generator, PWADs
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI" });
-		AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
 	}
 }

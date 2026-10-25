@@ -307,7 +307,7 @@ bool UDoomWorld::BeginLoad(const FString& MapName, bool bPistolStart, bool bForS
 	else if (DoomMapGen::ParseName(MapName, GenSeed))
 	{
 		// a generated map: the same seed makes the same map (saves, network clients)
-		if (!DoomMapGen::Generate(GenOptions(GenSeed), Gfx.Get(), *Map))
+		if (!DoomMapGen::Generate(GenOptions(GenSeed), FDoomGraphics::PictureCheck(Gfx.Get()), *Map))
 		{
 			Map.Reset();
 			return false;

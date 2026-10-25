@@ -194,7 +194,7 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		if (DoomMapGen::ParseName(Name, Seed))
 		{
 			const DoomMapGen::FOptions O = DoomMapGen::DefaultOptions(Seed, DoomEditorData::Wad() && DoomEditorData::Wad()->IsDoom2());
-			return DoomMapGen::Generate(O, DoomEditorData::Graphics(), Out);
+			return DoomMapGen::Generate(O, FDoomGraphics::PictureCheck(DoomEditorData::Graphics()), Out);
 		}
 		return DoomEditorData::Wad() && Out.Load(*DoomEditorData::Wad(), Name);
 	};
@@ -366,7 +366,7 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 			FDoomMap M;
 			DoomMapGen::FReport R;
 			const double T0 = FPlatformTime::Seconds();
-			const bool bOk = DoomMapGen::Generate(O, DoomEditorData::Graphics(), M, &R);
+			const bool bOk = DoomMapGen::Generate(O, FDoomGraphics::PictureCheck(DoomEditorData::Graphics()), M, &R);
 			const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
 			TotalMs += Ms;
 			const FString Name = DoomMapGen::NameForSeed(O.Seed);

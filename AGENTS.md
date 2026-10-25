@@ -13,6 +13,8 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 * `Source/DoomUE`: the game module. `UDoomWorld` (a world subsystem, split over `DoomWorld*.cpp`) is the Doom simulation;
   `ADoomGameMode`, `ADoomGameState` and `ADoomPlayerState` follow Unreal's gameplay framework;
   `ADoomLevel` builds the geometry. See [docs/Architecture.md](docs/Architecture.md).
+* `Plugins/DoomWadTools`: Doom's data without the game (WAD reader, maps and the node builder, the
+  map generator, the PWAD writer). Core and CoreUObject only: keep game code out of it.
 * `Source/DoomUEEditor`: the editor module. `-run=DoomContent` generates materials, effects and the
   game-table asset, and imports maps; the automation tests live in `Private/Tests`.
 * `docs/`: Architecture, Testing, Multiplayer, EditingMaps, Lyra, AI. Keep them current with changes.
@@ -180,12 +182,14 @@ Tools/run_tests.bat DoomUE -NullRHI
   * Its Lyra assets (35 packages, about 235 MB) are git-ignored. `Tools/copy_lyra_assets.py`
     copies them back.
   * **Never commit Epic's Lyra content to a public repository.**
+  * It copies DoomUE's game module; since `feature/wad-plugin` it needs `Plugins/DoomWadTools` too.
   * Its code changes (role materials, open sky, winding fix) aren't in this repository yet.
     Upstreaming them without the assets is a candidate task.
 
 ## Where things stand
 
 * **Done, newest first:**
+  * the `DoomWadTools` plugin (WADs, maps, nodes, generator, PWADs; `FDoomGraphics::PictureCheck`);
   * translatable text: `LOCTEXT` for the port's own words (menus, HUD, editor, map checker);
   * encapsulation of things, monsters, missiles and the menu (accessors; `FDoomHostSettings`);
   * static analysis (`Tools/analyze.bat`, zero warnings) and `.clang-format`;
