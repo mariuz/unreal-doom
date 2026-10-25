@@ -2,13 +2,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DoomWadTools.h" // LogDoomMap: WADs and maps (the plugin's), the game's map checker and UMAPINFO
 #include "Misc/Parse.h"
 #include "Misc/CommandLine.h"
 
 // Log categories by system, so a log can be filtered by area (Output Log filters, -LogCmds="LogDoomAI Verbose"):
 DECLARE_LOG_CATEGORY_EXTERN(LogDoom, Log, All);       // boot and the game tables
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomGame, Log, All);   // the simulation: world, level flow, saves, menu, actors
-DECLARE_LOG_CATEGORY_EXTERN(LogDoomMap, Log, All);    // WADs and maps: loading, nodes, the generator, the checker, PWADs
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomRender, Log, All); // level geometry, pictures and textures, materials, tiles
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomAudio, Log, All);  // sound effects and music
 DECLARE_LOG_CATEGORY_EXTERN(LogDoomNet, Log, All);    // network games: hosting, joining, what clients receive

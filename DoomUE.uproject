@@ -8,6 +8,7 @@
 		{ "Name": "DoomUEEditor", "Type": "Editor", "LoadingPhase": "Default" }
 	],
 	"Plugins": [
+		{ "Name": "DoomWadTools", "Enabled": true },
 		{ "Name": "ProceduralMeshComponent", "Enabled": true },
 		{ "Name": "EnhancedInput", "Enabled": true },
 		{ "Name": "ModelingToolsEditorMode", "Enabled": false }

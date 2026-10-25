@@ -12,7 +12,6 @@
 #include "CoreMinimal.h"
 
 class FDoomMap;
-class FDoomGraphics;
 
 namespace DoomMapGen
 {
@@ -32,20 +31,23 @@ namespace DoomMapGen
 	{
 		int32 Attempts = 0;
 		int32 Rooms = 0, Links = 0, Doors = 0, Keys = 0, Monsters = 0, Items = 0;
-		DOOMUE_API FString ToString() const;
+		DOOMWADTOOLS_API FString ToString() const;
 	};
 
 	/** The options a map name stands for: the seed varies the size (8-12 rooms) unless -genrooms=N
 	 *  says otherwise. The game, the editor and the commandlets all use this, so a name always makes
 	 *  the same map. */
-	DOOMUE_API FOptions DefaultOptions(uint32 Seed, bool bDoom2);
+	DOOMWADTOOLS_API FOptions DefaultOptions(uint32 Seed, bool bDoom2);
 
 	/** RND plus the seed's low 20 bits in hex. */
-	DOOMUE_API FString NameForSeed(uint32 Seed);
+	DOOMWADTOOLS_API FString NameForSeed(uint32 Seed);
 	/** Whether a map name is a generated one, and its seed. */
-	DOOMUE_API bool ParseName(const FString& MapName, uint32& OutSeed);
+	DOOMWADTOOLS_API bool ParseName(const FString& MapName, uint32& OutSeed);
 
-	/** Fills Out (cleared first) with a new map and builds its nodes. Gfx (optional) limits the
-	 *  textures and flats to the WAD's own. False only if no attempt made a valid map. */
-	DOOMUE_API bool Generate(const FOptions& Options, const FDoomGraphics* Gfx, FDoomMap& Out, FReport* OutReport = nullptr);
+	/** Whether the WAD has a wall texture (bFlat false) or a flat of that name. */
+	using FHasPicture = TFunction<bool(FName Name, bool bFlat)>;
+
+	/** Fills Out (cleared first) with a new map and builds its nodes. HasPicture (optional) limits
+	 *  the textures and flats to the WAD's own. False only if no attempt made a valid map. */
+	DOOMWADTOOLS_API bool Generate(const FOptions& Options, const FHasPicture& HasPicture, FDoomMap& Out, FReport* OutReport = nullptr);
 }

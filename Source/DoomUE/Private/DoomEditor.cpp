@@ -52,7 +52,7 @@ void UDoomMapEditor::LoadFresh(const FString& Name)
 	uint32 Seed = 0;
 	if (DoomMapGen::ParseName(Name, Seed))
 	{
-		bOk = DoomMapGen::Generate(W->GenOptions(Seed), W->GetGraphics(), *EditMap);
+		bOk = DoomMapGen::Generate(W->GenOptions(Seed), FDoomGraphics::PictureCheck(W->GetGraphics()), *EditMap);
 	}
 	else if (W->GetWad() && W->GetWad()->FindLump(Name) != INDEX_NONE)
 	{

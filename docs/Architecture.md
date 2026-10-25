@@ -3,6 +3,17 @@
 How the DoomUE port maps Doom's engine onto Unreal Engine 5.8's classes. For the full
 Doom → Unreal table see the [README](../README.md#doom--unreal-engine).
 
+## Modules
+
+* `Plugins/DoomWadTools` (runtime, Core and CoreUObject only): Doom's data without the game.
+  * `FDoomWad` reads WADs.
+  * `FDoomMap` reads maps, and `FDoomMap::Rebuild` builds their nodes.
+  * `DoomMapGen` generates maps; it is told which pictures exist through a function.
+  * `DoomWadWriter` writes PWADs.
+* `Source/DoomUE` (runtime): the game. It uses the plugin.
+* `Source/DoomUEEditor` (editor): the Doom menu, the import, the content builder and the automation
+  tests.
+
 ## Gameplay framework
 
 Unreal splits a game into **rules**, **shared state**, **per-player state** and **bodies**. In

@@ -1,5 +1,5 @@
 #include "DoomWad.h"
-#include "DoomUE.h"
+#include "DoomWadTools.h"
 #include "Misc/FileHelper.h"
 
 FString WadRead::Name8(const uint8* P)

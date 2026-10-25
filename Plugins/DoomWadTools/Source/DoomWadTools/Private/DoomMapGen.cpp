@@ -3,8 +3,9 @@
 #include "DoomMapGen.h"
 #include "Math/RandomStream.h"
 #include "DoomMap.h"
-#include "DoomGraphics.h"
-#include "DoomUE.h"
+#include "DoomWadTools.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 namespace
 {
@@ -69,7 +70,7 @@ namespace
 	struct FGen
 	{
 		const DoomMapGen::FOptions& Opt;
-		const FDoomGraphics* Gfx;
+		const DoomMapGen::FHasPicture& HasPicture;
 		FRandomStream Rng;
 		int32 G = 4;          // cells per side
 		int32 W = 0, H = 0;   // tiles
@@ -87,11 +88,11 @@ namespace
 		FName CorridorWall, CorridorFloor, CorridorCeiling, StepTex, Track;
 		DoomMapGen::FReport Report;
 
-		FGen(const DoomMapGen::FOptions& InOpt, const FDoomGraphics* InGfx, int32 Seed) : Opt(InOpt), Gfx(InGfx), Rng(Seed) {}
+		FGen(const DoomMapGen::FOptions& InOpt, const DoomMapGen::FHasPicture& InHasPicture, int32 Seed) : Opt(InOpt), HasPicture(InHasPicture), Rng(Seed) {}
 
 		bool Exists(FName N, bool bFlat) const
 		{
-			return !Gfx || (bFlat ? Gfx->FlatNames().Contains(N) : Gfx->HasTexture(N));
+			return !HasPicture || HasPicture(N, bFlat);
 		}
 		template <int32 Num>
 		FName Pick(const TCHAR* const (&Names)[Num], bool bFlat, FName Fallback = NAME_None)
@@ -965,11 +966,11 @@ bool DoomMapGen::ParseName(const FString& MapName, uint32& OutSeed)
 	return true;
 }
 
-bool DoomMapGen::Generate(const FOptions& Options, const FDoomGraphics* Gfx, FDoomMap& Out, FReport* OutReport)
+bool DoomMapGen::Generate(const FOptions& Options, const FHasPicture& HasPicture, FDoomMap& Out, FReport* OutReport)
 {
 	for (int32 Attempt = 0; Attempt < 16; ++Attempt)
 	{
-		FGen Gen(Options, Gfx, (int32)(Options.Seed * 7919u + Attempt * 104729u + 17u));
+		FGen Gen(Options, HasPicture, (int32)(Options.Seed * 7919u + Attempt * 104729u + 17u));
 		Gen.Report.Attempts = Attempt + 1;
 		Gen.CorridorWall = Gen.Pick(GenWalls, false);
 		Gen.CorridorFloor = Gen.Pick(GenFloors, true);

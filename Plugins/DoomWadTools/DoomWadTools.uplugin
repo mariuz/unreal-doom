@@ -1,0 +1,12 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Doom WAD Tools",
+	"Description": "Doom's data without the game: a WAD reader, maps (vanilla, Hexen, UDMF and compressed nodes), a node builder, a random map generator and a PWAD writer.",
+	"Category": "Doom",
+	"CanContainContent": false,
+	"Modules": [
+		{ "Name": "DoomWadTools", "Type": "Runtime", "LoadingPhase": "Default" }
+	]
+}

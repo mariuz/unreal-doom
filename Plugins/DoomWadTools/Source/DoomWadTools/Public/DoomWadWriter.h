@@ -17,11 +17,11 @@ namespace DoomWadWriter
 
 	/** The map's lumps, marker first, under MapName (E1M1, MAP01...). The nodes are rebuilt on a
 	 *  copy with whole-unit vertices, as vanilla needs; OutNote says what had to be rounded or cut. */
-	DOOMUE_API bool MapLumps(const FDoomMap& Map, const FString& MapName, TArray<FLump>& Out, FString* OutNote = nullptr);
+	DOOMWADTOOLS_API bool MapLumps(const FDoomMap& Map, const FString& MapName, TArray<FLump>& Out, FString* OutNote = nullptr);
 
 	/** A PWAD file holding the lumps. */
-	DOOMUE_API bool SaveWad(const TArray<FLump>& Lumps, const FString& Path);
+	DOOMWADTOOLS_API bool SaveWad(const TArray<FLump>& Lumps, const FString& Path);
 
 	/** MapLumps then SaveWad: one map in its own PWAD. */
-	DOOMUE_API bool SaveMap(const FDoomMap& Map, const FString& MapName, const FString& Path, FString* OutNote = nullptr);
+	DOOMWADTOOLS_API bool SaveMap(const FDoomMap& Map, const FString& MapName, const FString& Path, FString* OutNote = nullptr);
 }

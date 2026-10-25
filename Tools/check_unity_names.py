@@ -89,11 +89,22 @@ def private_names(code):
     return names
 
 
+def modules():
+    """(name, folder) for the project's modules and its plugins' modules."""
+    out = [(m, os.path.join(ROOT, m)) for m in sorted(os.listdir(ROOT)) if os.path.isdir(os.path.join(ROOT, m))]
+    plugins = os.path.join(ROOT, "..", "Plugins")
+    for p in sorted(os.listdir(plugins)) if os.path.isdir(plugins) else []:
+        src = os.path.join(plugins, p, "Source")
+        if os.path.isdir(src):
+            out += [(m, os.path.join(src, m)) for m in sorted(os.listdir(src)) if os.path.isdir(os.path.join(src, m))]
+    return out
+
+
 def main():
     problems = 0
-    for module in sorted(os.listdir(ROOT)):
+    for module, folder in modules():
         files = {}
-        for dirpath, _, filenames in os.walk(os.path.join(ROOT, module)):
+        for dirpath, _, filenames in os.walk(folder):
             for f in filenames:
                 if f.endswith(".cpp"):
                     with open(os.path.join(dirpath, f), encoding="utf-8", errors="replace") as h:
