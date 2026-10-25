@@ -52,6 +52,8 @@
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
 
+#define LOCTEXT_NAMESPACE "DoomWorldSectors"
+
 // ------------------------------------------------------------------------------------------------
 // Sector movers
 // ------------------------------------------------------------------------------------------------
@@ -654,7 +656,7 @@ void UDoomWorld::TicSectorDamage(ADoomPlayer* P, int32 Sec)
 	case 9:
 		CreditSecret(P);
 		S.Special = 0;
-		P->Message(TEXT("You found a secret area!"));
+		P->Message(LOCTEXT("SecretArea", "You found a secret area!"));
 		P->PlaySelfSound(TEXT("GETPOW"));
 		break;
 	case 11:
@@ -665,3 +667,5 @@ void UDoomWorld::TicSectorDamage(ADoomPlayer* P, int32 Sec)
 	default: break;
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

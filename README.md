@@ -512,6 +512,18 @@ Encapsulation, the rest (`feature/encapsulation-things`): `ADoomThing`, `ADoomMo
 * The menu's host and join choices are an `FDoomHostSettings` (`GetHost` / `SetHost`).
 * Replicated properties and their `OnRep` functions are private as well.
 
+Translatable text (`feature/loctext`): the port's own words are `LOCTEXT` (about 250 of them), so the
+Localization Dashboard can gather and translate them:
+* the menu rows the port added, and the fallback text for Doom's rows when a WAD lacks the graphic;
+* the prompts and the HUD's messages;
+* the map editor's panels and status line;
+* the map checker's issues;
+* the control names and the editor's menus.
+
+Doom's own strings (pickups, obituaries, level names) still come from the WAD and DEHACKED / BEX,
+Doom's own way of replacing them. Numbers in sentences go through `DoomText::Number`, which leaves
+out thousands separators: "sector 1234", not "sector 1,234".
+
 Include discipline (`feature/nonunity`): every file now compiles on its own. A build with no unity
 files and no precompiled headers found 22 missing includes (`Engine/World.h` in ten files, among
 others), and `Tools/check_unity_names.py` found ten file-private names that could collide in a unity
@@ -617,7 +629,7 @@ Not done yet (roughly in priority order):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
-   * **Localizable text**: the port's own words (the menu's added rows, the map editor's panels, messages that aren't the WAD's) are `TEXT` literals; the game module has no `LOCTEXT`. User-facing text belongs in `FText` with `LOCTEXT` / `NSLOCTEXT` and string tables, so it can be translated. Doom's own strings stay in the WAD's DEHACKED / BEX text.
+   * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
    * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **Reusable plugins**: the WAD reader, the node builder, the map generator and the PWAD writer don't depend on the game; as a plugin they could serve other projects (LyraDoom already copies the game module).

@@ -130,7 +130,7 @@ namespace DoomEditorTest
 			int32 TwoSided = 0;
 			for (const FDoomLine& L : M->Lines) TwoSided += (L.FrontSector == R.NewSector && L.BackSector == R.StartSector) || (L.BackSector == R.NewSector && L.FrontSector == R.StartSector);
 			Report(R, TEXT("drawinside"), bDrawn && M->Sectors.Num() == Before + 1 && TwoSided == 4 && W->GetMap()->Sectors.Num() == Before + 1,
-				FString::Printf(TEXT("square at (%.0f,%.0f): sector %d, %d two-sided walls to sector %d; %s"), Spot.X, Spot.Y, R.NewSector, TwoSided, R.StartSector, *E->Status));
+				FString::Printf(TEXT("square at (%.0f,%.0f): sector %d, %d two-sided walls to sector %d; %s"), Spot.X, Spot.Y, R.NewSector, TwoSided, R.StartSector, *E->Status.ToString()));
 			return true;
 		}
 		case 3:
@@ -186,7 +186,7 @@ namespace DoomEditorTest
 			const bool bPath = bDrawn && W->GetNav().FindPath(*W->GetMap(), W->GetPlayer()->DoomPos(), R.RoomMid, 20.f, 56.f, false, Path);
 			Report(R, TEXT("drawroom"), bDrawn && bOpening && M->Sectors.Num() == Before + 1 && bPath,
 				FString::Printf(TEXT("room sector %d off line %d (now %s), a monster path in: %d waypoints; %s"), R.RoomSector, R.RoomLine,
-					bOpening ? TEXT("two-sided") : TEXT("still a wall"), bPath ? Path.Num() : -1, *E->Status));
+					bOpening ? TEXT("two-sided") : TEXT("still a wall"), bPath ? Path.Num() : -1, *E->Status.ToString()));
 			return true;
 		}
 		case 5:
@@ -215,7 +215,7 @@ namespace DoomEditorTest
 		case 7:
 		{
 			const int32 Errors = E->CheckMap();
-			Report(R, TEXT("check"), Errors >= 0 && Errors <= R.ErrorsBefore, FString::Printf(TEXT("%d errors (%d before the edits): %s"), Errors, R.ErrorsBefore, *E->Status));
+			Report(R, TEXT("check"), Errors >= 0 && Errors <= R.ErrorsBefore, FString::Printf(TEXT("%d errors (%d before the edits): %s"), Errors, R.ErrorsBefore, *E->Status.ToString()));
 			// the 2D view, fitted to the new room and the start
 			E->Mode = EDoomEditMode::Sectors;
 			E->Selected = R.RoomSector;
@@ -241,7 +241,7 @@ namespace DoomEditorTest
 			const bool bSlot = (Name.Len() == 4 && Name[0] == 'E') || Name.StartsWith(TEXT("MAP"));
 			const bool bRead = bSaved && Back.AddFile(Path) && (Back.Finalize(), Read.Load(Back, bSlot ? Name : Slot));
 			const bool bSame = bRead && Read.Sectors.Num() == E->GetMap()->Sectors.Num() && Read.Lines.Num() == E->GetMap()->Lines.Num() && Read.Things.Num() == E->GetMap()->Things.Num();
-			Report(R, TEXT("save"), bSame, FString::Printf(TEXT("%s; read back %d sectors, %d lines, %d things"), *E->Status, Read.Sectors.Num(), Read.Lines.Num(), Read.Things.Num()));
+			Report(R, TEXT("save"), bSame, FString::Printf(TEXT("%s; read back %d sectors, %d lines, %d things"), *E->Status.ToString(), Read.Sectors.Num(), Read.Lines.Num(), Read.Things.Num()));
 			// the 3D view: from the start sector, looking into the new room
 			E->b3D = true;
 			if (ADoomPlayer* P = W->GetPlayer())

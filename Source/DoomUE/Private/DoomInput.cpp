@@ -5,45 +5,51 @@
 #include "PlayerMappableKeySettings.h"
 #include "InputCoreTypes.h"
 
+#define LOCTEXT_NAMESPACE "DoomInput"
+
 namespace
 {
-	const TArray<DoomInput::FMappable> GMappables = {
-		{ TEXT("MoveForward"), TEXT("MOVE FORWARD") },
-		{ TEXT("MoveBackward"), TEXT("MOVE BACKWARD") },
-		{ TEXT("StrafeLeft"), TEXT("STRAFE LEFT") },
-		{ TEXT("StrafeRight"), TEXT("STRAFE RIGHT") },
-		{ TEXT("TurnLeft"), TEXT("TURN LEFT") },
-		{ TEXT("TurnRight"), TEXT("TURN RIGHT") },
-		{ TEXT("Fire"), TEXT("FIRE") },
-		{ TEXT("Use"), TEXT("USE / OPEN") },
-		{ TEXT("Run"), TEXT("RUN") },
-		{ TEXT("NextWeapon"), TEXT("NEXT WEAPON") },
-		{ TEXT("PrevWeapon"), TEXT("PREVIOUS WEAPON") },
-		{ TEXT("Weapon1"), TEXT("FIST / CHAINSAW") },
-		{ TEXT("Weapon2"), TEXT("PISTOL") },
-		{ TEXT("Weapon3"), TEXT("SHOTGUNS") },
-		{ TEXT("Weapon4"), TEXT("CHAINGUN") },
-		{ TEXT("Weapon5"), TEXT("ROCKET LAUNCHER") },
-		{ TEXT("Weapon6"), TEXT("PLASMA GUN") },
-		{ TEXT("Weapon7"), TEXT("BFG 9000") },
-		{ TEXT("Automap"), TEXT("AUTOMAP") },
-		{ TEXT("AutomapZoomIn"), TEXT("MAP ZOOM IN") },
-		{ TEXT("AutomapZoomOut"), TEXT("MAP ZOOM OUT") },
-		{ TEXT("AutomapFollow"), TEXT("MAP FOLLOW") },
-		{ TEXT("AutomapBig"), TEXT("WHOLE MAP") },
-		{ TEXT("AutomapMark"), TEXT("MAP MARK") },
-		{ TEXT("AutomapClear"), TEXT("CLEAR MARKS") },
-		{ TEXT("AutomapGrid"), TEXT("MAP GRID") },
-		{ TEXT("QuickSave"), TEXT("QUICK SAVE") },
-		{ TEXT("QuickLoad"), TEXT("QUICK LOAD") },
-		// the gamepad's buttons (the sticks move and look, and stay as they are)
-		{ TEXT("PadFire"), TEXT("PAD FIRE"), true },
-		{ TEXT("PadUse"), TEXT("PAD USE / OPEN"), true },
-		{ TEXT("PadRun"), TEXT("PAD RUN"), true },
-		{ TEXT("PadNextWeapon"), TEXT("PAD NEXT WEAPON"), true },
-		{ TEXT("PadPrevWeapon"), TEXT("PAD PREVIOUS WEAPON"), true },
-		{ TEXT("PadAutomap"), TEXT("PAD AUTOMAP"), true },
-	};
+	/** The rebindable controls (a function-local static: FText isn't safe to build before the engine starts). */
+	const TArray<DoomInput::FMappable>& InputMappables()
+	{
+		static const TArray<DoomInput::FMappable> List = {
+			{ TEXT("MoveForward"), LOCTEXT("MoveForward", "MOVE FORWARD") },
+			{ TEXT("MoveBackward"), LOCTEXT("MoveBackward", "MOVE BACKWARD") },
+			{ TEXT("StrafeLeft"), LOCTEXT("StrafeLeft", "STRAFE LEFT") },
+			{ TEXT("StrafeRight"), LOCTEXT("StrafeRight", "STRAFE RIGHT") },
+			{ TEXT("TurnLeft"), LOCTEXT("TurnLeft", "TURN LEFT") },
+			{ TEXT("TurnRight"), LOCTEXT("TurnRight", "TURN RIGHT") },
+			{ TEXT("Fire"), LOCTEXT("Fire", "FIRE") },
+			{ TEXT("Use"), LOCTEXT("Use", "USE / OPEN") },
+			{ TEXT("Run"), LOCTEXT("Run", "RUN") },
+			{ TEXT("NextWeapon"), LOCTEXT("NextWeapon", "NEXT WEAPON") },
+			{ TEXT("PrevWeapon"), LOCTEXT("PrevWeapon", "PREVIOUS WEAPON") },
+			{ TEXT("Weapon1"), LOCTEXT("Weapon1", "FIST / CHAINSAW") },
+			{ TEXT("Weapon2"), LOCTEXT("Weapon2", "PISTOL") },
+			{ TEXT("Weapon3"), LOCTEXT("Weapon3", "SHOTGUNS") },
+			{ TEXT("Weapon4"), LOCTEXT("Weapon4", "CHAINGUN") },
+			{ TEXT("Weapon5"), LOCTEXT("Weapon5", "ROCKET LAUNCHER") },
+			{ TEXT("Weapon6"), LOCTEXT("Weapon6", "PLASMA GUN") },
+			{ TEXT("Weapon7"), LOCTEXT("Weapon7", "BFG 9000") },
+			{ TEXT("Automap"), LOCTEXT("Automap", "AUTOMAP") },
+			{ TEXT("AutomapZoomIn"), LOCTEXT("AutomapZoomIn", "MAP ZOOM IN") },
+			{ TEXT("AutomapZoomOut"), LOCTEXT("AutomapZoomOut", "MAP ZOOM OUT") },
+			{ TEXT("AutomapFollow"), LOCTEXT("AutomapFollow", "MAP FOLLOW") },
+			{ TEXT("AutomapBig"), LOCTEXT("AutomapBig", "WHOLE MAP") },
+			{ TEXT("AutomapMark"), LOCTEXT("AutomapMark", "MAP MARK") },
+			{ TEXT("AutomapClear"), LOCTEXT("AutomapClear", "CLEAR MARKS") },
+			{ TEXT("AutomapGrid"), LOCTEXT("AutomapGrid", "MAP GRID") },
+			{ TEXT("QuickSave"), LOCTEXT("QuickSave", "QUICK SAVE") },
+			{ TEXT("QuickLoad"), LOCTEXT("QuickLoad", "QUICK LOAD") },
+			{ TEXT("PadFire"), LOCTEXT("PadFire", "PAD FIRE"), true },
+			{ TEXT("PadUse"), LOCTEXT("PadUse", "PAD USE / OPEN"), true },
+			{ TEXT("PadRun"), LOCTEXT("PadRun", "PAD RUN"), true },
+			{ TEXT("PadNextWeapon"), LOCTEXT("PadNextWeapon", "PAD NEXT WEAPON"), true },
+			{ TEXT("PadPrevWeapon"), LOCTEXT("PadPrevWeapon", "PAD PREVIOUS WEAPON"), true },
+			{ TEXT("PadAutomap"), LOCTEXT("PadAutomap", "PAD AUTOMAP"), true },
+		};
+		return List;
+	}
 
 	/** Marks a mapping player-mappable. FEnhancedActionKeyMapping keeps these protected (they're set in
 	 *  its editor details panel), so through reflection, as the panel does. */
@@ -60,19 +66,19 @@ namespace
 		}
 	}
 
-	const TCHAR* LabelOf(FName Name)
+	FText LabelOf(FName Name)
 	{
-		for (const DoomInput::FMappable& M : GMappables)
+		for (const DoomInput::FMappable& M : InputMappables())
 		{
 			if (M.Name == Name) return M.Label;
 		}
-		return TEXT("");
+		return FText::GetEmpty();
 	}
 }
 
 const TArray<DoomInput::FMappable>& DoomInput::Mappables()
 {
-	return GMappables;
+	return InputMappables();
 }
 
 TArray<UObject*> FDoomInputObjects::All() const
@@ -139,8 +145,8 @@ void DoomInput::Build(TFunctionRef<UObject*(UClass*, FName)> New, FDoomInputObje
 		{
 			UPlayerMappableKeySettings* S = NewObject<UPlayerMappableKeySettings>(Ctx);
 			S->Name = Mappable;
-			S->DisplayName = FText::FromString(LabelOf(Mappable));
-			S->DisplayCategory = FText::FromString(TEXT("Doom"));
+			S->DisplayName = LabelOf(Mappable);
+			S->DisplayCategory = LOCTEXT("Category", "Doom");
 			MakeMappable(M, S);
 		}
 		return M; // the others inherit the action's settings: none, so they stay fixed
@@ -295,31 +301,33 @@ bool DoomInput::LoadAssets(FDoomInputObjects& Out)
 
 FString DoomInput::KeyLabel(const FKey& Key)
 {
-	static const TMap<FName, const TCHAR*> Short = {
-		{ EKeys::LeftMouseButton.GetFName(), TEXT("MOUSE1") }, { EKeys::RightMouseButton.GetFName(), TEXT("MOUSE2") },
-		{ EKeys::MiddleMouseButton.GetFName(), TEXT("MOUSE3") }, { EKeys::ThumbMouseButton.GetFName(), TEXT("MOUSE4") },
-		{ EKeys::ThumbMouseButton2.GetFName(), TEXT("MOUSE5") }, { EKeys::MouseScrollUp.GetFName(), TEXT("WHEEL UP") },
-		{ EKeys::MouseScrollDown.GetFName(), TEXT("WHEEL DOWN") }, { EKeys::LeftShift.GetFName(), TEXT("SHIFT") },
-		{ EKeys::RightShift.GetFName(), TEXT("RSHIFT") }, { EKeys::LeftControl.GetFName(), TEXT("CTRL") },
-		{ EKeys::RightControl.GetFName(), TEXT("RCTRL") }, { EKeys::LeftAlt.GetFName(), TEXT("ALT") },
-		{ EKeys::RightAlt.GetFName(), TEXT("RALT") }, { EKeys::SpaceBar.GetFName(), TEXT("SPACE") },
-		{ EKeys::Equals.GetFName(), TEXT("=") }, { EKeys::Hyphen.GetFName(), TEXT("-") }, { EKeys::Add.GetFName(), TEXT("KP +") },
-		{ EKeys::Subtract.GetFName(), TEXT("KP -") }, { EKeys::Enter.GetFName(), TEXT("ENTER") }, { EKeys::Tab.GetFName(), TEXT("TAB") },
-		{ EKeys::BackSpace.GetFName(), TEXT("BACKSPACE") },
-		{ EKeys::Gamepad_FaceButton_Bottom.GetFName(), TEXT("PAD A") }, { EKeys::Gamepad_FaceButton_Right.GetFName(), TEXT("PAD B") },
-		{ EKeys::Gamepad_FaceButton_Left.GetFName(), TEXT("PAD X") }, { EKeys::Gamepad_FaceButton_Top.GetFName(), TEXT("PAD Y") },
-		{ EKeys::Gamepad_LeftShoulder.GetFName(), TEXT("PAD LB") }, { EKeys::Gamepad_RightShoulder.GetFName(), TEXT("PAD RB") },
-		{ EKeys::Gamepad_LeftTrigger.GetFName(), TEXT("PAD LT") }, { EKeys::Gamepad_RightTrigger.GetFName(), TEXT("PAD RT") },
-		{ EKeys::Gamepad_Special_Left.GetFName(), TEXT("PAD BACK") }, { EKeys::Gamepad_Special_Right.GetFName(), TEXT("PAD START") },
-		{ EKeys::Gamepad_LeftThumbstick.GetFName(), TEXT("PAD L3") }, { EKeys::Gamepad_RightThumbstick.GetFName(), TEXT("PAD R3") },
-		{ EKeys::Gamepad_DPad_Up.GetFName(), TEXT("PAD UP") }, { EKeys::Gamepad_DPad_Down.GetFName(), TEXT("PAD DOWN") },
-		{ EKeys::Gamepad_DPad_Left.GetFName(), TEXT("PAD LEFT") }, { EKeys::Gamepad_DPad_Right.GetFName(), TEXT("PAD RIGHT") },
+	static const TMap<FName, FText> Short = {
+		{ EKeys::LeftMouseButton.GetFName(), FText::AsCultureInvariant(TEXT("MOUSE1")) }, { EKeys::RightMouseButton.GetFName(), FText::AsCultureInvariant(TEXT("MOUSE2")) },
+		{ EKeys::MiddleMouseButton.GetFName(), FText::AsCultureInvariant(TEXT("MOUSE3")) }, { EKeys::ThumbMouseButton.GetFName(), FText::AsCultureInvariant(TEXT("MOUSE4")) },
+		{ EKeys::ThumbMouseButton2.GetFName(), FText::AsCultureInvariant(TEXT("MOUSE5")) }, { EKeys::MouseScrollUp.GetFName(), LOCTEXT("KeyWheelUp", "WHEEL UP") },
+		{ EKeys::MouseScrollDown.GetFName(), LOCTEXT("KeyWheelDown", "WHEEL DOWN") }, { EKeys::LeftShift.GetFName(), FText::AsCultureInvariant(TEXT("SHIFT")) },
+		{ EKeys::RightShift.GetFName(), FText::AsCultureInvariant(TEXT("RSHIFT")) }, { EKeys::LeftControl.GetFName(), FText::AsCultureInvariant(TEXT("CTRL")) },
+		{ EKeys::RightControl.GetFName(), FText::AsCultureInvariant(TEXT("RCTRL")) }, { EKeys::LeftAlt.GetFName(), FText::AsCultureInvariant(TEXT("ALT")) },
+		{ EKeys::RightAlt.GetFName(), FText::AsCultureInvariant(TEXT("RALT")) }, { EKeys::SpaceBar.GetFName(), LOCTEXT("KeySpace", "SPACE") },
+		{ EKeys::Equals.GetFName(), FText::AsCultureInvariant(TEXT("=")) }, { EKeys::Hyphen.GetFName(), FText::AsCultureInvariant(TEXT("-")) }, { EKeys::Add.GetFName(), FText::AsCultureInvariant(TEXT("KP +")) },
+		{ EKeys::Subtract.GetFName(), FText::AsCultureInvariant(TEXT("KP -")) }, { EKeys::Enter.GetFName(), LOCTEXT("KeyEnter", "ENTER") }, { EKeys::Tab.GetFName(), FText::AsCultureInvariant(TEXT("TAB")) },
+		{ EKeys::BackSpace.GetFName(), LOCTEXT("KeyBackspace", "BACKSPACE") },
+		{ EKeys::Gamepad_FaceButton_Bottom.GetFName(), FText::AsCultureInvariant(TEXT("PAD A")) }, { EKeys::Gamepad_FaceButton_Right.GetFName(), FText::AsCultureInvariant(TEXT("PAD B")) },
+		{ EKeys::Gamepad_FaceButton_Left.GetFName(), FText::AsCultureInvariant(TEXT("PAD X")) }, { EKeys::Gamepad_FaceButton_Top.GetFName(), FText::AsCultureInvariant(TEXT("PAD Y")) },
+		{ EKeys::Gamepad_LeftShoulder.GetFName(), FText::AsCultureInvariant(TEXT("PAD LB")) }, { EKeys::Gamepad_RightShoulder.GetFName(), FText::AsCultureInvariant(TEXT("PAD RB")) },
+		{ EKeys::Gamepad_LeftTrigger.GetFName(), FText::AsCultureInvariant(TEXT("PAD LT")) }, { EKeys::Gamepad_RightTrigger.GetFName(), FText::AsCultureInvariant(TEXT("PAD RT")) },
+		{ EKeys::Gamepad_Special_Left.GetFName(), FText::AsCultureInvariant(TEXT("PAD BACK")) }, { EKeys::Gamepad_Special_Right.GetFName(), FText::AsCultureInvariant(TEXT("PAD START")) },
+		{ EKeys::Gamepad_LeftThumbstick.GetFName(), FText::AsCultureInvariant(TEXT("PAD L3")) }, { EKeys::Gamepad_RightThumbstick.GetFName(), FText::AsCultureInvariant(TEXT("PAD R3")) },
+		{ EKeys::Gamepad_DPad_Up.GetFName(), FText::AsCultureInvariant(TEXT("PAD UP")) }, { EKeys::Gamepad_DPad_Down.GetFName(), FText::AsCultureInvariant(TEXT("PAD DOWN")) },
+		{ EKeys::Gamepad_DPad_Left.GetFName(), FText::AsCultureInvariant(TEXT("PAD LEFT")) }, { EKeys::Gamepad_DPad_Right.GetFName(), FText::AsCultureInvariant(TEXT("PAD RIGHT")) },
 	};
-	if (const TCHAR* const* S = Short.Find(Key.GetFName()))
+	if (const FText* S = Short.Find(Key.GetFName()))
 	{
-		return *S;
+		return S->ToString();
 	}
 	// Doom's font: capitals, digits and some punctuation
 	FString Label = Key.GetDisplayName(false).ToString().ToUpper();
 	return Label.IsEmpty() ? Key.GetFName().ToString().ToUpper() : Label;
 }
+
+#undef LOCTEXT_NAMESPACE

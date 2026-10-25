@@ -64,7 +64,7 @@ namespace DoomInput
 	struct FMappable
 	{
 		FName Name;
-		const TCHAR* Label;
+		FText Label;
 		/** A gamepad button's binding (its row takes only gamepad buttons; the keyboard rows none). */
 		bool bGamepad = false;
 	};

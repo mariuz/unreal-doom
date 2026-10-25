@@ -53,6 +53,8 @@
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
 
+#define LOCTEXT_NAMESPACE "DoomWorldFlow"
+
 DoomMapGen::FOptions UDoomWorld::GenOptions(uint32 Seed) const
 {
 	return DoomMapGen::DefaultOptions(Seed, Wad.IsValid() && Wad->IsDoom2());
@@ -84,7 +86,7 @@ FString UDoomWorld::LevelTitle(const FString& MapName) const
 	uint32 GenSeed = 0;
 	if (DoomMapGen::ParseName(MapName, GenSeed))
 	{
-		return FString::Printf(TEXT("RANDOM MAP %05X"), GenSeed);
+		return FText::Format(LOCTEXT("RandomMapTitle", "RANDOM MAP {0}"), FText::FromString(FString::Printf(TEXT("%05X"), GenSeed))).ToString();
 	}
 	// the WAD's own level names (DEHACKED / BEX strings): HUSTR_E1M1 or HUSTR_1 for MAP01
 	const FString Key = MapName.StartsWith(TEXT("MAP")) ? FString::Printf(TEXT("HUSTR_%d"), FCString::Atoi(*MapName.Mid(3))) : TEXT("HUSTR_") + MapName;
@@ -729,3 +731,5 @@ void UDoomWorld::FindTeleporters(const FDoomMap& InMap, TArray<TPair<int32, int3
 		}
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

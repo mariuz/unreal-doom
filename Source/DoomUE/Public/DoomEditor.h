@@ -78,7 +78,7 @@ public:
 	FVector2f Cursor = FVector2f::ZeroVector; // map units, snapped
 	TArray<FVector2f> DrawPoints;
 	int32 PlaceType = 3001;       // Things mode: what Add Thing places
-	FString Status;
+	FText Status;
 
 	// --- edits (each one can be undone; the level reloads after it) --------------------------
 	bool SetNumber(EDoomEditField Field, float Value);
@@ -236,11 +236,11 @@ private:
 	UPROPERTY()
 	TArray<TObjectPtr<UDoomEditButton>> ModeButtons;
 
-	UTextBlock* Label(const FString& Text, int32 Size = 10);
-	UDoomEditButton* MakeButton(const FString& Text, int32 Action);
+	UTextBlock* Label(const FText& Text, int32 Size = 10);
+	UDoomEditButton* MakeButton(const FText& Text, int32 Action);
 	static FButtonStyle ButtonStyle(bool bActive);
-	void AddRow(const FString& Name, UWidget* Control);
-	void AddNumber(const FString& Name, EDoomEditField Field, float Value, float Min, float Max, bool bInt = true);
-	void AddNames(const FString& Name, EDoomEditField Field, FName Value, const TArray<FName>& Options);
-	void AddCheck(const FString& Name, EDoomEditField Field, int32 Bit, bool bOn);
+	void AddRow(const FText& Name, UWidget* Control);
+	void AddNumber(const FText& Name, EDoomEditField Field, float Value, float Min, float Max, bool bInt = true);
+	void AddNames(const FText& Name, EDoomEditField Field, FName Value, const TArray<FName>& Options);
+	void AddCheck(const FText& Name, EDoomEditField Field, int32 Bit, bool bOn);
 };

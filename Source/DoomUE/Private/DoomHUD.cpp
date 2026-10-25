@@ -13,6 +13,8 @@
 #include "Engine/Canvas.h"
 #include "Engine/Texture2D.h"
 
+#define LOCTEXT_NAMESPACE "DoomHUD"
+
 UDoomWorld* ADoomHUD::DW() const
 {
 	return GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
@@ -151,7 +153,7 @@ void ADoomHUD::DrawHUD()
 		DrawFullscreenPic(TEXT("TITLEPIC"));
 		if ((GetWorld()->GetTimeSeconds() * 2.f) - FMath::FloorToFloat(GetWorld()->GetTimeSeconds() * 2.f) < 0.6f)
 		{
-			const FString Press = TEXT("PRESS ENTER");
+			const FString Press = LOCTEXT("PressEnter", "PRESS ENTER").ToString();
 			DrawText(Press, 160 - TextWidth(Press) / 2, 186);
 		}
 		return;
@@ -347,21 +349,21 @@ void ADoomHUD::DrawNetgameStats(const TArray<ADoomPlayerState*>& Players, bool b
 	const APlayerController* PC = GetOwningPlayerController();
 	const float Top = 44;
 	auto Pct = [](int32 Got, int32 Total) { return Total > 0 ? Got * 100 / Total : 100; };
-	auto Header = [&](const TCHAR* Label, const TCHAR* Patch, float X)
+	auto Header = [&](const FString& Label, const TCHAR* Patch, float X)
 	{
 		if (const FDoomPicture* Pic = W->GetGraphics()->Patch(Patch)) DrawPatch(Pic, X - Pic->Width, Top - 12, false);
 		else DrawText(Label, X - TextWidth(Label), Top - 10, 1.f);
 	};
 	if (bDeathmatch)
 	{
-		Header(TEXT("FRAGS"), TEXT("WIFRGS"), 230);
+		Header(LOCTEXT("Frags", "FRAGS").ToString(), TEXT("WIFRGS"), 230);
 	}
 	else
 	{
-		Header(TEXT("KILLS"), TEXT("WIOSTK"), 150);
-		Header(TEXT("ITEMS"), TEXT("WIOSTI"), 210);
-		Header(TEXT("SCRT"), TEXT("WIOSTS"), 260);
-		Header(TEXT("FRAGS"), TEXT("WIFRGS"), 310);
+		Header(LOCTEXT("Kills", "KILLS").ToString(), TEXT("WIOSTK"), 150);
+		Header(LOCTEXT("Items", "ITEMS").ToString(), TEXT("WIOSTI"), 210);
+		Header(LOCTEXT("Scrt", "SCRT").ToString(), TEXT("WIOSTS"), 260);
+		Header(LOCTEXT("Frags", "FRAGS").ToString(), TEXT("WIFRGS"), 310);
 	}
 	for (int32 i = 0; i < Players.Num(); ++i)
 	{
@@ -370,7 +372,7 @@ void ADoomHUD::DrawNetgameStats(const TArray<ADoomPlayerState*>& Players, bool b
 		// the player's colour square (STPB0..3) and a marker on your own row
 		DrawPatchByName(FString::Printf(TEXT("STPB%d"), FMath::Clamp(PS->PlayerNumber, 0, 3)), 24, Y - 2, false);
 		if (PC && PC->PlayerState == PS) DrawPatchByName(TEXT("STFST01"), 24, Y - 2, false);
-		DrawText(FString::Printf(TEXT("PLAYER %d"), PS->PlayerNumber + 1), 54, Y + 2, 1.f);
+		DrawText(FText::Format(LOCTEXT("PlayerNumber", "PLAYER {0}"), PS->PlayerNumber + 1).ToString(), 54, Y + 2, 1.f);
 		if (T < 10)
 		{
 			continue;
@@ -667,7 +669,7 @@ void ADoomHUD::AutomapToggleFollow()
 			Automap.Center = P->DoomPos(); // panning starts from where you are
 		}
 	}
-	DW()->ShowMessage(Automap.bFollow ? TEXT("FOLLOW MODE ON") : TEXT("FOLLOW MODE OFF"));
+	DW()->ShowMessage(Automap.bFollow ? LOCTEXT("FollowModeOn", "FOLLOW MODE ON") : LOCTEXT("FollowModeOff", "FOLLOW MODE OFF"));
 }
 
 void ADoomHUD::AutomapToggleBig()
@@ -712,20 +714,20 @@ void ADoomHUD::AutomapMark()
 		Automap.Marks[Automap.NextMark % 10] = Where;
 	}
 	Automap.NextMark = (Automap.NextMark + 1) % 10;
-	DW()->ShowMessage(FString::Printf(TEXT("MARKED SPOT %d"), (Automap.NextMark + 9) % 10));
+	DW()->ShowMessage(FText::Format(LOCTEXT("MarkedSpot", "MARKED SPOT {0}"), (Automap.NextMark + 9) % 10));
 }
 
 void ADoomHUD::AutomapClearMarks()
 {
 	Automap.Marks.Reset();
 	Automap.NextMark = 0;
-	DW()->ShowMessage(TEXT("ALL MARKS CLEARED"));
+	DW()->ShowMessage(LOCTEXT("AllMarksCleared", "ALL MARKS CLEARED"));
 }
 
 void ADoomHUD::AutomapToggleGrid()
 {
 	Automap.bGrid = !Automap.bGrid;
-	DW()->ShowMessage(Automap.bGrid ? TEXT("GRID ON") : TEXT("GRID OFF"));
+	DW()->ShowMessage(Automap.bGrid ? LOCTEXT("GridOn", "GRID ON") : LOCTEXT("GridOff", "GRID OFF"));
 }
 
 void ADoomHUD::DrawThermo(float X, float Y, int32 Width, int32 Value)
@@ -779,7 +781,7 @@ void ADoomHUD::DrawMenu()
 	if (M.GetPage() == EMenuPage::Controls)
 	{
 		// no M_ graphic for it: the title in the menu font
-		const FString Title = TEXT("CONTROLS");
+		const FString Title = LOCTEXT("Controls", "CONTROLS").ToString();
 		DrawText(Title, 160 - TextWidth(Title), 8, 2.f);
 	}
 	const FIntPoint O = M.Origin();
@@ -824,7 +826,7 @@ void ADoomHUD::DrawMenu()
 			{
 				// waiting for the new key
 				const bool bOn = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
-				DrawText(bOn ? TEXT("PRESS A KEY (ESC: KEEP)") : TEXT(""), O.X + 136, Y + 3);
+				DrawText(bOn ? LOCTEXT("PressAKey", "PRESS A KEY (ESC: KEEP)").ToString() : FString(), O.X + 136, Y + 3);
 			}
 			else if (!R.ValueText.IsEmpty())
 			{
@@ -839,7 +841,7 @@ void ADoomHUD::DrawMenu()
 			}
 			else
 			{
-				DrawText(R.Value ? TEXT("ON") : TEXT("OFF"), O.X + 120, Y + 3);
+				DrawText((R.Value ? LOCTEXT("On", "ON") : LOCTEXT("Off", "OFF")).ToString(), O.X + 120, Y + 3);
 			}
 		}
 		else if (R.Kind == FMenuRow::EKind::Slider)
@@ -872,7 +874,7 @@ void ADoomHUD::DrawLoading()
 	}
 	else
 	{
-		DrawText(TEXT("ENTERING"), 160 - TextWidth(TEXT("ENTERING")) / 2, 4, 1.f);
+		DrawText(LOCTEXT("Entering", "ENTERING").ToString(), 160 - TextWidth(LOCTEXT("Entering", "ENTERING").ToString()) / 2, 4, 1.f);
 	}
 	const FString Title = W->LevelTitle(M);
 	DrawText(Title, 160 - TextWidth(Title) / 2, 22, 1.f);
@@ -908,7 +910,7 @@ void ADoomHUD::DrawIntermission()
 	};
 	const FString Title = W->LevelTitle(W->GetMapName());
 	DrawText(Title, 160 - TextWidth(Title) / 2, 4, 1.f);
-	DrawText(TEXT("FINISHED"), 160 - TextWidth(TEXT("FINISHED")) / 2, 16, 1.f);
+	DrawText(LOCTEXT("Finished", "FINISHED").ToString(), 160 - TextWidth(LOCTEXT("Finished", "FINISHED").ToString()) / 2, 16, 1.f);
 
 	auto Line = [&](const FString& Label, const FString& Patch, int32 Value, float Y, bool bPercent)
 	{
@@ -926,31 +928,31 @@ void ADoomHUD::DrawIntermission()
 	}
 	else
 	{
-		Line(TEXT("KILLS"), TEXT("WIOSTK"), Count(W->Flow().Kills, W->Flow().TotalKills, 10), 50, true);
-		if (T > 40) Line(TEXT("ITEMS"), TEXT("WIOSTI"), Count(W->Flow().Items, W->Flow().TotalItems, 40), 70, true);
-		if (T > 70) Line(TEXT("SECRET"), TEXT("WISCRT2"), Count(W->Flow().Secrets, W->Flow().TotalSecrets, 70), 90, true);
+		Line(LOCTEXT("Kills", "KILLS").ToString(), TEXT("WIOSTK"), Count(W->Flow().Kills, W->Flow().TotalKills, 10), 50, true);
+		if (T > 40) Line(LOCTEXT("Items", "ITEMS").ToString(), TEXT("WIOSTI"), Count(W->Flow().Items, W->Flow().TotalItems, 40), 70, true);
+		if (T > 70) Line(LOCTEXT("Secret", "SECRET").ToString(), TEXT("WISCRT2"), Count(W->Flow().Secrets, W->Flow().TotalSecrets, 70), 90, true);
 	}
 	if (T > 100)
 	{
 		const int32 Secs = W->GetTic() / Doom::TicRate;
 		const FDoomPicture* Pic = W->GetGraphics()->Patch(TEXT("WITIME"));
 		if (Pic) DrawPatch(Pic, 16, 168, false);
-		else DrawText(TEXT("TIME"), 16, 168, 1.5f);
+		else DrawText(LOCTEXT("Time", "TIME").ToString(), 16, 168, 1.5f);
 		DrawText(FString::Printf(TEXT("%d:%02d"), Secs / 60, Secs % 60), 100, 170, 1.5f);
 		const int32 Par = DoomInfo::ParTime(W->GetMapName());
 		if (Par >= 0)
 		{
-			DrawText(FString::Printf(TEXT("PAR %d:%02d"), Par / 60, Par % 60), 200, 170, 1.5f);
+			DrawText(FText::Format(LOCTEXT("ParTime", "PAR {0}"), FText::FromString(FString::Printf(TEXT("%d:%02d"), Par / 60, Par % 60))).ToString(), 200, 170, 1.5f);
 		}
 	}
 	if (T > Doom::TicRate * 4 && !W->Flow().PendingMap.IsEmpty())
 	{
-		const FString Next = TEXT("ENTERING ") + W->LevelTitle(W->Flow().PendingMap);
+		const FString Next = FText::Format(LOCTEXT("EnteringMap", "ENTERING {0}"), FText::FromString(W->LevelTitle(W->Flow().PendingMap))).ToString();
 		DrawText(Next, 160 - TextWidth(Next) / 2, 130, 1.f);
 	}
 	if (T > Doom::TicRate)
 	{
-		DrawText(W->Flow().PendingMap.IsEmpty() ? TEXT("EPISODE COMPLETE - PRESS ENTER") : TEXT("PRESS ENTER"), 90, 150, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
+		DrawText((W->Flow().PendingMap.IsEmpty() ? LOCTEXT("EpisodeComplete", "EPISODE COMPLETE - PRESS ENTER") : LOCTEXT("PressEnter", "PRESS ENTER")).ToString(), 90, 150, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
 	}
 }
 
@@ -1040,6 +1042,8 @@ void ADoomHUD::DrawFinale()
 	}
 	if (W->IsFinaleTextComplete())
 	{
-		DrawText(TEXT("PRESS ENTER"), 160 - TextWidth(TEXT("PRESS ENTER")) / 2, 188, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
+		DrawText(LOCTEXT("PressEnter", "PRESS ENTER").ToString(), 160 - TextWidth(LOCTEXT("PressEnter", "PRESS ENTER").ToString()) / 2, 188, 1.f, FLinearColor(0.8f, 0.8f, 0.8f));
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

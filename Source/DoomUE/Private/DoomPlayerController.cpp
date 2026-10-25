@@ -85,7 +85,7 @@ TArray<ADoomPlayerController::FBinding> ADoomPlayerController::GetBindings() con
 	const UEnhancedPlayerMappableKeyProfile* Profile = Settings ? Settings->GetActiveKeyProfile() : nullptr;
 	for (const DoomInput::FMappable& M : DoomInput::Mappables())
 	{
-		FBinding B{ M.Name, M.Label };
+		FBinding B{ M.Name, M.Label.ToString() };
 		if (Profile)
 		{
 			// in slot order (first, second...)

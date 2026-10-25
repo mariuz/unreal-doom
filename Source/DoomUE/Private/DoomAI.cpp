@@ -30,6 +30,8 @@
 #include "Perception/AISense_Hearing.h"
 #include "Engine/World.h"
 
+#define LOCTEXT_NAMESPACE "DoomAI"
+
 // ------------------------------------------------------------------------------------------------
 // FDoomNav
 // ------------------------------------------------------------------------------------------------
@@ -629,7 +631,7 @@ void UEnvQueryGenerator_DoomSpots::GenerateItems(FEnvQueryInstance& QueryInstanc
 
 FText UEnvQueryGenerator_DoomSpots::GetDescriptionTitle() const
 {
-	return FText::FromString(FString::Printf(TEXT("Doom spots: %d rings of %d, %.0f to %.0f units"), Rings, PointsPerRing, MinRadius, MaxRadius));
+	return FText::Format(LOCTEXT("DoomSpots", "Doom spots: {0} rings of {1}, {2} to {3} units"), Rings, PointsPerRing, FMath::RoundToInt(MinRadius), FMath::RoundToInt(MaxRadius));
 }
 
 UEnvQueryTest_DoomSight::UEnvQueryTest_DoomSight()
@@ -669,7 +671,7 @@ void UEnvQueryTest_DoomSight::RunTest(FEnvQueryInstance& QueryInstance) const
 
 FText UEnvQueryTest_DoomSight::GetDescriptionDetails() const
 {
-	return FText::FromString(BoolValue.DefaultValue ? TEXT("keep spots that see the target") : TEXT("keep spots hidden from the target"));
+	return BoolValue.DefaultValue ? LOCTEXT("SightKeepSeen", "keep spots that see the target") : LOCTEXT("SightKeepHidden", "keep spots hidden from the target");
 }
 
 UEnvQueryTest_DoomRange::UEnvQueryTest_DoomRange()
@@ -942,3 +944,5 @@ const FDoomAIAssets& DoomAI::Get()
 	}
 	return Assets;
 }
+
+#undef LOCTEXT_NAMESPACE

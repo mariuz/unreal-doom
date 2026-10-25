@@ -52,6 +52,8 @@
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
 
+#define LOCTEXT_NAMESPACE "DoomWorldSpecials"
+
 // ------------------------------------------------------------------------------------------------
 // Line activation
 // ------------------------------------------------------------------------------------------------
@@ -71,8 +73,10 @@ bool UDoomWorld::CheckLock(AActor* Activator, int32 Lock)
 	{
 		return true;
 	}
-	static const TCHAR* Names[] = { TEXT("blue"), TEXT("yellow"), TEXT("red") };
-	P->Message(FString::Printf(TEXT("You need a %s key to open this door."), Names[Lock - 1]));
+	const FText Needs[] = { LOCTEXT("NeedBlueKey", "You need a blue key to open this door."),
+		LOCTEXT("NeedYellowKey", "You need a yellow key to open this door."),
+		LOCTEXT("NeedRedKey", "You need a red key to open this door.") };
+	P->Message(Needs[Lock - 1]);
 	P->PlaySelfSound(TEXT("OOF"));
 	return false;
 }
@@ -616,3 +620,5 @@ bool UDoomWorld::ExecuteSpecial(int32 Special, int32 Tag)
 	}
 	return bDone;
 }
+
+#undef LOCTEXT_NAMESPACE

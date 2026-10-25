@@ -11,11 +11,24 @@
 #include "DoomPlayerController.h"
 #include "DoomInput.h"
 
+#define LOCTEXT_NAMESPACE "DoomMenu"
+
 namespace
 {
 	const TCHAR* SkillPatches[5] = { TEXT("M_JKILL"), TEXT("M_ROUGH"), TEXT("M_HURT"), TEXT("M_ULTRA"), TEXT("M_NMARE") };
-	const TCHAR* SkillTexts[5] = { TEXT("VERY EASY"), TEXT("EASY"), TEXT("NORMAL"), TEXT("HARD"), TEXT("NIGHTMARE") };
 	constexpr int32 NumSlots = 6;
+
+	FText MenuSkillText(int32 Skill)
+	{
+		switch (Skill)
+		{
+		case 0: return LOCTEXT("VeryEasy", "VERY EASY");
+		case 1: return LOCTEXT("Easy", "EASY");
+		case 2: return LOCTEXT("Normal", "NORMAL");
+		case 3: return LOCTEXT("Hard", "HARD");
+		default: return LOCTEXT("Nightmare", "NIGHTMARE");
+		}
+	}
 
 	int32 SensitivityStep(float Sens) { return FMath::Clamp(FMath::RoundToInt(Sens * 4.f) - 1, 0, 9); }
 	float SensitivityFor(int32 Step) { return (Step + 1) / 4.f; }
@@ -33,7 +46,7 @@ TArray<FDoomEpisode> FDoomMenu::Episodes(UDoomWorld& W) const
 	{
 		if (W.GetWad()->IsDoom2())
 		{
-			Out.Add({ TEXT("MAP01"), FString(), TEXT("NEW GAME") });
+			Out.Add({ TEXT("MAP01"), FString(), LOCTEXT("NewGame", "NEW GAME").ToString() });
 		}
 		else
 		{
@@ -41,14 +54,14 @@ TArray<FDoomEpisode> FDoomMenu::Episodes(UDoomWorld& W) const
 			{
 				const FString Map = FString::Printf(TEXT("E%dM1"), E);
 				if (W.GetWad()->FindLump(Map) == INDEX_NONE) break;
-				Out.Add({ Map, FString::Printf(TEXT("M_EPI%d"), E), FString::Printf(TEXT("EPISODE %d"), E) });
+				Out.Add({ Map, FString::Printf(TEXT("M_EPI%d"), E), FText::Format(LOCTEXT("EpisodeNumber", "EPISODE {0}"), E).ToString() });
 			}
 		}
 	}
 	Out.Append(Infos.Episodes);
 	// a map from the generator, on a new seed each time (its exit leads to the next seed)
 	const uint32 Seed = (uint32)(FPlatformTime::Cycles64() % 0xFFFFF) + 1;
-	Out.Add({ DoomMapGen::NameForSeed(Seed), FString(), TEXT("RANDOM MAP") });
+	Out.Add({ DoomMapGen::NameForSeed(Seed), FString(), LOCTEXT("RandomMap", "RANDOM MAP").ToString() });
 	return Out;
 }
 
@@ -70,33 +83,33 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 	switch (Page)
 	{
 	case EMenuPage::Main:
-		R.Add({ EKind::Action, TEXT("M_NGAME"), TEXT("NEW GAME") });
-		R.Add({ EKind::Action, TEXT("M_OPTION"), TEXT("OPTIONS") });
-		R.Add({ EKind::Action, TEXT("M_LOADG"), TEXT("LOAD GAME") });
-		R.Add({ EKind::Action, TEXT("M_SAVEG"), TEXT("SAVE GAME") });
+		R.Add({ EKind::Action, TEXT("M_NGAME"), LOCTEXT("NewGame", "NEW GAME").ToString() });
+		R.Add({ EKind::Action, TEXT("M_OPTION"), LOCTEXT("Options", "OPTIONS").ToString() });
+		R.Add({ EKind::Action, TEXT("M_LOADG"), LOCTEXT("LoadGame", "LOAD GAME").ToString() });
+		R.Add({ EKind::Action, TEXT("M_SAVEG"), LOCTEXT("SaveGame", "SAVE GAME").ToString() });
 		R.Last().bEnabled = W.GetMap() != nullptr;
 		if (!W.GetWad()->IsDoom2())
 		{
-			R.Add({ EKind::Action, TEXT("M_RDTHIS"), TEXT("READ THIS!") });
+			R.Add({ EKind::Action, TEXT("M_RDTHIS"), LOCTEXT("ReadThis", "READ THIS!").ToString() });
 		}
-		R.Add({ EKind::Action, TEXT("M_QUITG"), TEXT("QUIT GAME") });
-		R.Add({ EKind::Choice, FString(), TEXT("MULTIPLAYER") }); // after Doom's own rows, which keep their places
-		R.Add({ EKind::Choice, FString(), TEXT("MAP EDITOR") });
+		R.Add({ EKind::Action, TEXT("M_QUITG"), LOCTEXT("QuitGame", "QUIT GAME").ToString() });
+		R.Add({ EKind::Choice, FString(), LOCTEXT("Multiplayer", "MULTIPLAYER").ToString() }); // after Doom's own rows, which keep their places
+		R.Add({ EKind::Choice, FString(), LOCTEXT("MapEditor", "MAP EDITOR").ToString() });
 		break;
 	case EMenuPage::Multiplayer:
 	{
-		static const TCHAR* Rules[] = { TEXT("CO-OP"), TEXT("DEATHMATCH"), TEXT("DEATHMATCH 2.0") };
+		const FText Rules[] = { LOCTEXT("CoOp", "CO-OP"), LOCTEXT("Deathmatch", "DEATHMATCH"), LOCTEXT("Deathmatch2", "DEATHMATCH 2.0") };
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("GAME: %s"), Rules[FMath::Clamp(Host.Rules, 0, 2)]) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MAP: < %s >"), Maps.IsValidIndex(Host.MapIndex) ? *Maps[Host.MapIndex] : TEXT("RANDOM")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTERS: %s"), Host.bNoMonsters ? TEXT("NONE") : TEXT("YES")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FAST MONSTERS: %s"), Host.bFast ? TEXT("YES") : TEXT("NO")) });
-		R.Add({ EKind::Choice, FString(), TEXT("HOST GAME") });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("HostRules", "GAME: {0}"), Rules[FMath::Clamp(Host.Rules, 0, 2)]).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("HostMap", "MAP: < {0} >"), Maps.IsValidIndex(Host.MapIndex) ? FText::FromString(Maps[Host.MapIndex]) : LOCTEXT("Random", "RANDOM")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("HostMonsters", "MONSTERS: {0}"), Host.bNoMonsters ? LOCTEXT("None", "NONE") : LOCTEXT("Yes", "YES")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("HostFast", "FAST MONSTERS: {0}"), Host.bFast ? LOCTEXT("Yes", "YES") : LOCTEXT("No", "NO")).ToString() });
+		R.Add({ EKind::Choice, FString(), LOCTEXT("HostGame", "HOST GAME").ToString() });
 		R.Add({ EKind::Gap });
-		FMenuRow Join{ EKind::Choice, FString(), TEXT("JOIN ADDRESS:") };
+		FMenuRow Join{ EKind::Choice, FString(), LOCTEXT("JoinAddress", "JOIN ADDRESS:").ToString() };
 		Join.ValueText = bEditing ? EditText + TEXT("_") : Host.JoinAddress;
 		R.Add(Join);
-		R.Add({ EKind::Choice, FString(), TEXT("CONNECT") });
+		R.Add({ EKind::Choice, FString(), LOCTEXT("Connect", "CONNECT").ToString() });
 		checkf(R.Num() == EMultiplayerRow::Count, TEXT("the Multiplayer page has %d rows, EMultiplayerRow %d"), R.Num(), (int32)EMultiplayerRow::Count);
 		break;
 	}
@@ -109,30 +122,30 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 	case EMenuPage::Skill:
 		for (int32 i = 0; i < 5; ++i)
 		{
-			R.Add({ EKind::Action, SkillPatches[i], SkillTexts[i] });
+			R.Add({ EKind::Action, SkillPatches[i], MenuSkillText(i).ToString() });
 		}
 		break;
 	case EMenuPage::Options:
 	{
-		R.Add({ EKind::Action, TEXT("M_ENDGAM"), TEXT("END GAME") });
+		R.Add({ EKind::Action, TEXT("M_ENDGAM"), LOCTEXT("EndGame", "END GAME").ToString() });
 		R.Last().bEnabled = W.GetMap() != nullptr;
-		FMenuRow Msg{ EKind::Toggle, TEXT("M_MESSG"), TEXT("MESSAGES:") };
+		FMenuRow Msg{ EKind::Toggle, TEXT("M_MESSG"), LOCTEXT("Messages", "MESSAGES:").ToString() };
 		Msg.Value = S->bShowMessages ? 1 : 0;
 		Msg.ValuePatch = S->bShowMessages ? TEXT("M_MSGON") : TEXT("M_MSGOFF");
 		R.Add(Msg);
-		FMenuRow Sens{ EKind::Slider, TEXT("M_MSENS"), TEXT("MOUSE SENSITIVITY") };
+		FMenuRow Sens{ EKind::Slider, TEXT("M_MSENS"), LOCTEXT("MouseSensitivity", "MOUSE SENSITIVITY").ToString() };
 		Sens.Max = 10;
 		Sens.Value = SensitivityStep(S->MouseSensitivity);
 		R.Add(Sens);
 		R.Add({ EKind::Gap });
-		R.Add({ EKind::Action, TEXT("M_SVOL"), TEXT("SOUND VOLUME") });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("RENDERER: %s"), W.IsModern() ? TEXT("MODERN") : TEXT("CLASSIC")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("FIELD OF VIEW: %.0f"), S->FieldOfView) });
+		R.Add({ EKind::Action, TEXT("M_SVOL"), LOCTEXT("SoundVolume", "SOUND VOLUME").ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Renderer", "RENDERER: {0}"), W.IsModern() ? LOCTEXT("Modern", "MODERN") : LOCTEXT("Classic", "CLASSIC")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("FieldOfView", "FIELD OF VIEW: {0}"), FMath::RoundToInt(S->FieldOfView)).ToString() });
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("WARP TO: < %s >"), Maps.IsValidIndex(WarpIndex) ? *Maps[WarpIndex] : TEXT("-")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("COLORS: %s"), S->bPaletteExact ? TEXT("EXACT") : TEXT("SMOOTH")) });
-		R.Add({ EKind::Choice, FString(), FString::Printf(TEXT("MONSTER AI: %s"), W.IsSmartAI() ? TEXT("SMART") : TEXT("CLASSIC")) });
-		R.Add({ EKind::Choice, FString(), TEXT("CONTROLS") });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("WarpTo", "WARP TO: < {0} >"), FText::FromString(Maps.IsValidIndex(WarpIndex) ? Maps[WarpIndex] : FString(TEXT("-")))).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Colors", "COLORS: {0}"), S->bPaletteExact ? LOCTEXT("Exact", "EXACT") : LOCTEXT("Smooth", "SMOOTH")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("MonsterAI", "MONSTER AI: {0}"), W.IsSmartAI() ? LOCTEXT("Smart", "SMART") : LOCTEXT("Classic", "CLASSIC")).ToString() });
+		R.Add({ EKind::Choice, FString(), LOCTEXT("Controls", "CONTROLS").ToString() });
 		checkf(R.Num() == EOptionsRow::Count, TEXT("the Options page has %d rows, EOptionsRow %d"), R.Num(), (int32)EOptionsRow::Count);
 		break;
 	}
@@ -151,17 +164,17 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 				R.Add(Row);
 			}
 		}
-		R.Add({ EKind::Choice, FString(), TEXT("RESET TO DEFAULTS") });
+		R.Add({ EKind::Choice, FString(), LOCTEXT("ResetToDefaults", "RESET TO DEFAULTS").ToString() });
 		break;
 	}
 	case EMenuPage::Sound:
 	{
-		FMenuRow Sfx{ EKind::Slider, TEXT("M_SFXVOL"), TEXT("SFX VOLUME") };
+		FMenuRow Sfx{ EKind::Slider, TEXT("M_SFXVOL"), LOCTEXT("SfxVolume", "SFX VOLUME").ToString() };
 		Sfx.Max = 16;
 		Sfx.Value = FMath::RoundToInt(S->SfxVolume * 15.f);
 		R.Add(Sfx);
 		R.Add({ EKind::Gap });
-		FMenuRow Mus{ EKind::Slider, TEXT("M_MUSVOL"), TEXT("MUSIC VOLUME") };
+		FMenuRow Mus{ EKind::Slider, TEXT("M_MUSVOL"), LOCTEXT("MusicVolume", "MUSIC VOLUME").ToString() };
 		Mus.Max = 16;
 		Mus.Value = FMath::RoundToInt(S->MusicVolume * 15.f);
 		R.Add(Mus);
@@ -219,9 +232,9 @@ FString FDoomMenu::Prompt() const
 {
 	switch (Page)
 	{
-	case EMenuPage::Nightmare: return TEXT("NIGHTMARE: THE MONSTERS ARE\nFASTER AND SHOW NO MERCY.\n\nPLAY IT ANYWAY? (Y/N)");
-	case EMenuPage::Quit: return TEXT("LEAVE THE GAME? (Y/N)");
-	case EMenuPage::EndGame: return TEXT("END THIS GAME? (Y/N)");
+	case EMenuPage::Nightmare: return LOCTEXT("NightmarePrompt", "NIGHTMARE: THE MONSTERS ARE\nFASTER AND SHOW NO MERCY.\n\nPLAY IT ANYWAY? (Y/N)").ToString();
+	case EMenuPage::Quit: return LOCTEXT("QuitPrompt", "LEAVE THE GAME? (Y/N)").ToString();
+	case EMenuPage::EndGame: return LOCTEXT("EndGamePrompt", "END THIS GAME? (Y/N)").ToString();
 	default: return FString();
 	}
 }
@@ -631,7 +644,7 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		const ADoomPlayer* P = W.GetPlayer();
 		if (!W.GetMap() || !P || P->IsDead())
 		{
-			W.ShowMessage(TEXT("You can't save now."));
+			W.ShowMessage(LOCTEXT("CantSaveNow", "You can't save now."));
 			break;
 		}
 		// name the save like Doom: the slot's old name (if any) with a cursor
@@ -648,3 +661,5 @@ void FDoomMenu::Activate(UDoomWorld& W)
 		break;
 	}
 }
+
+#undef LOCTEXT_NAMESPACE
