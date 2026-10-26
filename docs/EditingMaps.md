@@ -1,9 +1,10 @@
 # Editing Doom maps in the Unreal editor
 
 Every map in the WAD can become a normal Unreal level that you edit with the usual tools and
-play with **Play**. The walls' shapes still come from the WAD, so draw new rooms in a Doom map
-editor. Here you edit everything on top of them: the things; the sectors' heights, light, flats,
-specials and tags; and the lines' specials, tags, flags and textures.
+play with **Play**. You draw new rooms in the viewport and edit everything on top of the WAD's
+geometry: the things; the sectors' heights, light, flats, specials and tags; and the lines'
+specials, tags, flags and textures. Moving or deleting the WAD's own walls still needs a Doom map
+editor (see the round trip below).
 
 ## Opening a map
 
@@ -22,6 +23,7 @@ specials and tags; and the lines' specials, tags, flags and textures.
 | **Doom Thing** markers (`ADoomThingMarker`) | `Doom/Monsters`, `Doom/Items`, `Doom/Decorations`, `Doom/Starts` | One per thing, drawn with its own sprite and an arrow for its facing |
 | **Doom Sector Edit** (`ADoomSectorEdit`) | `Doom/Sector Edits` | Overrides for the sector the actor stands in |
 | **Doom Line Edit** (`ADoomLineEdit`) | `Doom/Line Edits` | Overrides for the line it was placed by |
+| **Drawn sector** (`ADoomSectorDraw`) | `Doom/Drawn Sectors` | A sector drawn in the viewport: its corners, heights, flats, light and walls |
 
 ## Things
 
@@ -45,6 +47,31 @@ specials and tags; and the lines' specials, tags, flags and textures.
    (0-255), **Floor Flat**, **Ceiling Flat** (lists of the WAD's flats), **Special** (for
    example 9 secret, 7 nukage) and **Tag** (links the sector to line specials).
 4. The viewport preview rebuilds after each change.
+
+## Drawing new sectors
+
+**Doom > Draw Sectors** (or **Draw Sectors** on the DoomMap actor) turns the level viewport into a
+drawing tool. Its status line is at the top left of the viewport.
+
+1. Click the corners on the floor. A click snaps to an existing corner within 8 map units, else to
+   the level editor's grid (in whole map units). A line shows where the next corner would go.
+2. Close the sector: click the first corner again, double-click, or press **Enter**. **Backspace**
+   removes the last corner; **Esc** drops the corners, and a second **Esc** leaves the mode.
+3. The sector becomes a *Drawn sector* actor in the level (one undo step) and the preview rebuilds.
+   The same rules apply as in the map editor's Draw:
+   * in the void it is a room of its own: floor 0, ceiling 128, `FLOOR4_8` / `CEIL3_5`, and the
+     wall texture of the nearest line;
+   * inside a sector it starts as a copy of that sector's heights, flats and light (not its special
+     or tag), and its walls are two-sided to it;
+   * along an existing one-sided wall, that wall becomes an opening between the two.
+4. In the Details panel: **Floor / Ceiling Height**, **Light**, **Floor / Ceiling Flat**,
+   **Special**, **Tag** and **Wall Texture**. **Corners** lists the corners relative to the actor:
+   moving the actor moves the room.
+
+Drawn sectors are applied in their **Order**, before the sector and line edits, so a sector edit
+or a line edit can work on a drawn sector too. They travel with **Export WAD** and play with
+**Play**. One that no longer fits (the WAD changed under it) is outlined in red and named in the
+Output Log.
 
 ## Lines
 

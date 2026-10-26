@@ -431,6 +431,11 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		return 0;
 	}
 	FString EditMap;
+	FString DrawMap;
+	if (FParse::Value(*Params, TEXT("-drawtest="), DrawMap))
+	{
+		return DoomContent::DrawTest(DrawMap) ? 0 : 1;
+	}
 	if (FParse::Value(*Params, TEXT("-edittest="), EditMap))
 	{
 		return DoomContent::EditTest(EditMap) ? 0 : 1;

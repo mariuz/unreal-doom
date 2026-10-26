@@ -169,6 +169,7 @@ TArray<FString> DoomEditorData::MapNames()
 // ------------------------------------------------------------------------------------------------
 
 TFunction<bool(ADoomMapActor*)> ADoomMapActor::BakeHook;
+TFunction<void()> ADoomMapActor::DrawSectorsHook;
 TFunction<void(ADoomMapActor*, const TArray<FDoomMapIssue>&, const TArray<TWeakObjectPtr<AActor>>&)> ADoomMapActor::CheckReportHook;
 
 TArray<FDoomMapIssue> ADoomMapActor::RunCheck(TArray<TWeakObjectPtr<AActor>>& OutActors) const
@@ -331,6 +332,27 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 	{
 		return;
 	}
+	// drawn sectors first: they only add sectors and lines (and split the lines their corners touch),
+	// so the WAD's indices the edits below use stay put, and an edit can work on a drawn sector too
+	TArray<ADoomSectorDraw*> Draws;
+	for (TActorIterator<ADoomSectorDraw> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		Draws.Add(*It);
+	}
+	Draws.StableSort([](const ADoomSectorDraw& A, const ADoomSectorDraw& B) { return A.Order < B.Order; });
+	int32 Drawn = 0;
+	for (ADoomSectorDraw* D : Draws)
+	{
+		FString Error;
+		D->Sector = D->Apply(InMap, Error);
+		if (D->Sector == INDEX_NONE)
+		{
+			UE_LOG(LogDoomEditor, Warning, TEXT("%s: drawn sector %s could not be drawn: %s"), *MapName, *D->GetActorNameOrLabel(), *Error);
+			continue;
+		}
+		InMap.Rebuild(); // the next one (and SectorAt below) needs the new BSP
+		++Drawn;
+	}
 	int32 Edits = 0;
 	for (TActorIterator<ADoomSectorEdit> It(const_cast<UWorld*>(World)); It; ++It)
 	{
@@ -343,7 +365,7 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 		It->Apply(InMap);
 		++LineEdits;
 	}
-	if (LineEdits > 0)
+	if (LineEdits > 0 || Drawn > 0)
 	{
 		// specials may have been added or removed: the lines that crossings check
 		InMap.SpecialLines.Reset();
@@ -366,7 +388,11 @@ void ADoomMapActor::ApplyEdits(FDoomMap& InMap) const
 			InMap.Things = MoveTemp(Things);
 		}
 	}
-	UE_LOG(LogDoomEditor, Log, TEXT("%s: %d sector edits, %d line edits, %d thing markers from the level"), *MapName, Edits, LineEdits, Markers);
+	UE_LOG(LogDoomEditor, Log, TEXT("%s: %d drawn sectors, %d sector edits, %d line edits, %d thing markers from the level"), *MapName, Drawn, Edits, LineEdits, Markers);
+	for (ADoomSectorDraw* D : Draws)
+	{
+		D->Refresh(false);
+	}
 }
 
 int32 ADoomMapActor::SectorAtLocation(const FVector& Location) const
@@ -683,6 +709,14 @@ void ADoomMapActor::ImportThings()
 	UE_LOG(LogDoomEditor, Log, TEXT("%s: %d thing markers"), *MapName, Fresh.Things.Num());
 	RequestPreview();
 #endif
+}
+
+void ADoomMapActor::DrawSectors()
+{
+	if (DrawSectorsHook)
+	{
+		DrawSectorsHook();
+	}
 }
 
 void ADoomMapActor::AddLineEdit()
