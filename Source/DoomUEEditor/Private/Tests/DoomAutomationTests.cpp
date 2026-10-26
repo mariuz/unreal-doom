@@ -416,6 +416,15 @@ bool FDoomEditMapTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomDrawSectorTest, "DoomUE.Editor.DrawSector", DoomTest::Flags)
+bool FDoomDrawSectorTest::RunTest(const FString& Parameters)
+{
+	// Doom > Draw Sectors in /Game/Doom/Maps/E1M1: a room in the void and one in the start room, undo
+	// and redo, a sector edit on a drawn sector; saves /Game/Doom/Tests/E1M1_Draw
+	TestTrue(TEXT("the drawn rooms apply, undo and redo work, and a sector edit works on them"), DoomContent::DrawTest(TEXT("E1M1")));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomWadTilesTest, "DoomUE.Editor.WadTiles", DoomTest::Flags)
 bool FDoomWadTilesTest::RunTest(const FString& Parameters)
 {

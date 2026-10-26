@@ -35,7 +35,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 12 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
+* **Tests:** 13 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
   of writing.
   * Run them before merging.
   * Run without `-NullRHI` when rendering changes: that also compares the screenshots.
@@ -92,6 +92,8 @@ Tools/run_tests.bat DoomUE -NullRHI
   script to a file first.
 * Line endings are mixed: the repo stores LF, and git warns about CRLF. Don't introduce stray `\r`
   characters with `sed`.
+* A commandlet has no undo buffer (`GEditor->Trans` is null); `DoomContent::DrawTest` creates one
+  with `GEditor->CreateTrans()` to test undo.
 * `UnrealEditor-Cmd -run=...` commandlets can't spawn actors into a level. Editor-world work needs
   the real editor with `-ExecutePythonScript=`.
 
@@ -189,6 +191,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * drawing sectors in the level viewport (`UDoomDrawMode`, `ADoomSectorDraw`, `-drawtest`);
   * the `DoomWadTools` plugin (WADs, maps, nodes, generator, PWADs; `FDoomGraphics::PictureCheck`);
   * translatable text: `LOCTEXT` for the port's own words (menus, HUD, editor, map checker);
   * encapsulation of things, monsters, missiles and the menu (accessors; `FDoomHostSettings`);

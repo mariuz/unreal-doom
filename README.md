@@ -389,7 +389,7 @@ Unreal's braking (a 23-unit stop instead of Doom's 160-unit slide), turning with
 the frame rate; there was no view bob; the automap only learned lines while open; a stray click
 confirmed the quit prompt; the renderer switch reloaded the level from scratch; the IWADs had no par
 times. Now all 17 steps pass or skip on Freedoom's E1M1, E1M2 and E1M4 and Freedoom 2's MAP01 and
-MAP05, and the 12 automation tests pass except `E1M1Modern` on a GTX 950 machine, which fails the
+MAP05, and the 13 automation tests pass except `E1M1Modern` on a GTX 950 machine, which fails the
 same way without these changes (Lumen lighting differs by GPU; the approved image is from the owner's machine).
 
 A second pass (`feature/vanilla-differences`) fixed most of what the audit had left:
@@ -503,6 +503,19 @@ code analysis (`-StaticAnalyzer=VisualCpp`) and fails on any warning. It found f
 `.clang-format` holds Epic's layout (tabs, braces on their own lines, `Type* Name`) for new and
 edited code. The existing files weren't reformatted: they differ in about 4% of lines, mostly
 several statements on one line.
+
+Drawing in the viewport (`feature/viewport-draw`): **Doom > Draw Sectors** turns the level
+viewport into a drawing tool (`UDoomDrawMode`, an editor mode). Click the corners on the floor;
+clicking the first corner again or pressing Enter closes the sector. Each sector is saved in the
+level as an `ADoomSectorDraw` actor:
+* its corners are relative to the actor, so moving the actor moves the room;
+* it has optional heights, flats, light, special, tag and wall texture;
+* it is applied when the map loads, before the sector and line edits, so those can work on a drawn
+  sector too.
+
+It uses the map editor's rules (`DoomMapEdit::DrawSector`): a room in the void, a room inside a
+sector, or a wall that becomes an opening. Undo and redo work, and the preview now also follows
+deleted edit actors. `-drawtest=E1M1` (and `DoomUE.Editor.DrawSector`) runs the mode's steps.
 
 Encapsulation, the rest (`feature/encapsulation-things`): `ADoomThing`, `ADoomMonster`,
 `ADoomProjectile` and `FDoomMenu` keep their fields private too.
@@ -628,8 +641,8 @@ Not done yet (roughly in priority order):
    attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
    rampage face after holding fire 2 s with any weapon.
-2. **Easier level design** in the Unreal editor (today: things, sector and line overrides, the connections overlay and the map checker; new wall shapes still need a Doom map editor, see [docs/EditingMaps.md](docs/EditingMaps.md)):
-   * **New geometry in the editor viewport itself**: the map editor draws sectors over a running game (in Play In Editor too). Drawing them in the Unreal editor's viewport, saved into the level as edits, is still to do.
+2. **Easier level design** in the Unreal editor (today: drawing new sectors in the viewport, things, sector and line overrides, the connections overlay and the map checker):
+   * **Reshaping the WAD's own geometry in the viewport**: dragging corners, splitting and deleting lines and sectors. Drawn sectors can be moved and edited, but changing the WAD's walls still needs a Doom map editor (the round trip in [docs/EditingMaps.md](docs/EditingMaps.md)).
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
    * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).

@@ -44,6 +44,9 @@ namespace DoomContent
 	FString MapPackage(const FString& MapName);
 	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/<MAP>_Edit (-edittest=MAP). */
 	bool EditTest(const FString& MapName);
+	/** Draws rooms in an imported level through Doom > Draw Sectors' steps, undoes and redoes one, puts
+	 *  a sector edit on one and saves /Game/Doom/Tests/<MAP>_Draw (-drawtest=MAP). */
+	bool DrawTest(const FString& MapName);
 }
 
 UCLASS()

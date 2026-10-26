@@ -12,6 +12,8 @@
 //    ceiling heights, light, flats, special and tag ("Read From Sector" fills in the current values).
 //  * ADoomLineEdit actors, placed by a line: they override its special, tag, flags and the upper,
 //    middle and lower textures of both sides ("Read From Line" fills in the current values).
+//  * ADoomSectorDraw actors: new sectors drawn in the viewport (Doom > Draw Sectors, an editor
+//    mode), applied before the edits above so they can work on a drawn sector too.
 //  * In the viewport, lines from each trigger to the sectors it works on, and sector outlines
 //    coloured by what happens there (doors, lifts, secrets, damaging floors...).
 //  * Baked static mesh tiles of the level's static geometry (/Game/Doom/Maps/<MAP>_Tiles), saved
@@ -82,6 +84,15 @@ public:
 	/** Adds a line edit actor on the line nearest the active viewport's camera. */
 	UFUNCTION(CallInEditor, Category = "Doom")
 	void AddLineEdit();
+
+	/** Draws new sectors in the level viewport: click the corners on the floor (they snap to the
+	 *  grid and to existing corners), click the first one again or press Enter to close, Backspace
+	 *  removes the last, Esc leaves. Each becomes an ADoomSectorDraw in the level. */
+	UFUNCTION(CallInEditor, Category = "Doom")
+	void DrawSectors();
+
+	/** Set by the editor module: starts the Draw Sectors mode. */
+	static TFunction<void()> DrawSectorsHook;
 
 	/** Lists the map's problems in the Message Log ("Doom Map Check"): tags with no sectors,
 	 *  teleporters with no destination, missing and unknown textures, open sectors, locks without
@@ -397,6 +408,107 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Doom")
 	TObjectPtr<UTextRenderComponent> Label;
+};
+
+/**
+ * A sector drawn in the level editor's viewport (Doom > Draw Sectors). Its corners are relative to
+ * the actor, so moving the actor moves the room. Drawn sectors are applied before the sector and line
+ * edits, in Order, by the map editor's rules (DoomMapEdit::DrawSector): in the void, inside one sector
+ * (its walls are then two-sided to that one), or along existing walls (they become openings). It
+ * starts as a copy of the sector it is drawn in (heights, flats and light, no special or tag); the
+ * overrides below change that.
+ */
+UCLASS(HideCategories = (Rendering, Physics, Collision, Input, HLOD, Cooking, Replication, Networking, LOD, Actor, DataLayers, WorldPartition, LevelInstance))
+class DOOMUE_API ADoomSectorDraw : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	ADoomSectorDraw();
+
+	/** The corners in Doom map units, relative to the actor, in order around the sector. */
+	UPROPERTY(EditAnywhere, Category = "Doom")
+	TArray<FVector2D> Corners;
+
+	/** Drawn sectors are applied in this order (a later one may be drawn inside an earlier one). */
+	UPROPERTY(EditAnywhere, Category = "Doom")
+	int32 Order = 0;
+
+	/** The sector it became in the last preview, or INDEX_NONE if it could not be drawn (the
+	 *  Output Log says why). */
+	UPROPERTY(VisibleAnywhere, Transient, Category = "Doom")
+	int32 Sector = INDEX_NONE;
+
+	/** The new walls' texture. */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (GetOptions = "GetTextureNames"))
+	FName WallTexture = TEXT("STARTAN3");
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bFloor = false;
+	/** Floor height in map units (else the surrounding sector's, or 0 in the void). */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bFloor"))
+	float FloorHeight = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bCeiling = false;
+	/** Ceiling height (else the surrounding sector's, or 128 in the void). */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bCeiling"))
+	float CeilingHeight = 128;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bLight = false;
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bLight", ClampMin = "0", ClampMax = "255"))
+	int32 Light = 160;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bFloorFlat = false;
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bFloorFlat", GetOptions = "GetFlatNames"))
+	FName FloorFlat = TEXT("FLOOR4_8");
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bCeilingFlat = false;
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bCeilingFlat", GetOptions = "GetFlatNames"))
+	FName CeilingFlat = TEXT("CEIL3_5");
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bSpecial = false;
+	/** Sector special (1 blink, 7 nukage, 9 secret...). */
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bSpecial"))
+	int32 Special = 0;
+
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (InlineEditConditionToggle))
+	bool bTag = false;
+	UPROPERTY(EditAnywhere, Category = "Doom", meta = (EditCondition = "bTag"))
+	int32 Tag = 0;
+
+	/** The corners in map coordinates. */
+	TArray<FVector2f> MapCorners() const;
+
+	/** Draws the sector into Map (whose BSP must be current). Returns the new sector, or INDEX_NONE
+	 *  with OutError saying why. Leaves the BSP stale: FDoomMap::Rebuild() after it. */
+	int32 Apply(FDoomMap& Map, FString& OutError) const;
+
+	UFUNCTION()
+	static TArray<FString> GetTextureNames();
+	UFUNCTION()
+	static TArray<FString> GetFlatNames();
+
+	/** Editor: the label and outline, after a preview (ADoomMapActor sets Sector). */
+	void Refresh(bool bRebuild);
+
+protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
+	virtual void PostEditMove(bool bFinished) override;
+#endif
+
+private:
+	UPROPERTY(VisibleAnywhere, Category = "Doom")
+	TObjectPtr<UTextRenderComponent> Label;
+	/** The corners as drawn (editor only), so a sector that could not be drawn still shows. */
+	UPROPERTY(Transient)
+	TObjectPtr<ULineBatchComponent> Outline;
 };
 
 /** The WAD as the editor sees it (Project Settings > Doom IWAD and PWADs), loaded on first use. */

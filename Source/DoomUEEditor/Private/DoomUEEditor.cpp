@@ -17,6 +17,7 @@
 #include "EngineUtils.h"
 #include "DoomEditor.h"
 #include "DoomUE.h"
+#include "DoomDrawMode.h"
 
 #define LOCTEXT_NAMESPACE "DoomUEEditor"
 
@@ -143,6 +144,19 @@ namespace
 					Notify(LOCTEXT("EditNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
 				}
 			})));
+		Maps.AddMenuEntry(TEXT("DrawSectors"), LOCTEXT("DrawSectors", "Draw Sectors"),
+			LOCTEXT("DrawSectorsTip", "Draw new sectors in the level viewport: click the corners on the floor, click the first one again or press Enter to close; Backspace removes a corner, Esc leaves. Each becomes a Drawn Sector actor in the level"), FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([]()
+			{
+				if (ADoomMapActor::Find(GEditor ? GEditor->GetEditorWorldContext().World() : nullptr))
+				{
+					UDoomDrawMode::Activate();
+				}
+				else
+				{
+					Notify(LOCTEXT("DrawNoMap", "Open a Doom map level first (Doom > Open / Import Map)"), false);
+				}
+			})));
 		Maps.AddMenuEntry(TEXT("PlayMapEditor"), LOCTEXT("PlayMapEditor", "Play in the Map Editor"),
 			LOCTEXT("PlayMapEditorTip", "Play In Editor with Doom's map editor open over the game: draw sectors, place things, edit properties, undo, generate random maps and save PWADs (DoomEdit in the console toggles it)"), FSlateIcon(),
 			FUIAction(FExecuteAction::CreateLambda([]()
@@ -186,6 +200,32 @@ public:
 					: LOCTEXT("BakeFailed", "Baking failed (see the Output Log)"), bOk);
 				return bOk;
 			};
+			ADoomMapActor::DrawSectorsHook = []() { UDoomDrawMode::Activate(); };
+			// the preview follows deleted edit actors and undo / redo (edit actors, markers, drawn sectors)
+			auto RequestPreview = []()
+			{
+				if (GEditor && !GEditor->IsPlaySessionInProgress())
+				{
+					if (ADoomMapActor* MapActor = ADoomMapActor::Find(GEditor->GetEditorWorldContext().World()))
+					{
+						MapActor->RequestPreview();
+					}
+				}
+			};
+			FEditorDelegates::PostUndoRedo.AddLambda(RequestPreview);
+			FCoreDelegates::GetOnPostEngineInit().AddLambda([RequestPreview]()
+			{
+				if (GEditor)
+				{
+					GEditor->OnLevelActorDeleted().AddLambda([RequestPreview](AActor* Actor)
+					{
+						if (Cast<ADoomSectorDraw>(Actor) || Cast<ADoomSectorEdit>(Actor) || Cast<ADoomLineEdit>(Actor) || Cast<ADoomThingMarker>(Actor))
+						{
+							RequestPreview();
+						}
+					});
+				}
+			});
 			UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateLambda([]()
 			{
 				FToolMenuOwnerScoped Owner(TEXT("DoomUEEditor"));
@@ -215,6 +255,7 @@ public:
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(WatchTicker);
 		ADoomMapActor::BakeHook = nullptr;
+		ADoomMapActor::DrawSectorsHook = nullptr;
 		ADoomMapActor::CheckReportHook = nullptr;
 		if (UObjectInitialized() && UToolMenus::TryGet())
 		{
