@@ -536,6 +536,23 @@ Data validation (`feature/data-validation`): Tools > Validate Data checks the Do
   error, for CI); `-validatetest` (and `DoomUE.Editor.DataValidation`) also breaks copies of each
   and expects every mistake to be reported.
 
+The menu through CommonUI (`feature/commonui`): Epic's CommonUI plugin runs the menu.
+* `ADoomPlayerController` puts a `UDoomUILayout` on the player's screen: an activatable widget that
+  asks for game input, with an activatable widget stack over it. While the game is in the menu, the
+  stack holds a `UDoomMenuScreen`, which asks for menu input (a cursor, nothing reaches the game).
+* The screen paints the menu in Doom's look with the code the HUD used (`FDoomScreenPainter`, now
+  shared by both), and puts an invisible CommonUI button over each selectable row.
+* The mouse hovers and clicks rows (a click on a slider's thermometer moves it towards the click; the
+  wheel moves the selection). The arrow keys, d-pad and stick move between rows, and W/A/S/D, Y, N,
+  Space, Esc and Backspace keep their meaning through CommonUI action bindings on the menu's own
+  input actions. Each move goes through `FDoomMenu`, so disabled rows are skipped and the sounds
+  are Doom's.
+* CommonUI's back action is `IA_MenuBack` and its click action `IA_MenuSelect` (`UDoomUIInputData`,
+  set in `DefaultGame.ini`); the game viewport is `CommonGameViewportClient`.
+* Typing a save name, capturing a key and the yes/no prompts take raw keys, as before. The HUD still
+  draws the menu when the screen is down (the in-game map editor, which keeps its own UI input).
+* The `commonui` play-test step drives the screen through the same calls.
+
 Asset naming (`feature/asset-naming`): imported levels are `L_<MAP>` now (`/Game/Doom/Maps/L_E1M1`),
 so all the content follows Epic's prefixes (L_, DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_).
 The Doom map's name stays `E1M1` on the map actor. A level imported under the old name is renamed
@@ -680,4 +697,4 @@ Not done yet (roughly in priority order):
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
-   * **UI framework**: the menus are drawn by hand in the HUD and the map editor's panels are UMG built in code; Epic's CommonUI would give them gamepad navigation, input routing and styling the same way.
+   * **UI framework, the rest**: the game's menu runs on CommonUI now; the in-game map editor's panels are still plain UMG built in code (CommonUI buttons would give them gamepad navigation).

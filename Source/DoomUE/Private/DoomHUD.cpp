@@ -12,6 +12,8 @@
 #include "DoomSettings.h"
 #include "Engine/Canvas.h"
 #include "Engine/Texture2D.h"
+#include "DoomScreenPainter.h"
+#include "DoomPlayerController.h"
 
 #define LOCTEXT_NAMESPACE "DoomHUD"
 
@@ -20,84 +22,54 @@ UDoomWorld* ADoomHUD::DW() const
 	return GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
 }
 
+// the HUD's surface: its canvas (DoomScreenPainter.h draws Doom's frame on it)
+class FDoomCanvasPainter : public FDoomScreenPainter
+{
+public:
+	explicit FDoomCanvasPainter(ADoomHUD* InHUD) : HUD(InHUD) {}
+
+protected:
+	virtual void Picture(UTexture2D* Texture, float X, float Y, float W, float H, FLinearColor Tint) override
+	{
+		HUD->DrawTexture(Texture, X, Y, W, H, 0, 0, 1, 1, Tint, BLEND_Translucent);
+	}
+	virtual void Fill(float X, float Y, float W, float H, FLinearColor C) override
+	{
+		HUD->DrawRect(C, X, Y, W, H);
+	}
+
+private:
+	ADoomHUD* HUD;
+};
+
 void ADoomHUD::Rect(float X, float Y, float W, float H, FLinearColor C)
 {
-	DrawRect(C, OX + X * SX, OY + Y * SY, W * SX, H * SY);
+	Painter->Rect(X, Y, W, H, C);
 }
 
 void ADoomHUD::DrawPatch(const FDoomPicture* Pic, float X, float Y, bool bUseOffsets, FLinearColor Tint)
 {
-	if (!Pic || !Pic->Texture)
-	{
-		return;
-	}
-	const float PX = X - (bUseOffsets ? Pic->LeftOffset : 0);
-	const float PY = Y - (bUseOffsets ? Pic->TopOffset : 0);
-	DrawTexture(PatchTexture(Pic), OX + PX * SX, OY + PY * SY, Pic->Width * SX, Pic->Height * SY, 0, 0, 1, 1, Tint, BLEND_Translucent);
-}
-
-UTexture2D* ADoomHUD::PatchTexture(const FDoomPicture* Pic)
-{
-	// Doom shifts the whole screen's palette, the status bar and text included
-	if (ScreenPal > 0 && Pic)
-	{
-		if (UTexture2D* Shifted = DW()->GetGraphics()->ColormappedPicture(*Pic, 0, ScreenPal))
-		{
-			return Shifted;
-		}
-	}
-	return Pic ? Pic->Texture : nullptr;
+	Painter->DrawPatch(Pic, X, Y, bUseOffsets, Tint);
 }
 
 void ADoomHUD::DrawPatchByName(const FString& Name, float X, float Y, bool bUseOffsets)
 {
-	if (UDoomWorld* W = DW())
-	{
-		DrawPatch(W->GetGraphics()->Patch(Name), X, Y, bUseOffsets);
-	}
+	Painter->DrawPatchByName(Name, X, Y, bUseOffsets);
 }
 
 void ADoomHUD::DrawFullscreenPic(const FString& Name)
 {
-	DrawRect(FLinearColor::Black, 0, 0, Canvas->ClipX, Canvas->ClipY);
-	DrawPatchByName(Name, 0, 0, false);
+	Painter->DrawFullscreenPic(Name);
 }
 
 float ADoomHUD::TextWidth(const FString& Text) const
 {
-	UDoomWorld* W = DW();
-	float X = 0;
-	for (TCHAR C : Text.ToUpper())
-	{
-		const FDoomPicture* P = (C > ' ' && C <= '_') ? W->GetGraphics()->Patch(FString::Printf(TEXT("STCFN%03d"), (int32)C)) : nullptr;
-		X += P ? P->Width : 4;
-	}
-	return X;
+	return Painter->TextWidth(Text);
 }
 
 void ADoomHUD::DrawText(const FString& Text, float X, float Y, float Scale, FLinearColor Tint)
 {
-	UDoomWorld* W = DW();
-	float CX = X;
-	for (TCHAR C : Text.ToUpper())
-	{
-		if (C == '\n')
-		{
-			CX = X;
-			Y += 11 * Scale;
-			continue;
-		}
-		const FDoomPicture* P = (C > ' ' && C <= '_') ? W->GetGraphics()->Patch(FString::Printf(TEXT("STCFN%03d"), (int32)C)) : nullptr;
-		if (P && P->Texture)
-		{
-			DrawTexture(PatchTexture(P), OX + CX * SX, OY + Y * SY, P->Width * SX * Scale, P->Height * SY * Scale, 0, 0, 1, 1, Tint, BLEND_Translucent);
-			CX += P->Width * Scale;
-		}
-		else
-		{
-			CX += 4 * Scale;
-		}
-	}
+	Painter->DrawText(Text, X, Y, Scale, Tint);
 }
 
 void ADoomHUD::DrawNumber(int32 Value, float RightX, float Y, const FString& Prefix, int32 MaxDigits)
@@ -134,13 +106,19 @@ void ADoomHUD::DrawHUD()
 	{
 		return;
 	}
-	ScreenPal = (W->GetState() == EDoomGameState::Playing && W->IsPaletteExact()) ? W->ScreenPalette() : 0;
+	if (!Painter)
+	{
+		Painter = MakeShared<FDoomCanvasPainter>(this);
+	}
+	Painter->World = W;
+	Painter->ScreenPal = (W->GetState() == EDoomGameState::Playing && W->IsPaletteExact()) ? W->ScreenPalette() : 0;
 	// Doom's 320x200 frame, shown at 4:3 (non-square pixels) and centred
 	// (fit inside the window: letterboxed on screens narrower than 4:3)
-	SX = FMath::Min(Canvas->ClipX / 320.f, Canvas->ClipY / 240.f);
-	SY = SX * 1.2f;
-	OX = (Canvas->ClipX - 320.f * SX) * 0.5f;
-	OY = (Canvas->ClipY - 200.f * SY) * 0.5f;
+	Painter->Fit(Canvas->ClipX, Canvas->ClipY);
+	SX = Painter->SX;
+	SY = Painter->SY;
+	OX = Painter->OX;
+	OY = Painter->OY;
 
 	if (W->IsLoadingMap())
 	{
@@ -162,7 +140,12 @@ void ADoomHUD::DrawHUD()
 		{
 			DrawFullscreenPic(TEXT("TITLEPIC"));
 		}
-		DrawMenu();
+		// the CommonUI menu screen draws it when it is up (DoomMenuWidgets.h); the canvas otherwise
+		// (a client without the CommonUI viewport, a test driving the menu with the screen down)
+		if (!ADoomPlayerController::IsMenuScreenShown(GetOwningPlayerController()))
+		{
+			Painter->DrawMenu(GetWorld()->GetRealTimeSeconds());
+		}
 		return;
 	case EDoomGameState::Intermission:
 		DrawIntermission();
@@ -242,7 +225,7 @@ void ADoomHUD::DrawWeapon(ADoomPlayer* P)
 			const int32 LightNum = FMath::Clamp(SecLight / 16 + P->GetView().ExtraLight, 0, 15);
 			Row = FMath::Clamp((15 - LightNum) * 4 - 23, 0, 31);
 		}
-		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row, ScreenPal))
+		if (UTexture2D* Lit = W->GetGraphics()->ColormappedPicture(*F.Picture, Row, Painter->ScreenPal))
 		{
 			DrawTexture(Lit, OX + (SXp - F.Picture->LeftOffset) * SX, OY + (SYp - F.Picture->TopOffset) * SY,
 				F.Picture->Width * SX, F.Picture->Height * SY, 0, 0, 1, 1, FLinearColor::White, BLEND_Translucent);
@@ -728,138 +711,6 @@ void ADoomHUD::AutomapToggleGrid()
 {
 	Automap.bGrid = !Automap.bGrid;
 	DW()->ShowMessage(Automap.bGrid ? LOCTEXT("GridOn", "GRID ON") : LOCTEXT("GridOff", "GRID OFF"));
-}
-
-void ADoomHUD::DrawThermo(float X, float Y, int32 Width, int32 Value)
-{
-	DrawPatchByName(TEXT("M_THERML"), X, Y, true);
-	for (int32 i = 0; i < Width; ++i)
-	{
-		DrawPatchByName(TEXT("M_THERMM"), X + 8 + i * 8, Y, true);
-	}
-	DrawPatchByName(TEXT("M_THERMR"), X + 8 + Width * 8, Y, true);
-	DrawPatchByName(TEXT("M_THERMO"), X + 8 + FMath::Clamp(Value, 0, Width - 1) * 8, Y, true);
-}
-
-void ADoomHUD::DrawMenu()
-{
-	UDoomWorld* W = DW();
-	FDoomMenu& M = W->Menu;
-	// over the game, or over the title picture on sub-pages (their titles share its logo's spot)
-	if (W->GetMap() || M.GetPage() != EMenuPage::Main)
-	{
-		DrawRect(FLinearColor(0, 0, 0, W->GetMap() ? 0.45f : 0.6f), 0, 0, Canvas->ClipX, Canvas->ClipY);
-	}
-
-	if (M.GetPage() == EMenuPage::ReadThis)
-	{
-		const TArray<FString> Pages = M.HelpPages(*W);
-		if (Pages.IsValidIndex(M.GetHelpPage()))
-		{
-			DrawFullscreenPic(Pages[M.GetHelpPage()]);
-		}
-		return;
-	}
-	const FString Prompt = M.Prompt();
-	if (!Prompt.IsEmpty())
-	{
-		TArray<FString> Lines;
-		Prompt.ParseIntoArray(Lines, TEXT("\n"), false);
-		float Y = 100 - Lines.Num() * 11 / 2.f;
-		for (const FString& L : Lines)
-		{
-			DrawText(L, 160 - TextWidth(L) / 2, Y);
-			Y += 11;
-		}
-		return;
-	}
-
-	for (const FMenuTitle& T : M.Titles())
-	{
-		DrawPatchByName(T.Patch, T.X, T.Y, true);
-	}
-	if (M.GetPage() == EMenuPage::Controls)
-	{
-		// no M_ graphic for it: the title in the menu font
-		const FString Title = LOCTEXT("Controls", "CONTROLS").ToString();
-		DrawText(Title, 160 - TextWidth(Title), 8, 2.f);
-	}
-	const FIntPoint O = M.Origin();
-	const TArray<FMenuRow> Rows = M.Rows(*W);
-	const FLinearColor Dim(0.5f, 0.5f, 0.5f, 1.f);
-	// long pages (Controls) scroll to keep the selection in view
-	const int32 First = M.FirstVisibleRow(Rows.Num());
-	const int32 Last = FMath::Min(Rows.Num(), First + M.VisibleRows());
-	for (int32 i = First; i < Last; ++i)
-	{
-		const FMenuRow& R = Rows[i];
-		const float Y = O.Y + (i - First) * M.RowHeight();
-		if (M.IsSaveLoad())
-		{
-			// Doom's slot box: left cap, 24 middles, right cap, the description inside
-			DrawPatchByName(TEXT("M_LSLEFT"), O.X - 8, Y + 7, true);
-			for (int32 k = 0; k < 24; ++k) DrawPatchByName(TEXT("M_LSCNTR"), O.X + k * 8, Y + 7, true);
-			DrawPatchByName(TEXT("M_LSRGHT"), O.X + 24 * 8, Y + 7, true);
-			if (M.IsEditing() && M.GetPage() == EMenuPage::Save && i == M.GetItem())
-			{
-				const bool bCursor = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
-				DrawText(M.GetEditText() + (bCursor ? TEXT("_") : TEXT("")), O.X, Y);
-				continue;
-			}
-			DrawText(R.Text, O.X, Y, 1.f, R.bEnabled || M.GetPage() == EMenuPage::Save ? FLinearColor::White : Dim);
-			continue;
-		}
-		if (R.Kind == FMenuRow::EKind::Gap)
-		{
-			continue;
-		}
-		const FDoomPicture* Pic = R.Patch.IsEmpty() ? nullptr : W->GetGraphics()->Patch(R.Patch);
-		const FLinearColor Tint = R.bEnabled ? FLinearColor::White : Dim;
-		if (Pic)
-		{
-			DrawPatch(Pic, O.X, Y, true, Tint);
-		}
-		else
-		{
-			DrawText(R.Text, O.X, Y + 3, 1.f, R.bEnabled ? FLinearColor(0.9f, 0.15f, 0.1f) : Dim);
-			if (M.IsCapturing() && i == M.GetItem())
-			{
-				// waiting for the new key
-				const bool bOn = (int32)(GetWorld()->GetRealTimeSeconds() * 4.f) & 1;
-				DrawText(bOn ? LOCTEXT("PressAKey", "PRESS A KEY (ESC: KEEP)").ToString() : FString(), O.X + 136, Y + 3);
-			}
-			else if (!R.ValueText.IsEmpty())
-			{
-				DrawText(R.ValueText, O.X + 136, Y + 3);
-			}
-		}
-		if (R.Kind == FMenuRow::EKind::Toggle)
-		{
-			if (!R.ValuePatch.IsEmpty() && W->GetGraphics()->Patch(R.ValuePatch))
-			{
-				DrawPatchByName(R.ValuePatch, O.X + 120, Y, true);
-			}
-			else
-			{
-				DrawText((R.Value ? LOCTEXT("On", "ON") : LOCTEXT("Off", "OFF")).ToString(), O.X + 120, Y + 3);
-			}
-		}
-		else if (R.Kind == FMenuRow::EKind::Slider)
-		{
-			DrawThermo(O.X, Y + 16, R.Max, R.Value);
-		}
-	}
-	// the blinking skull, 32 pixels left of the selected row
-	const bool bBlink = (int32)(GetWorld()->GetRealTimeSeconds() * Doom::TicRate / 8) & 1;
-	if (M.RowHeight() < 16)
-	{
-		// tight rows: a small arrow, the skull would cover its neighbours
-		DrawText(bBlink ? TEXT(">") : TEXT(""), O.X - 10, O.Y + 3 + (M.GetItem() - First) * M.RowHeight());
-	}
-	else
-	{
-		DrawPatchByName(bBlink ? TEXT("M_SKULL2") : TEXT("M_SKULL1"), O.X - 32, O.Y - 5 + (M.GetItem() - First) * M.RowHeight(), true);
-	}
 }
 
 void ADoomHUD::DrawLoading()

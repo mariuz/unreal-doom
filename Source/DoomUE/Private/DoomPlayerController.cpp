@@ -18,6 +18,11 @@
 #include "DoomPlayer.h"
 #include "UnrealClient.h"
 #include "TimerManager.h"
+#include "DoomMenuWidgets.h"
+#include "DoomEditor.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/Engine.h"
 #include "Misc/Paths.h"
 #include "Misc/CommandLine.h"
 
@@ -147,6 +152,12 @@ void ADoomPlayerController::BeginPlay()
 	SetInputMode(FInputModeGameOnly());
 	bShowMouseCursor = false;
 	ApplyContexts();
+	// the UI root: game input, and the stack the menu screen goes on (DoomMenuWidgets.h)
+	if (IsLocalPlayerController() && GEngine && GEngine->GameViewport)
+	{
+		UILayout = CreateWidget<UDoomUILayout>(this, UDoomUILayout::StaticClass());
+		UILayout->AddToPlayerScreen(10);
+	}
 	if (IsLocalController() && GetNetMode() == NM_Client && FParse::Param(FCommandLine::Get(), TEXT("nettest")))
 	{
 		RunClientNetTest();
@@ -257,6 +268,34 @@ void ADoomPlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	ApplyContexts();
+	UpdateMenuScreen();
+}
+
+void ADoomPlayerController::UpdateMenuScreen()
+{
+	UDoomWorld* W = GetWorld() ? GetWorld()->GetSubsystem<UDoomWorld>() : nullptr;
+	if (!UILayout || !UILayout->GetMenuStack() || !W)
+	{
+		return;
+	}
+	// the in-game map editor keeps its own UI input; the menu over it stays the HUD's
+	const UDoomMapEditor* Editor = GetWorld()->GetSubsystem<UDoomMapEditor>();
+	const bool bWant = W->GetState() == EDoomGameState::Menu && !W->IsLoadingMap() && !(Editor && Editor->IsOpen());
+	if (bWant && !MenuScreen.IsValid())
+	{
+		MenuScreen = UILayout->GetMenuStack()->AddWidget<UDoomMenuScreen>(UDoomMenuScreen::StaticClass());
+	}
+	else if (!bWant && MenuScreen.IsValid())
+	{
+		MenuScreen->DeactivateWidget(); // the stack drops it, and the layout's game input returns
+		MenuScreen = nullptr;
+	}
+}
+
+bool ADoomPlayerController::IsMenuScreenShown(const APlayerController* PC)
+{
+	const ADoomPlayerController* D = Cast<ADoomPlayerController>(PC);
+	return D && D->MenuScreen.IsValid() && D->MenuScreen->IsActivated();
 }
 
 namespace

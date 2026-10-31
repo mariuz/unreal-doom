@@ -126,6 +126,9 @@ Tools/run_tests.bat DoomUE -NullRHI
   `Tools/check_includes.bat` checks both (`names` for the quick name check alone); run it after
   adding files or helpers. `Tools/analyze.bat` is the static analysis (no warnings allowed).
   Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
+* **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
+  play-test drives `FDoomMenu` or the screen's handlers (they ignore locked input, so unlock around
+  them). Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
   `DoomMenu.h`): a new row goes into the enum in the order `FDoomMenu::Rows` adds it, or the page's
   `checkf` fires. The Options page scrolls past 10 rows.
@@ -193,6 +196,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * the menu through CommonUI (`UDoomUILayout`, `UDoomMenuScreen`, `FDoomScreenPainter`, `commonui` step);
   * asset naming: imported levels are `L_<MAP>` (`DoomContent::MapPackage`, `-renamelevels`);
   * data validation (`UDoomGameData::IsDataValid` / `Check`, `UDoomAssetValidator`, `-validate`,
     `-validatetest`);

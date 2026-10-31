@@ -69,10 +69,25 @@ public:
 	/** Back to the default keys, saved. */
 	void ResetBindings();
 
+	// --- the menu through CommonUI (DoomMenuWidgets.h) ------------------------------------------
+	/** The CommonUI menu screen is up and draws the menu (the HUD draws it otherwise). */
+	static bool IsMenuScreenShown(const APlayerController* PC);
+	class UDoomMenuScreen* GetMenuScreen() const { return MenuScreen.Get(); }
+	const UInputAction* GetMenuUpAction() const { return MenuUpAction; }
+	const UInputAction* GetMenuDownAction() const { return MenuDownAction; }
+	const UInputAction* GetMenuLeftAction() const { return MenuLeftAction; }
+	const UInputAction* GetMenuRightAction() const { return MenuRightAction; }
+	const UInputAction* GetMenuSelectAction() const { return MenuSelectAction; }
+	const UInputAction* GetMenuCloseAction() const { return MenuCloseAction; }
+
 private:
 	class UEnhancedInputUserSettings* UserSettings() const;
 	void CreateInput();
 	void ApplyContexts();
+	/** Pushes the menu screen on the layout's stack while the game is in the menu, and takes it off. */
+	void UpdateMenuScreen();
+	UPROPERTY(Transient) TObjectPtr<class UDoomUILayout> UILayout;
+	TWeakObjectPtr<class UDoomMenuScreen> MenuScreen;
 	void MenuUp(const FInputActionValue& V);
 	void MenuDown(const FInputActionValue& V);
 	void MenuLeft(const FInputActionValue& V);
