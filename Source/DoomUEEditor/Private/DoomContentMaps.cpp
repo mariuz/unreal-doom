@@ -167,7 +167,56 @@ bool DoomContent::BakeMapTiles(ADoomMapActor* MapActor)
 
 FString DoomContent::MapPackage(const FString& MapName)
 {
-	return FString(TEXT("/Game/Doom/Maps/")) + MapName.ToUpper();
+	// Epic's asset naming: levels are L_ (the Doom map's own name stays MapName on the map actor)
+	return FString(TEXT("/Game/Doom/Maps/L_")) + MapName.ToUpper();
+}
+
+bool DoomContent::RenameOldLevel(const FString& InMapName)
+{
+	const FString MapName = InMapName.ToUpper();
+	const FString OldName = FString(TEXT("/Game/Doom/Maps/")) + MapName;
+	const FString NewName = MapPackage(MapName);
+	if (!FPackageName::DoesPackageExist(OldName) || FPackageName::DoesPackageExist(NewName))
+	{
+		return false;
+	}
+	UWorld* World = LoadObject<UWorld>(nullptr, *(OldName + TEXT(".") + MapName));
+	if (!World)
+	{
+		UE_LOG(LogDoomContent, Warning, TEXT("Rename: %s is no level"), *OldName);
+		return false;
+	}
+	// nothing refers to a level by its package (it refers to its tiles, which stay), so the world and
+	// the rest of the package move into the new one, and the old file goes; no redirector is needed
+	UPackage* Old = World->GetPackage();
+	UPackage* New = CreatePackage(*NewName);
+	New->MarkAsFullyLoaded();
+	const FString NewShort = FPackageName::GetShortName(NewName);
+	TArray<UObject*> Top;
+	GetObjectsWithOuter(Old, Top, false);
+	for (UObject* O : Top)
+	{
+		// the world takes the package's name, objects named after it (E1M1_BuiltData) keep the pattern
+		const FString Name = O == World ? NewShort
+			: O->GetName().StartsWith(MapName + TEXT("_")) ? TEXT("L_") + O->GetName() : O->GetName();
+		O->Rename(*Name, New, REN_DontCreateRedirectors | REN_NonTransactional);
+	}
+	New->MarkPackageDirty();
+	const FString OldFile = FPackageName::LongPackageNameToFilename(OldName, FPackageName::GetMapPackageExtension());
+	const FString NewFile = FPackageName::LongPackageNameToFilename(NewName, FPackageName::GetMapPackageExtension());
+	FSavePackageArgs Args;
+	Args.TopLevelFlags = RF_Standalone;
+	Args.Error = GWarn;
+	const bool bSaved = UPackage::SavePackage(New, World, *NewFile, Args);
+	if (bSaved)
+	{
+		ResetLoaders(Old); // lets go of the old file
+		IFileManager::Get().Delete(*OldFile, false, true);
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		Registry.ScanFilesSynchronous({ OldFile, NewFile }, true);
+	}
+	UE_LOG(LogDoomContent, Display, TEXT("Rename: %s is now %s (%s)"), *OldName, *NewName, bSaved ? TEXT("saved") : TEXT("NOT SAVED"));
+	return bSaved;
 }
 
 bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
@@ -180,6 +229,7 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 		return false;
 	}
 	const FString PkgName = MapPackage(MapName);
+	RenameOldLevel(MapName); // a level imported before levels were L_
 	if (FPackageName::DoesPackageExist(PkgName) && !bOverwrite)
 	{
 		UE_LOG(LogDoomContent, Display, TEXT("Import: %s already exists (use -force to replace it)"), *PkgName);
@@ -192,7 +242,7 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 	}
 	UPackage* Pkg = CreatePackage(*PkgName);
 	Pkg->MarkAsFullyLoaded(); // replacing a level on disk: this new package is the whole of it
-	UWorld* World = UWorld::CreateWorld(EWorldType::Inactive, false, FName(*MapName), Pkg);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Inactive, false, FName(*FPackageName::GetShortName(PkgName)), Pkg);
 	World->SetFlags(RF_Public | RF_Standalone);
 
 	FActorSpawnParameters SP;
@@ -243,7 +293,7 @@ bool DoomContent::ImportMap(const FString& InMapName, bool bOverwrite)
 }
 
 // Editor round trip: open an imported level as the editor would, build the preview, edit a
-// sector and a marker, and save the result as /Game/Doom/Tests/<MAP>_Edit for -game checks.
+// sector and a marker, and save the result as /Game/Doom/Tests/L_<MAP>_Edit for -game checks.
 bool DoomContent::EditTest(const FString& InMapName)
 {
 	const FString MapName = InMapName.ToUpper();
@@ -417,7 +467,7 @@ bool DoomContent::EditTest(const FString& InMapName)
 		DoomEditorData::Reload();
 		MapActor->RebuildPreview();
 	}
-	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Edit");
+	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/L_")) + MapName + TEXT("_Edit");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
 	const bool bPass = PreviewComponents > 0 && FMath::IsNearlyEqual(NewFloor, OldFloor + 48.f) && Edit->Sector == Sec && bSaved && bLineOk && Connections > 0 && Ghosts > 0 && bCheckerOk && bExportOk && bRoundTrip;
 	UE_LOG(LogDoomContent, Display, TEXT("Edittest %s: preview %d components, %d markers, start sector %d floor %.0f -> %.0f; %s; %d connection lines (%d for door and lift travel); the checker %s line %d's broken tag; exported %s (%d things); round trip: %s; saved %s"),

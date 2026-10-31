@@ -150,7 +150,7 @@ bool DoomContent::DrawTest(const FString& InMapName)
 	const bool bRaised = Map->Sectors.IsValidIndex(RaisedSector) && FMath::IsNearlyEqual(Map->Sectors[RaisedSector].Floor, StartFloor + 24.f)
 		&& FMath::IsNearlyEqual(Map->Sectors[StartSector].Floor, StartFloor);
 
-	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/")) + MapName + TEXT("_Draw");
+	const FString TestPackage = FString(TEXT("/Game/Doom/Tests/L_")) + MapName + TEXT("_Draw");
 	const bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, TestPackage);
 	const bool bPass = Draws == 2 && Sectors2 == Sectors0 + 2 && bInner && bOuter && bUndo && bRaised && bSaved;
 	UE_LOG(LogDoomContent, Display, TEXT("Drawtest %s: %d drawn sector actors, sectors %d -> %d; room in the void: sector %d %s; room in the start room: sector %d, floor %.0f (start %.0f), %d two-sided walls %s; undo %d, redo %d; a sector edit raises the drawn sector to %.0f %s; saved %s"),

@@ -114,7 +114,7 @@ Add `-iwad=freedoom2.wad` (or `-file=` for PWADs) after the folder to bake anoth
 * Every imported level is added to `MapsToCook` in `DefaultGame.ini` by the importer.
 
 Run `DoomUE.exe` from the archive folder. It takes the same switches; for example
-`DoomUE.exe /Game/Doom/Maps/E1M1 -modern` plays an imported level, and `DoomUE.exe -warp=E1M2 -modern`
+`DoomUE.exe /Game/Doom/Maps/L_E1M1 -modern` plays an imported level, and `DoomUE.exe -warp=E1M2 -modern`
 a map straight from the WAD. Packaged games cannot build meshes at runtime, so the modern renderer's
 distance fields come from baked tiles:
 * an imported level uses its own tiles, which include its sector edits;
@@ -201,7 +201,7 @@ Every WAD map can become a normal Unreal level that you edit with the usual tool
 with **Play**:
 
 1. **Doom > Open / Import Map** in the level editor's menu bar lists the WAD's maps. Picking
-   one saves it as `/Game/Doom/Maps/<MAP>.umap` the first time (later it just opens). Headless:
+   one saves it as `/Game/Doom/Maps/L_<MAP>.umap` the first time (later it just opens). Headless:
    `-run=DoomContent -importmap=E1M1,E1M2` (or `all`; `-force` replaces existing levels).
 2. The level holds a **DoomMap** actor that draws the WAD geometry in the viewport (Doom's
    palette lighting, or the lit materials with *Preview Modern*), and one **Doom Thing** marker
@@ -334,7 +334,7 @@ over (PASS). `-savetest`, `-endtest` and the imported E1M1 level behave as befor
 
 Packaged build: `BuildCookRun` produces a 970 MB Win64 build in about 2 to 6 minutes (cook
 included).
-* `DoomUE.exe /Game/Doom/Maps/E1M1 -modern` draws E1M1 with its 18 saved tiles and cooked
+* `DoomUE.exe /Game/Doom/Maps/L_E1M1 -modern` draws E1M1 with its 18 saved tiles and cooked
   distance fields, with no "Preparing" messages.
 * `DoomUE.exe -warp=E1M1 -savetest` passes.
 
@@ -346,7 +346,7 @@ Editable levels: `-run=DoomContent -importmap=E1M1` saves E1M1 with 292 thing ma
 playing it spawns the same 180 things and 29 monsters, at the same positions, as the WAD's own
 lump. `-run=DoomContent -edittest=E1M1` opens the level as the editor does and builds the
 preview. It then raises the start sector's floor by 48 with a sector edit, turns an imp into a
-baron, and saves `/Game/Doom/Tests/E1M1_Edit` (PASS). Playing that level starts on the raised,
+baron, and saves `/Game/Doom/Tests/L_E1M1_Edit` (PASS). Playing that level starts on the raised,
 fully lit floor, with the baron's extra health in the monster total.
 
 Modern renderer: E1M1's static chunk bakes into 18 static-mesh tiles in about 0.2 s at load. Their
@@ -536,6 +536,11 @@ Data validation (`feature/data-validation`): Tools > Validate Data checks the Do
   error, for CI); `-validatetest` (and `DoomUE.Editor.DataValidation`) also breaks copies of each
   and expects every mistake to be reported.
 
+Asset naming (`feature/asset-naming`): imported levels are `L_<MAP>` now (`/Game/Doom/Maps/L_E1M1`),
+so all the content follows Epic's prefixes (L_, DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_).
+The Doom map's name stays `E1M1` on the map actor. A level imported under the old name is renamed
+when Doom > Maps opens it or an import finds it; `-run=DoomContent -renamelevels` renames them all.
+
 Encapsulation, the rest (`feature/encapsulation-things`): `ADoomThing`, `ADoomMonster`,
 `ADoomProjectile` and `FDoomMenu` keep their fields private too.
 * Readers use accessors: `GetDef`, `GetHealth`, `IsDead`, `GetTarget`, `GetSource`, `GetSprite` and
@@ -674,6 +679,5 @@ Not done yet (roughly in priority order):
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
-   * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
    * **UI framework**: the menus are drawn by hand in the HUD and the map editor's panels are UMG built in code; Epic's CommonUI would give them gamepad navigation, input routing and styling the same way.

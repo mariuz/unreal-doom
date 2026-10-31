@@ -430,6 +430,17 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		return 0;
 	}
+	// -renamelevels: levels imported as /Game/Doom/Maps/<MAP> become L_<MAP>
+	if (FParse::Param(*Params, TEXT("renamelevels")))
+	{
+		int32 Renamed = 0;
+		for (const FString& Name : DoomEditorData::MapNames())
+		{
+			Renamed += DoomContent::RenameOldLevel(Name);
+		}
+		UE_LOG(LogDoomContent, Display, TEXT("Rename levels: %d renamed"), Renamed);
+		return 0;
+	}
 	// -validate: Tools > Validate Data on the Doom assets; -validatetest: the checks on broken copies too
 	if (FParse::Param(*Params, TEXT("validatetest")))
 	{

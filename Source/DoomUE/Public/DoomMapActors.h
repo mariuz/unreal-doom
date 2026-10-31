@@ -1,7 +1,7 @@
 // Doom maps as editable Unreal levels.
 //
 // Doom > Import Map in the level editor (or -run=DoomContent -importmap=E1M1) saves a map as
-// /Game/Doom/Maps/<MAP>.umap holding:
+// /Game/Doom/Maps/L_<MAP>.umap holding:
 //
 //  * ADoomMapActor: names the WAD map and draws its geometry in the editor viewport (the same
 //    ADoomLevel builder the game uses, rebuilt whenever something below changes).

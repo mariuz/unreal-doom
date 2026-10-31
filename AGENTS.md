@@ -193,6 +193,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * asset naming: imported levels are `L_<MAP>` (`DoomContent::MapPackage`, `-renamelevels`);
   * data validation (`UDoomGameData::IsDataValid` / `Check`, `UDoomAssetValidator`, `-validate`,
     `-validatetest`);
   * drawing sectors in the level viewport (`UDoomDrawMode`, `ADoomSectorDraw`, `-drawtest`);

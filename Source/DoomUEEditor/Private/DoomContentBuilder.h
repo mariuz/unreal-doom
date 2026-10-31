@@ -41,11 +41,15 @@ namespace DoomContent
 	bool BakeMapTiles(ADoomMapActor* MapActor);
 	/** Writes a WAD map as a Lyra arena: OBJ tiles, collision ramps and a gameplay JSON (-exportlyra=MAP -out=DIR). */
 	bool ExportLyraLevel(const FString& MapName, const FString& OutDir);
+	/** An imported map's level: /Game/Doom/Maps/L_<MAP>. */
 	FString MapPackage(const FString& MapName);
-	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/<MAP>_Edit (-edittest=MAP). */
+	/** Renames a level imported under its old name (/Game/Doom/Maps/<MAP>) to MapPackage's; true if
+	 *  it renamed one (-renamelevels; importing and Doom > Maps do it too). */
+	bool RenameOldLevel(const FString& MapName);
+	/** Opens an imported level, edits a sector and a marker, saves /Game/Doom/Tests/L_<MAP>_Edit (-edittest=MAP). */
 	bool EditTest(const FString& MapName);
 	/** Draws rooms in an imported level through Doom > Draw Sectors' steps, undoes and redoes one, puts
-	 *  a sector edit on one and saves /Game/Doom/Tests/<MAP>_Draw (-drawtest=MAP). */
+	 *  a sector edit on one and saves /Game/Doom/Tests/L_<MAP>_Draw (-drawtest=MAP). */
 	bool DrawTest(const FString& MapName);
 	/** Tools > Validate Data on the game data, input and AI assets in /Game/Doom; logs what it finds,
 	 *  false on any error (-validate). */
