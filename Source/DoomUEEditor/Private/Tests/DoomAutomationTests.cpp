@@ -410,8 +410,8 @@ bool FDoomExitTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomEditMapTest, "DoomUE.Editor.EditImportedMap", DoomTest::Flags)
 bool FDoomEditMapTest::RunTest(const FString& Parameters)
 {
-	// opens /Game/Doom/Maps/E1M1 in the editor, raises the start sector with a sector edit, turns an
-	// imp into a baron and saves /Game/Doom/Tests/E1M1_Edit (it replaces the level open in the editor)
+	// opens /Game/Doom/Maps/L_E1M1 in the editor, raises the start sector with a sector edit, turns an
+	// imp into a baron and saves /Game/Doom/Tests/L_E1M1_Edit (it replaces the level open in the editor)
 	TestTrue(TEXT("the preview rebuilds, the edits apply and the level saves"), DoomContent::EditTest(TEXT("E1M1")));
 	return true;
 }
@@ -419,8 +419,8 @@ bool FDoomEditMapTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomDrawSectorTest, "DoomUE.Editor.DrawSector", DoomTest::Flags)
 bool FDoomDrawSectorTest::RunTest(const FString& Parameters)
 {
-	// Doom > Draw Sectors in /Game/Doom/Maps/E1M1: a room in the void and one in the start room, undo
-	// and redo, a sector edit on a drawn sector; saves /Game/Doom/Tests/E1M1_Draw
+	// Doom > Draw Sectors in /Game/Doom/Maps/L_E1M1: a room in the void and one in the start room, undo
+	// and redo, a sector edit on a drawn sector; saves /Game/Doom/Tests/L_E1M1_Draw
 	TestTrue(TEXT("the drawn rooms apply, undo and redo work, and a sector edit works on them"), DoomContent::DrawTest(TEXT("E1M1")));
 	return true;
 }

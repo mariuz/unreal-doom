@@ -10,7 +10,8 @@ editor (see the round trip below).
 
 * In the level editor, **Doom > Open / Import Map** lists the WAD's maps (Project Settings >
   Game > Doom sets the IWAD and PWADs). The first time you pick a map it is saved as
-  `/Game/Doom/Maps/<MAP>.umap`; after that the menu just opens it. Maps not yet imported are
+  `/Game/Doom/Maps/L_<MAP>.umap` (Epic's L_ prefix for levels; one imported earlier as `<MAP>` is
+  renamed, or run `-run=DoomContent -renamelevels`); after that the menu just opens it. Maps not yet imported are
   marked *(import)*.
 * Headless: `UnrealEditor-Cmd DoomUE.uproject -run=DoomContent -importmap=E1M1,E1M2` (or
   `-importmap=all`). Add `-force` to replace levels that already exist.
@@ -316,7 +317,7 @@ Exiting goes on to the next map from the WAD.
 
 * `-run=DoomContent -edittest=E1M1` opens the level as the editor does and builds the preview.
   It then raises the start sector's floor by 48 with a sector edit, turns an imp into a baron,
-  and saves `/Game/Doom/Tests/E1M1_Edit`. The log reads `Edittest PASS`.
-* `UnrealEditor DoomUE.uproject /Game/Doom/Tests/E1M1_Edit -game -autotest=20` plays it. The
+  and saves `/Game/Doom/Tests/L_E1M1_Edit`. The log reads `Edittest PASS`.
+* `UnrealEditor DoomUE.uproject /Game/Doom/Tests/L_E1M1_Edit -game -autotest=20` plays it. The
   log line `E1M1: 1 sector edits, 292 thing markers from the level` confirms the edits were
   used.

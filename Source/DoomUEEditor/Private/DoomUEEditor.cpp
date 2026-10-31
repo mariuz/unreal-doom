@@ -79,6 +79,7 @@ namespace
 	void OpenMap(const FString& MapName)
 	{
 		const FString Package = DoomContent::MapPackage(MapName);
+		DoomContent::RenameOldLevel(MapName); // imported before levels were L_
 		const bool bExisted = FPackageName::DoesPackageExist(Package);
 		if (!bExisted && !DoomContent::ImportMap(MapName, false))
 		{
@@ -101,7 +102,8 @@ namespace
 		FToolMenuSection& Section = Menu->AddSection(TEXT("DoomMaps"), LOCTEXT("Maps", "WAD maps (opens the level, importing it the first time)"));
 		for (const FString& Name : DoomEditorData::MapNames())
 		{
-			const bool bImported = FPackageName::DoesPackageExist(DoomContent::MapPackage(Name));
+			const bool bImported = FPackageName::DoesPackageExist(DoomContent::MapPackage(Name))
+				|| FPackageName::DoesPackageExist(TEXT("/Game/Doom/Maps/") + Name); // renamed on opening
 			Section.AddMenuEntry(FName(*Name), (bImported ? FText::FromString(Name) : FText::Format(LOCTEXT("ImportEntry", "{0}  (import)"), FText::FromString(Name))), FText::GetEmpty(), FSlateIcon(),
 				FUIAction(FExecuteAction::CreateLambda([Name]() { OpenMap(Name); })));
 		}
