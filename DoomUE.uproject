@@ -11,6 +11,7 @@
 		{ "Name": "DoomWadTools", "Enabled": true },
 		{ "Name": "ProceduralMeshComponent", "Enabled": true },
 		{ "Name": "EnhancedInput", "Enabled": true },
+		{ "Name": "DataValidation", "Enabled": true },
 		{ "Name": "ModelingToolsEditorMode", "Enabled": false }
 	]
 }

@@ -35,7 +35,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 13 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
+* **Tests:** 14 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
   of writing.
   * Run them before merging.
   * Run without `-NullRHI` when rendering changes: that also compares the screenshots.
@@ -143,6 +143,8 @@ Tools/run_tests.bat DoomUE -NullRHI
   * Compare names with `.Equals()`.
   * Pass `*Field` to `%s`.
   * The base tables come from `Content/Doom/Data/DA_DoomGameData`; DeHackEd patches apply on top.
+  * A new field gets its check in `UDoomGameData::CheckTables` (Tools > Validate Data); `-validatetest`
+    requires the built-in tables to have no errors or warnings, so the rules follow what the game accepts.
 * **Collision is cooked once per chunk** (`ADoomLevel::Commit`). The procedural mesh recooks the
   whole component on every section change. Don't create sections with collision one by one: that
   was 1.2 s of every load.
@@ -191,6 +193,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * data validation (`UDoomGameData::IsDataValid` / `Check`, `UDoomAssetValidator`, `-validate`,
+    `-validatetest`);
   * drawing sectors in the level viewport (`UDoomDrawMode`, `ADoomSectorDraw`, `-drawtest`);
   * the `DoomWadTools` plugin (WADs, maps, nodes, generator, PWADs; `FDoomGraphics::PictureCheck`);
   * translatable text: `LOCTEXT` for the port's own words (menus, HUD, editor, map checker);

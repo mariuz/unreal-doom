@@ -96,6 +96,13 @@ The editor module writes the asset from the built-in tables when it is missing, 
 `-run=DoomContent -gamedata -force`. Flags edit as checkboxes (`EDoomThingFlagBits`); frames are
 sprite frame letters as text.
 
+`UDoomGameData::Check` (`DoomGameData.cpp`) checks the tables the game would start from, and
+`CheckTables` any complete set (the built-in one in the tests). `IsDataValid` turns its errors and
+warnings into Tools > Validate Data results, and `ResetTables` logs them. The rules follow what the
+game code accepts: a melee-or-missile monster may lack melee frames (it only fires), a monster with
+speed 0 needs no run frames, and a weapon frame of 0 tics is skipped. The editor module's
+`UDoomAssetValidator` checks the input and AI assets, whose classes are the engine's.
+
 ### Loading a map
 
 `UDoomWorld` loads a map in steps (`BeginLoad`, then `StepLoad` until done):

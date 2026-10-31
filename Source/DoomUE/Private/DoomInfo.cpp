@@ -387,6 +387,17 @@ void DoomInfo::ResetTables()
 		}
 		GRules = Data->Rules;
 		GTablesSource = Data->GetPathName();
+		// a broken table shows up here in packaged games too (the editor's Validate Data says the same)
+		FDoomDataProblems Problems;
+		Data->Check(Problems);
+		for (const FText& E : Problems.Errors)
+		{
+			UE_LOG(LogDoomGame, Error, TEXT("Game data %s: %s"), *GTablesSource, *E.ToString());
+		}
+		for (const FText& W : Problems.Warnings)
+		{
+			UE_LOG(LogDoomGame, Warning, TEXT("Game data %s: %s"), *GTablesSource, *W.ToString());
+		}
 	}
 	ThingIndex().Reset();
 	for (int32 i = 0; i < ThingTable().Num(); ++i)
