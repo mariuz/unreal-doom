@@ -26,8 +26,9 @@ The port follows that split:
 | `ADoomGameState` | `AGameStateBase` | `FDoomLevelFlow` (replicated): phase (title, menu, playing, intermission, finale), current map, level tic, kills / items / secrets and their totals, intermission tic, pending map, secret-exit flag | `gamestate`, `leveltime`, `totalkills`..., `wminfo` |
 | `ADoomPlayerState` | `APlayerState` | `FDoomInventory` (health, armor, ammo, backpack, weapons, keys, ready weapon) and the player's own share of the level: `LevelKills`, `LevelItems`, `LevelSecrets`, `Frags` (replicated). `CopyProperties` carries the inventory through travel | `player_t` (inventory, `killcount`, `itemcount`, `secretcount`, `frags`) |
 | `ADoomPlayer` | `ACharacter` | The marine's body: movement, weapon state machine, powerups, damage, pickups. `Inv()` returns the player state's inventory | `mobj_t` of the player, `P_PlayerThink` |
-| `ADoomPlayerController` | `APlayerController` | Enhanced Input, menu and screen keys | `G_Responder` |
-| `ADoomHUD` | `AHUD` | Status bar, weapon, automap, menu, intermission, title, finale | `ST_`, `HU_`, `AM_`, `WI_`, `F_` |
+| `ADoomPlayerController` | `APlayerController` | Enhanced Input, menu and screen keys; the CommonUI layout and the menu screen on its stack | `G_Responder` |
+| `ADoomHUD` | `AHUD` | Status bar, weapon, automap, intermission, title, finale (and the menu when the CommonUI screen is down) | `ST_`, `HU_`, `AM_`, `WI_`, `F_` |
+| `UDoomMenuScreen` | `UCommonActivatableWidget` | The menu while it is open: Doom's graphics (`FDoomScreenPainter`), a CommonUI button per row, menu input. `UDoomUILayout` under it asks for game input | `M_Drawer`, `M_Responder` |
 | `UDoomWorld` | `UTickableWorldSubsystem` | The simulation of one tic (`RunTic`, server and standalone only; network clients run `ClientTick` for animation and replicated geometry): sectors, movers, lights, specials, monsters, things, missiles, the brain. Also the WAD, graphics, sound, map, save games and the menu model. Its code is split by job: `DoomWorld.cpp` (setup, spawning, the tic), `DoomWorldSectors.cpp` (movers, lights, damage), `DoomWorldSpecials.cpp` (line activation, teleports), `DoomWorldFlow.cpp` (level flow, players, network), `DoomWorldPresentation.cpp` (sound, music, palette), `DoomSave.cpp`, `DoomFinale.cpp` | `P_Ticker` and the `p_*.c` files |
 
 ### The clock

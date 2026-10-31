@@ -28,6 +28,9 @@
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
 #include "TimerManager.h"
+#include "DoomMenuWidgets.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 
 /** Turns one game option on or off (the -fast and -altdeath steps). */
 static void PlayTestSetOption(UDoomWorld* W, bool FDoomGameOptions::*Option, bool bOn)
@@ -667,6 +670,77 @@ void ADoomGameMode::StartPlayTest()
 			return bClosedPrompt ? EStep::Pass : EStep::Fail;
 		} });
 
+	// --- 11b. the menu through CommonUI: the screen goes up with the menu, its row buttons follow the
+	// page, and hovering, moving, clicking, going back and closing act on FDoomMenu ------------------
+	{
+		struct FUiCheck { int32 Calls = 0, MainButtons = 0, OptionsButtons = 0, Moved = -1, Hovered = -1; bool bShown = false, bOptions = false, bBack = false, bPrompt = false; };
+		TSharedRef<FUiCheck> X = MakeShared<FUiCheck>();
+		Run->Steps.Add({ TEXT("commonui"),
+			[W, Player](FString& Msg)
+			{
+				const ADoomPlayerController* PC = Cast<ADoomPlayerController>(Player()->GetController());
+				if (!PC || !GEngine || !GEngine->GameViewport) { Msg = TEXT("no local viewport"); return false; }
+				W->Menu.Open(*W, EMenuPage::Main);
+				return true;
+			},
+			[W, X, Player, Shot](int32, FString& Msg)
+			{
+				// its own count: the runner's clock switches from Doom's tics to real time in the menu
+				const int32 Tics = ++X->Calls;
+				ADoomPlayerController* PC = Cast<ADoomPlayerController>(Player()->GetController());
+				UDoomMenuScreen* S = PC ? PC->GetMenuScreen() : nullptr;
+				auto ButtonFor = [S](const TCHAR* Patch, UDoomWorld* World) -> int32
+				{
+					const TArray<FMenuRow> Rows = World->Menu.Rows(*World);
+					for (int32 i = 0; i < Rows.Num(); ++i) if (Rows[i].Patch == Patch) return i;
+					return INDEX_NONE;
+				};
+				if (Tics == 3)
+				{
+					X->bShown = S && ADoomPlayerController::IsMenuScreenShown(PC);
+					X->MainButtons = S ? S->GetRowButtons().Num() : 0;
+					Shot(TEXT("menu"));
+				}
+				if (Tics == 5 && S)
+				{
+					// the handlers ignore locked input, as the game does: unlocked for these calls only
+					W->SetInputLocked(false);
+					W->Menu.SetItem(0);
+					S->Navigate(0, EUINavigation::Down); // the arrow key / d-pad
+					X->Moved = W->Menu.GetItem();
+					const int32 Options = ButtonFor(TEXT("M_OPTION"), W);
+					S->RowHovered(Options); // the mouse over the row
+					X->Hovered = W->Menu.GetItem() == Options ? Options : -1;
+					S->RowClicked(Options); // and a click
+					X->bOptions = W->Menu.GetPage() == EMenuPage::Options;
+					W->SetInputLocked(true);
+				}
+				if (Tics == 8 && S)
+				{
+					X->OptionsButtons = S->GetRowButtons().Num(); // rebuilt for the new page
+					W->SetInputLocked(false);
+					S->HandleBack(); // Backspace / the gamepad's B
+					X->bBack = W->Menu.GetPage() == EMenuPage::Main;
+					W->Menu.Open(*W, EMenuPage::EndGame); // a yes/no prompt: no row buttons
+					W->SetInputLocked(true);
+				}
+				if (Tics == 11 && S)
+				{
+					X->bPrompt = S->GetRowButtons().Num() == 0;
+					W->SetInputLocked(false);
+					S->HandleClose(); // Esc
+					W->SetInputLocked(true);
+				}
+				if (Tics < 14) return EStep::Running;
+				const bool bDown = PC && !PC->GetMenuScreen() && !ADoomPlayerController::IsMenuScreenShown(PC) && W->GetState() != EDoomGameState::Menu;
+				Msg = FString::Printf(TEXT("screen up %d with %d row buttons on the main menu; down moved to row %d, hover to row %d, a click opened Options %d (%d buttons), back %d, prompt without buttons %d, Esc closed it and took the screen down %d"),
+					X->bShown, X->MainButtons, X->Moved, X->Hovered, X->bOptions, X->OptionsButtons, X->bBack, X->bPrompt, bDown);
+				W->Menu.Close(*W);
+				return X->bShown && X->MainButtons >= 4 && X->Moved == 1 && X->Hovered >= 0 && X->bOptions && X->OptionsButtons >= 6 && X->bBack && X->bPrompt && bDown
+					? EStep::Pass : EStep::Fail;
+			} });
+	}
+
 	// --- 12. switching the renderer in the middle of a level keeps the game where it was ----------
 	{
 		struct FSwap { FVector2f Pos; int32 Kills = 0, Dead = 0, Tic = 0; bool bModern = false; };
@@ -1120,7 +1194,7 @@ void ADoomGameMode::StartPlayTest()
 	{
 		ADoomPlayer* P = W->GetPlayer();
 		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt") || R->Steps[R->Index].Name == TEXT("rebind")
-			|| R->Steps[R->Index].Name == TEXT("renderer") || R->Steps[R->Index].Name == TEXT("intermission"));
+			|| R->Steps[R->Index].Name == TEXT("renderer") || R->Steps[R->Index].Name == TEXT("intermission") || R->Steps[R->Index].Name == TEXT("commonui"));
 		if (!P || (W->GetState() != EDoomGameState::Playing && !bOffPlay))
 		{
 			return;

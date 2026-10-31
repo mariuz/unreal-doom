@@ -125,6 +125,7 @@ first 11 steps failed on E1M1.
 | `smartai` | SMART monsters (Unreal's AI framework, [AI.md](AI.md)): every live monster gets the AI controller with its Behavior Tree running, perception senses the player, and 70% of the monsters that can walk to the player close in by 64+ units or get it in sight in 10 s (`-smartbaseline` measures CLASSIC monsters instead) |
 | `automap` | With the map closed, the walls in view become known, beyond the player's own sector; then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |
 | `quitprompt` | A left click on the quit prompt cancels it |
+| `commonui` | The CommonUI menu screen goes up with the menu (`playtest_menu.png`) with a row button per selectable row; moving down, hovering a row, clicking it (Options opens and its buttons replace the main menu's), going back, a prompt (no row buttons) and Esc (the screen comes down) all act on `FDoomMenu` |
 | `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses; the Options page scrolls to its last row (`playtest_options.png`) |
 | `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
 | `lostsoul` | A killed lost soul plays its death frames, then vanishes |

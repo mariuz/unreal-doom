@@ -1,7 +1,8 @@
 // Everything 2D, drawn with UCanvas from the WAD's own graphics in Doom's 320x200
-// coordinate frame (aspect-corrected, centred): title screen and menu, weapon
+// coordinate frame (aspect-corrected, centred): title screen, weapon
 // sprites, status bar (STBAR, digits, face, keys, arms, ammo table), messages in
-// the STCFN font, palette-style screen tints, automap and intermission.
+// the STCFN font, palette-style screen tints, automap and intermission. The menu is the CommonUI
+// menu screen's (DoomMenuWidgets.h); the HUD draws it only when that screen is down.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -11,6 +12,7 @@
 class UDoomWorld;
 class ADoomPlayer;
 struct FDoomPicture;
+class FDoomScreenPainter;
 
 UCLASS()
 class DOOMUE_API ADoomHUD : public AHUD
@@ -68,8 +70,6 @@ private:
 	void DrawFace(ADoomPlayer* P);
 	void DrawTint(ADoomPlayer* P);
 	void DrawAutomap(ADoomPlayer* P);
-	void DrawMenu();
-	void DrawThermo(float X, float Y, int32 Width, int32 Value);
 	void DrawIntermission();
 	/** While a map loads in the background (UDoomWorld::LoadMapAsync). */
 	void DrawLoading();
@@ -84,7 +84,8 @@ private:
 	float OX = 0, OY = 0, SX = 1, SY = 1;
 	int32 FaceTic = 0;
 	/** PLAYPAL palette the 2D graphics are drawn through (exact colours), 0 = normal. */
-	int32 ScreenPal = 0;
-	class UTexture2D* PatchTexture(const FDoomPicture* Pic);
+	/** Doom's frame on the canvas (patches, text, the menu): DoomScreenPainter.h, shared with the
+	 *  CommonUI menu screen. It holds the palette the 2D graphics are drawn through. */
+	TSharedPtr<FDoomScreenPainter> Painter;
 	int32 FaceIndex = 0;
 };

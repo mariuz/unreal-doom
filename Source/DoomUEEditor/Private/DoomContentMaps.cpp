@@ -193,7 +193,7 @@ bool DoomContent::RenameOldLevel(const FString& InMapName)
 	New->MarkAsFullyLoaded();
 	const FString NewShort = FPackageName::GetShortName(NewName);
 	TArray<UObject*> Top;
-	GetObjectsWithOuter(Old, Top, false);
+	GetObjectsWithOuter(Old, Top, EGetObjectsFlags::None);
 	for (UObject* O : Top)
 	{
 		// the world takes the package's name, objects named after it (E1M1_BuiltData) keep the pattern
