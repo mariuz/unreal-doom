@@ -6,7 +6,7 @@ public class DoomUEEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PrivateDependencyModuleNames.AddRange(new string[] {
-			"Core", "CoreUObject", "Engine", "UnrealEd", "MaterialEditor", "AssetRegistry", "DoomUE", "DoomWadTools", "Niagara", "NiagaraCore", "ToolMenus", "Slate", "SlateCore", "Json", "FunctionalTesting", "MessageLog", "EditorFramework", "InteractiveToolsFramework", "InputCore"
+			"Core", "CoreUObject", "Engine", "UnrealEd", "MaterialEditor", "AssetRegistry", "DoomUE", "DoomWadTools", "Niagara", "NiagaraCore", "ToolMenus", "Slate", "SlateCore", "Json", "FunctionalTesting", "MessageLog", "EditorFramework", "InteractiveToolsFramework", "InputCore", "DataValidation", "EnhancedInput", "AIModule"
 		});
 	}
 }

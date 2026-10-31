@@ -425,6 +425,15 @@ bool FDoomDrawSectorTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomDataValidationTest, "DoomUE.Editor.DataValidation", DoomTest::Flags)
+bool FDoomDataValidationTest::RunTest(const FString& Parameters)
+{
+	// Tools > Validate Data: the built-in tables and the saved game data, input and AI assets pass;
+	// broken copies of each fail with the expected errors
+	TestTrue(TEXT("the Doom assets validate, and broken copies are caught"), DoomContent::ValidateTest());
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomWadTilesTest, "DoomUE.Editor.WadTiles", DoomTest::Flags)
 bool FDoomWadTilesTest::RunTest(const FString& Parameters)
 {

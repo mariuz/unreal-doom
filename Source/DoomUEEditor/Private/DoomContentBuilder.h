@@ -47,6 +47,12 @@ namespace DoomContent
 	/** Draws rooms in an imported level through Doom > Draw Sectors' steps, undoes and redoes one, puts
 	 *  a sector edit on one and saves /Game/Doom/Tests/<MAP>_Draw (-drawtest=MAP). */
 	bool DrawTest(const FString& MapName);
+	/** Tools > Validate Data on the game data, input and AI assets in /Game/Doom; logs what it finds,
+	 *  false on any error (-validate). */
+	bool Validate();
+	/** The built-in tables and the saved assets pass; broken copies of each fail with the expected
+	 *  errors (-validatetest). */
+	bool ValidateTest();
 }
 
 UCLASS()

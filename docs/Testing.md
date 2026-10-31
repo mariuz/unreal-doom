@@ -34,6 +34,7 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Game.SaveLoad` | `-savetest` | On E1M1 with a door moving, corpses, awake monsters and a rocket and a homing tracer in flight: save, scramble the world, load; the state fingerprint matches the saved one |
 | `DoomUE.Game.ExitToNextMap` | `-exittest` | Two kills credited to the game state and the player state, the intermission, then E1M2 loaded in the background, with the counters reset and the shells carried over |
 | `DoomUE.Editor.DrawSector` | `-run=DoomContent -drawtest=E1M1` | Doom > Draw Sectors' steps in the imported E1M1: a room in the void (closed by clicking its first corner) and one in the start room (closed with Enter), with four two-sided walls; undo and redo; a sector edit raises the drawn room; saves `/Game/Doom/Tests/E1M1_Draw` |
+| `DoomUE.Editor.DataValidation` | `-run=DoomContent -validatetest` | The built-in tables have no problems; Tools > Validate Data passes the game data, input and AI assets; a copy of the game data with seven mistakes (an unknown missile and drop, a bad frame letter, a duplicate thing number, a missile with no speed, weapon slot 9, no starting health) reports exactly those seven, and `IsDataValid` says Invalid; broken copies of the gameplay mapping context (no action, no key), the blackboard (a key missing), the tree (no root) and a query (no options) report theirs |
 | `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, a line edit turns the first door line into an impassable wall with a new upper texture (without touching lines that shared its side), the connections overlay draws (with ghosts of door and lift travel), a second line edit points a special at tag 999 and the map checker must name that line (and its edit actor), and the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
 | `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
 | `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots` |
@@ -92,6 +93,8 @@ the player firing the chaingun.
 `-perfbaseline` turns the performance work off for comparison.
 `-run=DoomContent -navtest=all` builds the monster paths for each map and counts what can walk to the start.
 `-warp=E1M1 -editortest` runs the map editor's scripted test ([EditingMaps.md](EditingMaps.md#the-map-editor-in-the-game-and-in-play-in-editor)).
+`-run=DoomContent -validate` runs Tools > Validate Data on the game data, input and AI assets and
+exits with 1 on any error.
 `-run=DoomContent -wadtest=all` writes every map as a PWAD and reads it back; `-file=Saved/Maps/RND00003.wad
 -warp=E1M1 -playtest` plays an exported generated map (`-exportmap=RND00003`) as a PWAD.
 

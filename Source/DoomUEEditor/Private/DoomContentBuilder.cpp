@@ -430,6 +430,15 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		return 0;
 	}
+	// -validate: Tools > Validate Data on the Doom assets; -validatetest: the checks on broken copies too
+	if (FParse::Param(*Params, TEXT("validatetest")))
+	{
+		return DoomContent::ValidateTest() ? 0 : 1;
+	}
+	if (FParse::Param(*Params, TEXT("validate")))
+	{
+		return DoomContent::Validate() ? 0 : 1;
+	}
 	FString EditMap;
 	FString DrawMap;
 	if (FParse::Value(*Params, TEXT("-drawtest="), DrawMap))

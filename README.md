@@ -235,6 +235,12 @@ The game reads the asset at start (Project Settings > Game > Doom > Game Data pi
 then applies the WAD's and `-deh` DeHackEd patches on top. The asset itself never changes.
 `-run=DoomContent -gamedata -force` rewrites it from the built-in tables, discarding edits.
 
+**Tools > Validate Data** (or right-click > Asset Actions > Validate) checks the tables before a
+game runs: unique thing numbers and projectile names, missiles and drops that exist, four-character
+sprites, frame letters A to `]`, sizes, tics and rules in range. The game logs the same problems
+(`LogDoomGame`) when it loads the asset. The input mapping contexts and the AI's blackboard, behavior
+tree and EQS queries are checked too.
+
 ## Source layout
 
 ```
@@ -517,6 +523,19 @@ It uses the map editor's rules (`DoomMapEdit::DrawSector`): a room in the void, 
 sector, or a wall that becomes an opening. Undo and redo work, and the preview now also follows
 deleted edit actors. `-drawtest=E1M1` (and `DoomUE.Editor.DrawSector`) runs the mode's steps.
 
+Data validation (`feature/data-validation`): Tools > Validate Data checks the Doom assets.
+* `UDoomGameData::IsDataValid` reports what `UDoomGameData::Check` finds in the tables the game
+  would start from (built-in tables fill the asset's empty arrays): duplicate thing numbers,
+  unknown missiles and drops, bad sprites and frame letters, sizes, tics, slots and rules out of
+  range. The game logs the same list when it loads the asset, so packaged builds show it too.
+* `UDoomAssetValidator` (the editor module) checks the engine-typed assets: every mapping in
+  `/Game/Doom/Input` has an action and a key, and every Controls row is mapped; the blackboard has
+  the keys the AI reads, with their types; the behavior tree has that blackboard and a root; each
+  EQS query has a generator.
+* `-run=DoomContent -validate` runs it on the game data, input and AI folders (exit code 1 on an
+  error, for CI); `-validatetest` (and `DoomUE.Editor.DataValidation`) also breaks copies of each
+  and expects every mistake to be reported.
+
 Encapsulation, the rest (`feature/encapsulation-things`): `ADoomThing`, `ADoomMonster`,
 `ADoomProjectile` and `FDoomMenu` keep their fields private too.
 * Readers use accessors: `GetDef`, `GetHealth`, `IsDead`, `GetTarget`, `GetSource`, `GetSprite` and
@@ -655,7 +674,6 @@ Not done yet (roughly in priority order):
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
-   * **Data validation**: `IsDataValid` on `UDoomGameData` (and the AI and input assets), so Tools > Validate Data catches broken tables before a game runs.
    * **Asset naming**: the content follows Epic's prefixes (DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_), except the level `E1M1.umap` (`L_E1M1`).
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
    * **UI framework**: the menus are drawn by hand in the HUD and the map editor's panels are UMG built in code; Epic's CommonUI would give them gamepad navigation, input routing and styling the same way.
