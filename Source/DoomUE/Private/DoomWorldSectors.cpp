@@ -116,11 +116,8 @@ bool UDoomWorld::ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool
 	return bBlocked;
 }
 
-bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
+EPlaneMove UDoomWorld::MovePlane(FSectorMover& M)
 {
-	// Returns true when the destination was reached; bBlocked when a non-crushing plane could not move
-	// because something is in the way (vanilla P_MovePlane's "crushed").
-	bBlocked = false;
 	FDoomSector& S = Map->Sectors[M.Sector];
 	float& H = M.bCeiling ? S.Ceiling : S.Floor;
 	const float Old = H;
@@ -141,8 +138,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 		{
 			if (!M.bCrush)
 			{
-				bBlocked = true;
-				return false; // caller decides (doors reverse)
+				return EPlaneMove::Blocked; // the caller decides (doors reverse)
 			}
 			if (M.Speed <= 1.f && M.Type == FSectorMover::EType::Crusher)
 			{
@@ -198,7 +194,7 @@ bool UDoomWorld::MovePlane(FSectorMover& M, bool& bBlocked)
 		const FVector Pos = Doom::ToUE(S.Center, S.Floor + 32);
 		PlaySound(TEXT("STNMOV"), &Pos, 0.6f);
 	}
-	return bArrived;
+	return bArrived ? EPlaneMove::Arrived : EPlaneMove::Moving;
 }
 
 void UDoomWorld::TicMovers()
@@ -248,8 +244,9 @@ void UDoomWorld::TicMovers()
 			continue;
 		}
 
-		bool bBlocked = false;
-		const bool bArrived = MovePlane(M, bBlocked);
+		const EPlaneMove Move = MovePlane(M);
+		const bool bArrived = Move == EPlaneMove::Arrived;
+		const bool bBlocked = Move == EPlaneMove::Blocked;
 
 		switch (M.Type)
 		{

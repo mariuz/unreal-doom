@@ -553,6 +553,9 @@ The menu through CommonUI (`feature/commonui`): Epic's CommonUI plugin runs the 
   draws the menu when the screen is down (the in-game map editor, which keeps its own UI input).
 * The `commonui` play-test step drives the screen through the same calls.
 
+`MovePlane` result (`feature/moveplane-result`): one tic of a moving floor or ceiling returns an
+`EPlaneMove` (`Moving`, `Arrived` or `Blocked`) instead of a bool and an out parameter.
+
 Asset naming (`feature/asset-naming`): imported levels are `L_<MAP>` now (`/Game/Doom/Maps/L_E1M1`),
 so all the content follows Epic's prefixes (L_, DA_, IA_, IMC_, BT_, BB_, EQ_, NS_, M_, MPC_, SM_).
 The Doom map's name stays `E1M1` on the map actor. A level imported under the old name is renamed
@@ -688,7 +691,6 @@ Not done yet (roughly in priority order):
 4. Unreal practices worth adopting next:
    * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).
    * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
-   * **`MovePlane` returning `{Moving, Arrived, Blocked}`** instead of a bool and an out parameter (`DoomWorldSectors.cpp`).
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):

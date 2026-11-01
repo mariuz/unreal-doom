@@ -196,6 +196,7 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * `UDoomWorld::MovePlane` returns `EPlaneMove` (`Moving`, `Arrived`, `Blocked`);
   * the menu through CommonUI (`UDoomUILayout`, `UDoomMenuScreen`, `FDoomScreenPainter`, `commonui` step);
   * asset naming: imported levels are `L_<MAP>` (`DoomContent::MapPackage`, `-renamelevels`);
   * data validation (`UDoomGameData::IsDataValid` / `Check`, `UDoomAssetValidator`, `-validate`,

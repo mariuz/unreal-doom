@@ -31,6 +31,17 @@ class ADoomPlayerState;
 
 enum class EActivation : uint8 { Use, Cross, Shoot };
 
+/** What one tic of a moving floor or ceiling did (UDoomWorld::MovePlane). */
+enum class EPlaneMove : uint8
+{
+	/** Moved, not there yet. */
+	Moving,
+	/** Reached its destination. */
+	Arrived,
+	/** A non-crushing plane stopped by something in the way (vanilla P_MovePlane's "crushed"). */
+	Blocked,
+};
+
 struct FSectorMover
 {
 	enum class EType : uint8 { Door, Plat, Floor, Ceiling, Crusher };
@@ -407,7 +418,7 @@ private:
 	void TicLights();
 	void TicSectorDamage();
 	void TicSectorDamage(ADoomPlayer* P, int32 Sector);
-	bool MovePlane(FSectorMover& M, bool& bBlocked);
+	EPlaneMove MovePlane(FSectorMover& M);
 	bool ActivateSpecial(int32 Line, int32 Side, AActor* Activator, EActivation How, bool bForce = false);
 	bool CheckLock(AActor* Activator, int32 Lock);
 	void FlipSwitch(int32 Line, int32 Side, bool bRepeat);
