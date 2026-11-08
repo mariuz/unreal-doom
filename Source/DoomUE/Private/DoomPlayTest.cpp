@@ -67,10 +67,22 @@ namespace
 	};
 }
 
-void ADoomGameMode::StartPlayTest()
+const TArray<FString>& ADoomGameMode::PlayTestStepNames()
+{
+	static const TArray<FString> Names = { TEXT("door"), TEXT("lift"), TEXT("teleport"), TEXT("splash"), TEXT("walk"),
+		TEXT("rate_Pistol"), TEXT("rate_Chaingun"), TEXT("rate_Plasma"), TEXT("rate_Shotgun"), TEXT("rate_Rocket"),
+		TEXT("flyer"), TEXT("target"), TEXT("sleepers"), TEXT("chase"), TEXT("smartai"), TEXT("automap"), TEXT("quitprompt"),
+		TEXT("commonui"), TEXT("renderer"), TEXT("ammoswitch"), TEXT("lostsoul"), TEXT("liftcorpse"), TEXT("corpses"),
+		TEXT("things"), TEXT("rebind"), TEXT("colours"), TEXT("fast"), TEXT("altdeath"), TEXT("intermission") };
+	return Names;
+}
+
+void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 {
 	UDoomWorld* W = DoomWorld();
 	TSharedRef<FPlayRun> Run = MakeShared<FPlayRun>();
+	PlayTestResults.Reset();
+	bPlayTestDone = false;
 	W->SetInputLocked(true); // stray keys on the test window must not play
 
 	auto Player = [W]() { return W->GetPlayer(); };
@@ -411,6 +423,9 @@ void ADoomGameMode::StartPlayTest()
 				T->M = W->SpawnMonster(3003, Feet, Doom::YawToAngle(Yaw) + 180.f); // a baron: 1000 health
 				if (!T->M.IsValid()) { Msg = TEXT("could not spawn a baron"); return false; }
 				T->Health0 = T->M->Health;
+				// its own plasma gun and cells: run alone (DoomUE.PlayTest.target), no earlier step gave them
+				P->Inv().Weapons[(int32)EDoomWeapon::Plasma] = true;
+				P->Inv().Ammo[(int32)EDoomAmmo::Cells] = 300;
 				P->SetPendingWeapon(EDoomWeapon::Plasma);
 				return true;
 			},
@@ -1188,9 +1203,18 @@ void ADoomGameMode::StartPlayTest()
 			return Par > 0 ? EStep::Pass : EStep::Fail;
 		} });
 
+	for (const FPlayStep& S : Run->Steps)
+	{
+		checkf(PlayTestStepNames().Contains(S.Name), TEXT("Play-test step %s is missing from PlayTestStepNames"), *S.Name);
+	}
+	if (!OnlyStep.IsEmpty())
+	{
+		Run->Steps.RemoveAll([&OnlyStep](const FPlayStep& S) { return S.Name != OnlyStep; });
+	}
+
 	// run the steps one after the other, one poll per Doom tic
 	TSharedRef<FPlayRun> R = Run;
-	GetWorldTimerManager().SetTimer(Run->Timer, [this, W, R, Home, HomeView, GoHome]()
+	GetWorldTimerManager().SetTimer(Run->Timer, [this, W, R, Home, HomeView, GoHome, bQuitWhenDone]()
 	{
 		ADoomPlayer* P = W->GetPlayer();
 		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt") || R->Steps[R->Index].Name == TEXT("rebind")
@@ -1227,6 +1251,7 @@ void ADoomGameMode::StartPlayTest()
 				if (!S.Start(Msg))
 				{
 					UE_LOG(LogDoomTest, Display, TEXT("Playtest %s SKIP: %s"), *S.Name, *Msg);
+					PlayTestResults.Add({ S.Name, TEXT("SKIP"), Msg });
 					++R->Skipped;
 					++R->Index;
 					R->bStarted = false;
@@ -1240,13 +1265,22 @@ void ADoomGameMode::StartPlayTest()
 				return;
 			}
 			UE_LOG(LogDoomTest, Display, TEXT("Playtest %s %s: %s"), *S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
+			PlayTestResults.Add({ S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), Msg });
 			(Result == EStep::Pass ? R->Passed : R->Failed)++;
 			++R->Index;
 			R->bStarted = false;
 			GoHome();
 		}
 		UE_LOG(LogDoomTest, Display, TEXT("Playtest: %d passed, %d failed, %d skipped"), R->Passed, R->Failed, R->Skipped);
-		FPlatformMisc::RequestExit(false, TEXT("playtest"));
+		if (bQuitWhenDone)
+		{
+			FPlatformMisc::RequestExit(false, TEXT("playtest"));
+		}
+		else
+		{
+			W->SetInputLocked(false);
+			bPlayTestDone = true;
+		}
 		GetWorldTimerManager().ClearTimer(R->Timer); // last: this frees the lambda's captures
 	}, 0.005f, true, 1.f);
 }

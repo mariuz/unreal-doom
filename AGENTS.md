@@ -35,16 +35,21 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 14 automation tests (see [docs/Testing.md](docs/Testing.md)), all passing at the time
-  of writing.
+* **Tests:** 47 automation tests (see [docs/Testing.md](docs/Testing.md)): 14 for maps, patches,
+  the game, the editor and the screenshots, 29 `DoomUE.PlayTest.<step>` and 4 `DoomUE.Input` key-press
+  tests, all passing at the time of writing.
   * Run them before merging.
   * Run without `-NullRHI` when rendering changes: that also compares the screenshots.
   * The `-savetest`, `-exittest`, `-patchtest` and similar switches still work in `-game` runs.
   * `-playtest` (with `-warp`) is the scripted play-through of the interactive features: run it on
     E1M1 (and Freedoom 2's MAP01) after gameplay changes; every step should PASS or SKIP. Its steps
     are in `DoomPlayTest.cpp`, listed in [docs/Testing.md](docs/Testing.md).
-    * It can't press keys through Enhanced Input (unfocused window; injected actions don't arrive
-      either): drive the game through `UDoomWorld` / the HUD instead.
+    * Each step is also `DoomUE.PlayTest.<step>` in PIE, run on its own: a new step must set up
+      everything it needs (weapons, ammo, position), not rely on the steps before it, and its name
+      goes into `ADoomGameMode::PlayTestStepNames` (a `checkf` says so).
+    * It can't press keys through Enhanced Input (unfocused window): drive the game through
+      `UDoomWorld` / the HUD there, and test real keys in `DoomInputTests.cpp` (Slate key events in
+      PIE, `FPressKey`: wait for the screen to settle, press, wait for the effect).
     * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
   * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
   * `E1M1Modern` compares Lumen lighting: on a GTX 950 with UE 5.8.2 it fails (brighter, 13.8%)
@@ -108,7 +113,9 @@ Tools/run_tests.bat DoomUE -NullRHI
   the assets (the game prefers them over its code-built set). New rebindable controls need a name in
   `DoomInput::Mappables`. `FEnhancedActionKeyMapping`'s mappable settings are protected and set
   through reflection (`MakeMappable`). The play-test can't press keys, but `Rebind` / `ResetBindings`
-  plus `QueryKeysMappedToAction` check the same path the menu uses.
+  plus `QueryKeysMappedToAction` check the same path the menu uses; the `DoomUE.Input` tests press
+  real keys. `ADoomPlayerController::InputKey` keeps every key it gets, or Slate takes Tab and the
+  arrows for focus moves and the lost focus flushes them before Enhanced Input reads them.
 * **Line edits apply before `SpecialLines` is used**: `ADoomMapActor::ApplyEdits` rebuilds it after
   line edits; a line edit that changes textures copies a side the WAD shares between lines first.
 * **`Shot showui` in Play In Editor captures the whole editor window**: don't use it (privacy);
@@ -128,7 +135,8 @@ Tools/run_tests.bat DoomUE -NullRHI
   Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
 * **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
   play-test drives `FDoomMenu` or the screen's handlers (they ignore locked input, so unlock around
-  them). Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
+  them). Esc is handled by the screen itself (it closes the whole menu; CommonUI would take it as
+  its back key), and hovering a row chooses it only after the mouse has moved. Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
   `DoomMenu.h`): a new row goes into the enum in the order `FDoomMenu::Rows` adds it, or the page's
   `checkf` fires. The Options page scrolls past 10 rows.

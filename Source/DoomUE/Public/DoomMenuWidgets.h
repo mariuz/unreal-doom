@@ -80,6 +80,8 @@ public:
 	UWidget* Navigate(int32 Row, EUINavigation Direction);
 	bool HandleBack();
 	void HandleClose();
+	/** The mouse has moved since the menu opened: only then does hovering a row choose it. */
+	bool HasMouseMoved() const { return bMouseMoved; }
 
 	// UCommonActivatableWidget
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
@@ -96,6 +98,7 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
 	UDoomWorld* DoomWorld() const;
@@ -115,6 +118,7 @@ private:
 	uint32 BuiltFor = 0;
 	/** The row the focus was last moved to. */
 	int32 FocusedItem = INDEX_NONE;
+	bool bMouseMoved = false;
 	/** Slate brushes for the WAD's pictures, made as they are first drawn. */
 	mutable TMap<TWeakObjectPtr<class UTexture2D>, FSlateBrush> Brushes;
 };

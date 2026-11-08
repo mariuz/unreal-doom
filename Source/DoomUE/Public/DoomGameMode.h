@@ -4,6 +4,15 @@
 #include "GameFramework/GameModeBase.h"
 #include "DoomGameMode.generated.h"
 
+/** One step of the scripted play-test (DoomPlayTest.cpp). */
+struct FDoomPlayTestResult
+{
+	FString Step;
+	/** PASS, FAIL or SKIP */
+	FString Result;
+	FString Details;
+};
+
 /**
  * The rules of the game (server side in a networked game): boots the WADs, then shows the title
  * screen or warps to -warp= / StartMap; runs Doom's fixed 35 Hz clock (UDoomWorld simulates each
@@ -57,10 +66,20 @@ public:
 	UFUNCTION(Exec)
 	void DoomGiveAll();
 
+	// --- the scripted play-test (DoomPlayTest.cpp) --------------------------------------------
+	/** Plays the interactive features through on the loaded map: every step, or only OnlyStep.
+	 *  -playtest quits when it is done; the DoomUE.PlayTest automation tests keep playing and read
+	 *  the results instead. */
+	void StartPlayTest(const FString& OnlyStep = FString(), bool bQuitWhenDone = true);
+	bool IsPlayTestDone() const { return bPlayTestDone; }
+	const TArray<FDoomPlayTestResult>& GetPlayTestResults() const { return PlayTestResults; }
+	/** Every step's name, in the order they run (the automation tests list one test per step). */
+	static const TArray<FString>& PlayTestStepNames();
+
 private:
 	class UDoomWorld* DoomWorld() const;
-	/** -playtest: the scripted play-through of the interactive features (DoomPlayTest.cpp). */
-	void StartPlayTest();
+	TArray<FDoomPlayTestResult> PlayTestResults;
+	bool bPlayTestDone = false;
 	double Accumulator = 0;       // level time not yet run as tics
 	double ScreenAccumulator = 0; // same, for the intermission and story screens
 	/** The menu's host page travel options: DoomMap, DoomRules (0 co-op, 1 deathmatch, 2 2.0),
