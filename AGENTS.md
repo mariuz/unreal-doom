@@ -133,6 +133,9 @@ Tools/run_tests.bat DoomUE -NullRHI
   `Tools/check_includes.bat` checks both (`names` for the quick name check alone); run it after
   adding files or helpers. `Tools/analyze.bat` is the static analysis (no warnings allowed).
   Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
+* **The classic renderer turns anti-aliasing off** (`UDoomWorld::ApplyAntiAliasing`, a global cvar
+  with a shared count for PIE's worlds) and puts the project's TSR back for modern and at the end;
+  anything else that changes `r.AntiAliasingMethod` must go through it.
 * **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
   play-test drives `FDoomMenu` or the screen's handlers (they ignore locked input, so unlock around
   them). Esc is handled by the screen itself (it closes the whole menu; CommonUI would take it as
