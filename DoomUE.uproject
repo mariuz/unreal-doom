@@ -9,7 +9,6 @@
 	],
 	"Plugins": [
 		{ "Name": "DoomWadTools", "Enabled": true },
-		{ "Name": "ProceduralMeshComponent", "Enabled": true },
 		{ "Name": "EnhancedInput", "Enabled": true },
 		{ "Name": "CommonUI", "Enabled": true },
 		{ "Name": "DataValidation", "Enabled": true },

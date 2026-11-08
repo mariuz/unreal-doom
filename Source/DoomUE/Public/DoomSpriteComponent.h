@@ -1,4 +1,4 @@
-// A Doom sprite: a unit quad (a 4-vertex procedural mesh) scaled and offset to the
+// A Doom sprite: a unit quad (one static mesh shared by every sprite, DoomAssets::SpriteQuad) scaled and offset to the
 // patch's size and offsets, turned to face the camera around the vertical axis like
 // Doom's screen-aligned sprites, picking one of 8 rotations from the viewing angle.
 // Lighting comes from the same per-sector light texture as the walls.
@@ -9,7 +9,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ProceduralMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "DoomSpriteComponent.generated.h"
 
 class UMaterialInstanceDynamic;
@@ -36,7 +36,7 @@ struct FDoomSpriteNet
 };
 
 UCLASS(ClassGroup = Doom, meta = (BlueprintSpawnableComponent))
-class DOOMUE_API UDoomSpriteComponent : public UProceduralMeshComponent
+class DOOMUE_API UDoomSpriteComponent : public UStaticMeshComponent
 {
 	GENERATED_BODY()
 

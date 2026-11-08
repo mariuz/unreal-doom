@@ -19,6 +19,8 @@ enum class EDoomParticles : uint8
 	Count
 };
 
+class UStaticMesh;
+
 namespace DoomAssets
 {
 	inline const TCHAR* WorldClassicPath = TEXT("/Game/Doom/Materials/M_DoomWorld.M_DoomWorld");
@@ -32,6 +34,9 @@ namespace DoomAssets
 	DOOMUE_API UMaterialInterface* SkyMaterial();
 	DOOMUE_API UMaterialInterface* SpriteMaterial();
 	DOOMUE_API UMaterialInterface* SpriteFuzzMaterial();
+	/** The unit quad every sprite draws (UDoomSpriteComponent): Y right 0..1, Z up 0..1, facing -X,
+	 *  built once at runtime from a mesh description (it needs no asset, so packaged builds have it too). */
+	DOOMUE_API UStaticMesh* SpriteQuad();
 	DOOMUE_API UMaterialParameterCollection* Collection();
 	DOOMUE_API const TCHAR* ParticlesPath(EDoomParticles Kind);
 	DOOMUE_API UNiagaraSystem* Particles(EDoomParticles Kind);
