@@ -705,7 +705,7 @@ Dynamic Mesh cooks one-sided collision, and the walls are wound against their no
 collision a sleeping E1M1 monster saw the player through a wall and a MAP29 monster fell out of the
 map. `DoomUE.Game.LevelCollision` now traces every one-sided wall and closed door from both sides
 and every subsector's floor on E1M1 and MAP29 (it found 528 holes before the fix, none after). The
-classic screenshots match pixel for pixel; `-perftest` against the procedural mesh on a GTX 950:
+classic screenshots match pixel for pixel; `-perftest` against the procedural mesh on a GTX 1660 Ti:
 game thread 2.84 / 3.20 ms (E1M1 / MAP29, was 2.81 / 3.16), moving chunks 0.03 / 0.08 ms a frame
 (was 0.05 / 0.12), every monster asleep in the asleep phase.
 
@@ -713,10 +713,26 @@ Sprite quads (`feature/sprite-quads`): every sprite draws one shared unit quad
 (`DoomAssets::SpriteQuad`, a `UStaticMesh` built once at runtime from a mesh description, so packaged
 builds need no asset) through a `UStaticMeshComponent`, instead of a procedural mesh each. The
 `ProceduralMeshComponent` plugin is no longer used. The classic screenshots match pixel for pixel;
-`-perftest` on a GTX 950: render thread 4.93 / 4.46 ms asleep and 5.79 / 3.55 ms awake (E1M1 / MAP29,
+`-perftest` on a GTX 1660 Ti: render thread 4.93 / 4.46 ms asleep and 5.79 / 3.55 ms awake (E1M1 / MAP29,
 was 5.45 / 4.93 and 6.40 / 4.00), about 0.5 ms less, since static mesh draws are cached between
 frames; game thread and GPU unchanged. Each sprite still has its own material instance (the frame
 is a texture), so they don't batch yet (roadmap item 5).
+
+Nanite tiles and SM6 (`feature/nanite-tiles`): the baked tiles are built with Nanite (no triangles
+dropped, positions on a whole-unit grid, a fallback mesh with every triangle), and the project
+targets SM6 as well as SM5 on Windows, so GPUs with Shader Model 6.6 atomics draw the tiles through
+Nanite (and get virtual shadow maps); older ones keep SM5 and the fallback meshes.
+`-run=DoomContent -rebaketiles=E1M1|all` bakes an imported level's tiles again with the current
+settings (keeping its edits); WAD tile sets rebake with `-baketiles=all`. The screenshots have SM6
+references (`D3D12_SM6`): classic matches SM5, modern differs by about 1% (shadows), and
+`DoomUE.Render.E1M1Modern` checks that every tile has Nanite data. Measured on a GTX 1660 Ti, this
+is slower for now, and was merged knowingly: modern frame 12.3 ms on E1M1 and 17.6 ms on MAP29
+with Nanite, 10.3 / 14.8 ms on SM6 with `r.Nanite 0`, and 7.7 / 13.4 ms on SM5 (GPU 10.1 / 3.8 ms
+on E1M1). Virtual shadow maps cost the most here, because the doors, lifts and sprites aren't
+Nanite (the log warns about it); Nanite adds about 2 ms of render thread for Doom's low-poly tiles.
+`-sm5` runs the old path. Also found: the screenshot and key tests now hold off the real mouse
+(it turned the camera mid-capture), and focus settling on a rebuilt menu button no longer moves the
+selection (it made `DoomUE.Input.MenuKeys` fail now and then).
 
 Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
 320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
@@ -741,7 +757,7 @@ Not done yet (roughly in priority order):
 4. Unreal practices worth adopting next:
    * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
-   * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
+   * **World Partition / level instances** for big PWAD maps.
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
    * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. The sprites share one static quad mesh now; sharing materials too needs the frames in a texture array (or atlas) indexed by Custom Primitive Data, with the sector, brightness and mirror there as well. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
@@ -752,7 +768,7 @@ Not done yet (roughly in priority order):
 7. **Rendering**:
    * **The status bar and weapon at the low resolution too**: Options > Pixels lowers the 3D view only; the HUD (canvas) stays sharp at the window's resolution.
    * **MegaLights for the modern renderer**: projectiles, explosions, the muzzle flash and lamps are all shadow-casting point lights, and a slaughter map has dozens at once; MegaLights is made for many shadowed lights at a steady cost. Measure on MAP29 first.
-   * **Nanite for the baked tiles** (item 4): the tiles are low-poly, but virtual shadow maps cache and cull far better with Nanite meshes.
+   * **Make SM6 pay off**: the tiles are Nanite now, but SM6 is slower than SM5 on a GTX 1660 Ti (E1M1 modern frame 12.3 ms against 7.7). Virtual shadow maps suffer from the non-Nanite parts: give the moving chunks and sprites cheaper shadows (or none), try `r.Shadow.Virtual.Cache`, and measure Nanite against `r.Nanite 0` again; if SM6 stays slower, default the modern renderer to SM5 and keep SM6 opt-in.
    * **Quality presets for modern**: Low / Medium / High for Lumen, shadows and fog in Options > Renderer, and an upscaler (TSR at a lower screen percentage, or the FSR / DLSS plugins); on a GTX 950 the modern frame waits on the GPU (about 8.3 ms).
    * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
    * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).

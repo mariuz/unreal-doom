@@ -814,8 +814,32 @@ void ADoomLevel::FillTileMesh(UStaticMesh* Mesh, const FTile& Tile, TFunctionRef
 	Commit.bUseHashAsGuid = true;
 	Mesh->CommitMeshDescription(0, Commit);
 	Mesh->bGenerateMeshDistanceField = true;
+	// Nanite: on SM6 GPUs the tiles render through Nanite (virtual shadow maps cache and cull far
+	// better); elsewhere through the fallback mesh, which keeps every triangle so SM5 looks the same.
+	// Lossless where Doom needs it: no triangles dropped or trimmed, and the material rounds UV1's sector.
+	FMeshNaniteSettings Nanite = Mesh->GetNaniteSettings();
+	Nanite.bEnabled = true;
+	Nanite.KeepPercentTriangles = 1.f;
+	Nanite.TrimRelativeError = 0.f;
+	Nanite.GenerateFallback = ENaniteGenerateFallback::Enabled;
+	Nanite.FallbackTarget = ENaniteFallbackTarget::PercentTriangles;
+	Nanite.FallbackPercentTriangles = 1.f;
+	// positions on a 1-unit grid: Doom's vertices are whole map units (3 Unreal units), so they stay exact
+	Nanite.PositionPrecision = 0;
+	Mesh->SetNaniteSettings(Nanite);
 }
 #endif
+
+int32 ADoomLevel::NumNaniteTiles() const
+{
+	int32 N = 0;
+	for (const UStaticMeshComponent* C : BakedComponents)
+	{
+		const UStaticMesh* Mesh = C ? C->GetStaticMesh() : nullptr;
+		N += Mesh && Mesh->HasValidNaniteData() ? 1 : 0;
+	}
+	return N;
+}
 
 bool ADoomLevel::FindSavedTiles(uint32 Sig, TArray<UStaticMesh*>& Out) const
 {

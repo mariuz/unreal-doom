@@ -39,6 +39,9 @@ namespace DoomContent
 	bool BakeWadTiles(const FString& MapName);
 	/** Saves a level's static geometry as static mesh tiles (/Game/Doom/Maps/<MAP>_Tiles). */
 	bool BakeMapTiles(ADoomMapActor* MapActor);
+	/** Bakes an imported level's tiles again with the current build settings (Nanite, distance fields),
+	 *  keeping the level's edits; the level is saved only if its tile list changed (-rebaketiles=MAP|all). */
+	bool RebakeLevelTiles(const FString& MapName);
 	/** Writes a WAD map as a Lyra arena: OBJ tiles, collision ramps and a gameplay JSON (-exportlyra=MAP -out=DIR). */
 	bool ExportLyraLevel(const FString& MapName, const FString& OutDir);
 	/** An imported map's level: /Game/Doom/Maps/L_<MAP>. */

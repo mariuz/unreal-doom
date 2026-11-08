@@ -8,7 +8,6 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
 #include "Framework/Application/SlateApplication.h"
-#include "Framework/Application/IInputProcessor.h"
 #include "Engine/GameViewportClient.h"
 #include "Widgets/SViewport.h"
 #include "GameFramework/PlayerController.h"
@@ -25,22 +24,6 @@
 
 namespace DoomKeyTest
 {
-	/** Swallows the real mouse while a key test runs: the pointer moving over the editor window would
-	 *  hover menu rows and choose them, in the middle of the test's key presses. */
-	class FMouseBlocker : public IInputProcessor
-	{
-	public:
-		virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override {}
-		virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
-		virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
-		virtual bool HandleMouseButtonUpEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
-		virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
-		virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& SlateApp, const FPointerEvent& InWheelEvent, const FPointerEvent* InGestureEvent) override { return true; }
-		virtual const TCHAR* GetDebugName() const override { return TEXT("DoomKeyTestMouseBlocker"); }
-	};
-
-	TSharedPtr<FMouseBlocker> MouseBlocker;
-
 	UDoomWorld* World()
 	{
 		return DoomTest::Doom();
@@ -239,28 +222,29 @@ namespace DoomKeyTest
 			{
 				VC->OnGameViewportInputKey().Unbind();
 			}
-			FocusGame();
-			if (!MouseBlocker.IsValid())
-			{
-				MouseBlocker = MakeShared<FMouseBlocker>();
-				FSlateApplication::Get().RegisterInputPreProcessor(MouseBlocker, 0);
-			}
+			FocusGame(); // the real mouse is held off from StartGame to EndGame (DoomTestCommon.h)
 			Test->TestFalse(TEXT("input is not locked"), World()->IsInputLocked());
 			Test->TestEqual(TEXT("playing"), (int32)World()->GetState(), (int32)EDoomGameState::Playing);
 		});
+		// a new PIE session settles before the first key: a press in its first frames was lost now and
+		// then (the automap test's Tab, which then left every later toggle one step off)
+		ADD_LATENT_AUTOMATION_COMMAND(DoomTest::FStep(Test, TEXT("let the session settle"), [Until = MakeShared<uint64>(0), Since = MakeShared<double>(0)]()
+		{
+			if (*Until == 0)
+			{
+				*Until = GFrameCounter + 30;
+				*Since = FPlatformTime::Seconds();
+			}
+			return GFrameCounter >= *Until && FPlatformTime::Seconds() - *Since >= 1.0;
+		}));
+		// and one key nothing is bound to: the session's first keyboard key switches CommonUI's input
+		// type, which could swallow it (the prompt test's first Esc was lost now and then)
+		Press(Test, EKeys::Insert, TEXT("warm up the keyboard"));
 	}
 
-	/** Gives the mouse back and ends PIE. */
+	/** Ends PIE (and gives the mouse back). */
 	void Finish(FAutomationTestBase* Test)
 	{
-		Then(Test, TEXT("the mouse back"), []()
-		{
-			if (MouseBlocker.IsValid())
-			{
-				FSlateApplication::Get().UnregisterInputPreProcessor(MouseBlocker);
-				MouseBlocker.Reset();
-			}
-		});
 		DoomTest::EndGame(Test);
 	}
 

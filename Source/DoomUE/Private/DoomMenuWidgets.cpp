@@ -251,6 +251,9 @@ void UDoomMenuScreen::RowHovered(int32 Row)
 void UDoomMenuScreen::RowFocused(int32 Row)
 {
 	UDoomWorld* W = DoomWorld();
+	// focus landing on a new button while the page's buttons are rebuilt (going back a page, scrolling)
+	// is Slate settling, not the player: the selection stays (DoomUE.Input.MenuKeys saw it jump)
+	if (GFrameCounter < RebuiltFrame + 3) return;
 	if (W && !TakesRawKeys()) W->Menu.SetItem(Row);
 }
 
@@ -400,6 +403,7 @@ void UDoomMenuScreen::Refresh(const FGeometry& Geometry)
 	if (bRebuilt)
 	{
 		BuiltFor = For;
+		RebuiltFrame = GFrameCounter;
 		Canvas->ClearChildren();
 		Buttons.Reset();
 		if (!bRaw)
