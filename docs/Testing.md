@@ -41,8 +41,9 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, a line edit turns the first door line into an impassable wall with a new upper texture (without touching lines that shared its side), the connections overlay draws (with ghosts of door and lift travel), a second line edit points a special at tag 999 and the map checker must name that line (and its edit actor), and the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
 | `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
 | `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots`; classic runs with no anti-aliasing, modern with the project's |
+| `DoomUE.Render.E1M1Classic200` | | The classic start with Options > Pixels at 320X200: the screen percentage gives 200 rows at the window's height, the upscale is nearest-neighbour, and the image matches its approved one |
 | `DoomUE.PlayTest.<step>` | `-playtest` | One test per step of the scripted play-test (below), each on its own on E1M1; a step that skips passes with a warning |
-| `DoomUE.Input.MenuKeys` | | Real key presses: Esc opens the menu, Up and Down move, Enter opens Options, Backspace goes back one page, Esc closes the whole menu from any page (vanilla), F1 opens Read This!, Enter turns its page and Esc closes it |
+| `DoomUE.Input.MenuKeys` | | Real key presses: Esc opens the menu, Up and Down move, Enter opens Options, Enter steps Pixels through its three settings and back, Backspace goes back one page, Esc closes the whole menu from any page (vanilla), F1 opens Read This!, Enter turns its page and Esc closes it |
 | `DoomUE.Input.Prompts` | | Down to Quit Game, Enter asks, N cancels and the game goes on; Options > End Game asks, a stray key cancels, Y ends the game (the title screen) |
 | `DoomUE.Input.AutomapKeys` | | Tab opens the automap; = and - held zoom; G grid, M mark, C clear, F follow off, then Right held pans; 0 the whole map and back; Tab closes it |
 | `DoomUE.Input.Gameplay` | | W held walks, Ctrl held fires, 3 brings up the shotgun |
@@ -167,8 +168,9 @@ the same way.
 * In PIE the editor's play commands see every key first, and Esc is their Stop. A packaged game has
   no such hook, so each test unbinds it from its own session's viewport (`OnGameViewportInputKey`);
   the editor's settings aren't touched.
-* The menu tests move to a row by pressing until it is selected, so they don't depend on where the
-  mouse pointer rests over the PIE window.
+* The menu tests move to a row by pressing until it is selected (no press if it already is).
+* The real mouse is held off while a key test runs (a Slate input preprocessor swallows its events):
+  the pointer moving over the editor window hovered menu rows and chose them mid-test.
 
 They found three bugs a player would have hit:
 

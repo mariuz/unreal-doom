@@ -144,6 +144,8 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		const TArray<FString>& Maps = W.GetWad()->MapNames();
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("WarpTo", "WARP TO: < {0} >"), FText::FromString(Maps.IsValidIndex(WarpIndex) ? Maps[WarpIndex] : FString(TEXT("-")))).ToString() });
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Colors", "COLORS: {0}"), S->bPaletteExact ? LOCTEXT("Exact", "EXACT") : LOCTEXT("Smooth", "SMOOTH")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Pixels", "PIXELS: {0}"), S->ClassicPixelRows == 200 ? LOCTEXT("Pixels200", "320X200")
+			: S->ClassicPixelRows == 400 ? LOCTEXT("Pixels400", "640X400") : LOCTEXT("PixelsFull", "FULL")).ToString() });
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("MonsterAI", "MONSTER AI: {0}"), W.IsSmartAI() ? LOCTEXT("Smart", "SMART") : LOCTEXT("Classic", "CLASSIC")).ToString() });
 		R.Add({ EKind::Choice, FString(), LOCTEXT("Controls", "CONTROLS").ToString() });
 		checkf(R.Num() == EOptionsRow::Count, TEXT("the Options page has %d rows, EOptionsRow %d"), R.Num(), (int32)EOptionsRow::Count);
@@ -433,6 +435,14 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 			break;
 		}
 		case EOptionsRow::Colors: S->bPaletteExact = !S->bPaletteExact; break;
+		case EOptionsRow::Pixels:
+		{
+			// FULL, 640X400, 320X200 and round again
+			static const int32 Steps[3] = { 0, 400, 200 };
+			const int32 Now = S->ClassicPixelRows == 400 ? 1 : S->ClassicPixelRows == 200 ? 2 : 0;
+			S->ClassicPixelRows = Steps[(Now + Dir + 3) % 3];
+			break;
+		}
 		case EOptionsRow::MonsterAI: W.SetSmartAI(!W.IsSmartAI()); S->bSmartMonsters = W.IsSmartAI(); break;
 		default: bChanged = false; break;
 		}
@@ -522,7 +532,7 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == EOptionsRow::Renderer || Item == EOptionsRow::FieldOfView || Item == EOptionsRow::Colors || Item == EOptionsRow::MonsterAI))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == EOptionsRow::Renderer || Item == EOptionsRow::FieldOfView || Item == EOptionsRow::Colors || Item == EOptionsRow::Pixels || Item == EOptionsRow::MonsterAI))
 		|| (Page == EMenuPage::Multiplayer && Item <= EMultiplayerRow::Fast))
 	{
 		Adjust(W, 1);
