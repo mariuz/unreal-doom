@@ -45,6 +45,14 @@ namespace DoomPerfTest
 			if (!M.IsValid() || M->IsDead()) continue;
 			++Monsters;
 			Ticking += M->IsActorTickEnabled() ? 1 : 0;
+			if (M->IsActorTickEnabled() && Ticking <= 3 && (M->GetState() == EMonsterState::Idle || M->GetCharacterMovement()->MovementMode == MOVE_Falling))
+			{
+				// idle but never asleep (not resting on the floor: a gap, a ledge, a slope), or falling (out of the map?)
+				const FVector2f At = M->DoomPos();
+				UE_LOG(LogDoomTest, Display, TEXT("Perftest: awake %s (state %d, target %s) at (%.0f, %.0f) z %.1f in sector %d, movement mode %d, speed %.2f"), *M->GetName(), (int32)M->GetState(),
+					M->GetTarget() ? *M->GetTarget()->GetName() : TEXT("none"), At.X, At.Y,
+					M->GetActorLocation().Z / Doom::Scale, W->SectorAt(M->GetActorLocation()), (int32)M->GetCharacterMovement()->MovementMode, M->GetVelocity().Size());
+			}
 			Moving += M->GetCharacterMovement() && M->GetCharacterMovement()->IsComponentTickEnabled() ? 1 : 0;
 		}
 		for (TActorIterator<AAIController> It(World); It; ++It) ++Controllers;

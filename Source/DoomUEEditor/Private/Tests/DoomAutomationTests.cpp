@@ -29,6 +29,7 @@
 #include "DoomContentBuilder.h"
 #include "DoomLevel.h"
 #include "DoomTestCommon.h"
+#include "DoomUE.h"
 #include "HAL/IConsoleManager.h"
 #include "DoomSettings.h"
 #include "Engine/GameViewportClient.h"
@@ -184,7 +185,7 @@ bool FDoomSaveLoadTest::RunTest(const FString& Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("save, scramble, load"), [this]()
 	{
 		FString Report;
-		const bool bPass = Doom()->RunSaveTest(&Report);
+		const bool bPass = DoomTest::Doom()->RunSaveTest(&Report);
 		AddInfo(Report);
 		TestTrue(TEXT("the loaded state matches the saved one"), bPass);
 		return true;
@@ -208,7 +209,7 @@ bool FDoomExitTest::RunTest(const FString& Parameters)
 	LoadMap(this, TEXT("E1M1"));
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("kill two monsters and exit"), [this, S]()
 	{
-		UDoomWorld* W = Doom();
+		UDoomWorld* W = DoomTest::Doom();
 		ADoomPlayer* P = W->GetPlayer();
 		int32 Killed = 0;
 		for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
@@ -230,25 +231,142 @@ bool FDoomExitTest::RunTest(const FString& Parameters)
 		return true;
 	}));
 	// Doom's own intermission waits a second before it can be left
-	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("the intermission counts 35 tics"), []() { return Doom()->Flow().IntermissionTic >= 35; }));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("the intermission counts 35 tics"), []() { return DoomTest::Doom()->Flow().IntermissionTic >= 35; }));
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("leave the intermission"), [this, S]()
 	{
-		UDoomWorld* W = Doom();
+		UDoomWorld* W = DoomTest::Doom();
 		PlayWorld()->GetAuthGameMode<ADoomGameMode>()->FinishIntermission();
 		S->bLoadingInBackground = W->IsLoadingMap();
 		TestTrue(TEXT("E1M2 loads in the background"), S->bLoadingInBackground);
 		return true;
 	}));
-	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("E1M2 loaded"), []() { return !Doom()->IsLoadingMap(); }));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("E1M2 loaded"), []() { return !DoomTest::Doom()->IsLoadingMap(); }));
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("check E1M2"), [this]()
 	{
-		UDoomWorld* W = Doom();
+		UDoomWorld* W = DoomTest::Doom();
 		ADoomPlayer* P = W->GetPlayer();
 		TestEqual(TEXT("map"), W->GetMapName(), FString(TEXT("E1M2")));
 		TestEqual(TEXT("playing"), (int32)W->GetState(), (int32)EDoomGameState::Playing);
 		TestEqual(TEXT("kills start again"), W->Flow().Kills, 0);
 		TestEqual(TEXT("credit starts again"), P->GetDoomPlayerState()->LevelKills, 0);
 		TestEqual(TEXT("shells carried over"), P->GetDoomPlayerState()->Inv.Ammo[1], 17);
+		return true;
+	}));
+	EndGame(this);
+	return true;
+}
+
+// ---- level collision ----------------------------------------------------------------------------
+
+IMPLEMENT_COMPLEX_AUTOMATION_TEST(FDoomLevelCollisionTest, "DoomUE.Game.LevelCollision", DoomTest::Flags)
+
+void FDoomLevelCollisionTest::GetTests(TArray<FString>& OutBeautifiedNames, TArray<FString>& OutTestCommands) const
+{
+	OutBeautifiedNames.Add(TEXT("E1M1"));
+	OutTestCommands.Add(TEXT("freedoom1.wad E1M1"));
+	OutBeautifiedNames.Add(TEXT("MAP29"));
+	OutTestCommands.Add(TEXT("freedoom2.wad MAP29"));
+}
+
+bool FDoomLevelCollisionTest::RunTest(const FString& Parameters)
+{
+	// the level's collision has no holes: a trace across every one-sided wall and every closed door
+	// hits (sight and bodies stop there), and a trace down through every subsector lands on its
+	// sector's floor (nothing falls through)
+	FString IWad, MapName;
+	Parameters.Split(TEXT(" "), &IWad, &MapName);
+	StartGame(this);
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("load ") + IWad, [this, IWad]()
+	{
+		FDoomWadSetup Setup;
+		Setup.IWad = WadPath(IWad);
+		TestTrue(IWad + TEXT(" loads"), DoomTest::Doom()->InitWads(&Setup));
+		return true;
+	}));
+	LoadMap(this, MapName);
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("trace walls and floors"), [this, MapName]()
+	{
+		UDoomWorld* W = DoomTest::Doom();
+		const FDoomMap* M = W->GetMap();
+		if (!TestNotNull(TEXT("map"), M))
+		{
+			return true;
+		}
+		const FCollisionObjectQueryParams Obj(ECC_WorldStatic);
+		const FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomCollisionTest), true);
+		int32 Walls = 0, Floors = 0;
+		TArray<FString> Misses;
+		for (int32 i = 0; i < M->Lines.Num(); ++i)
+		{
+			const FDoomLine& L = M->Lines[i];
+			if (L.FrontSector == INDEX_NONE)
+			{
+				continue;
+			}
+			const FDoomSector& F = M->Sectors[L.FrontSector];
+			if (L.BackSector != INDEX_NONE)
+			{
+				const FDoomSector& B = M->Sectors[L.BackSector];
+				if (FMath::Min(F.Ceiling, B.Ceiling) - FMath::Max(F.Floor, B.Floor) > 0.f)
+				{
+					continue; // open: nothing to hit
+				}
+			}
+			const FVector2f A = M->V(L.V1), Bv = M->V(L.V2), D = Bv - A;
+			const float Len = D.Size();
+			if (Len < 2.f || F.Ceiling - F.Floor < 2.f)
+			{
+				continue;
+			}
+			const FVector2f Mid = (A + Bv) * 0.5f;
+			FVector2f In = FVector2f(D.Y, -D.X) / Len;
+			if (M->SectorAt(Mid + In * 4.f) != L.FrontSector)
+			{
+				In = -In; // the side facing the front sector
+			}
+			const float Z = (F.Floor + F.Ceiling) * 0.5f;
+			const FVector Room = Doom::ToUE(Mid + In * 8.f, Z), Away = Doom::ToUE(Mid - In * 8.f, Z);
+			FHitResult Hit;
+			++Walls;
+			// from the room, and from behind: the collision is double-sided, as the procedural mesh's was
+			const bool bFromRoom = W->GetWorld()->LineTraceSingleByObjectType(Hit, Room, Away, Obj, Q);
+			const bool bFromBehind = W->GetWorld()->LineTraceSingleByObjectType(Hit, Away, Room, Obj, Q);
+			if (!bFromRoom || !bFromBehind)
+			{
+				Misses.Add(FString::Printf(TEXT("line %d at (%.0f, %.0f) z %.0f: %s"), i, Mid.X, Mid.Y, Z,
+					!bFromRoom ? TEXT("no hit from the room") : TEXT("no hit from behind")));
+			}
+		}
+		for (int32 i = 0; i < M->Subsectors.Num(); ++i)
+		{
+			const FDoomSubsector& Ss = M->Subsectors[i];
+			const FDoomSector& S = M->Sectors[Ss.Sector];
+			if (Ss.Polygon.Num() < 3 || S.Ceiling - S.Floor < 2.f)
+			{
+				continue;
+			}
+			FVector2f C = FVector2f::ZeroVector;
+			for (const FVector2f& P : Ss.Polygon)
+			{
+				C += P;
+			}
+			C /= (float)Ss.Polygon.Num();
+			FHitResult Hit;
+			++Floors;
+			const float Top = S.Floor + FMath::Min(S.Ceiling - S.Floor, 32.f) * 0.5f;
+			const bool bHit = W->GetWorld()->LineTraceSingleByObjectType(Hit, Doom::ToUE(C, Top), Doom::ToUE(C, S.Floor - 16.f), Obj, Q);
+			if (!bHit || FMath::Abs(Hit.ImpactPoint.Z / Doom::Scale - S.Floor) > 1.f)
+			{
+				Misses.Add(FString::Printf(TEXT("subsector %d (sector %d) at (%.0f, %.0f): floor %.0f, hit %s"), i, Ss.Sector, C.X, C.Y, S.Floor,
+					bHit ? *FString::Printf(TEXT("z %.1f"), Hit.ImpactPoint.Z / Doom::Scale) : TEXT("nothing")));
+			}
+		}
+		AddInfo(FString::Printf(TEXT("%s: %d walls and %d floors traced, %d misses"), *MapName, Walls, Floors, Misses.Num()));
+		for (int32 i = 0; i < FMath::Min(Misses.Num(), 20); ++i)
+		{
+			AddError(Misses[i]);
+		}
+		TestTrue(TEXT("traces found walls and floors"), Walls > 100 && Floors > 100);
 		return true;
 	}));
 	EndGame(this);
@@ -297,7 +415,7 @@ bool FDoomWadTilesTest::RunTest(const FString& Parameters)
 	LoadMap(this, TEXT("E1M2"), true);
 	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("check the tiles"), [this]()
 	{
-		const ADoomLevel* Level = Doom()->GetLevel();
+		const ADoomLevel* Level = DoomTest::Doom()->GetLevel();
 		if (TestNotNull(TEXT("level"), Level))
 		{
 			TestTrue(TEXT("the static chunk is drawn by the saved tile set"), Level->UsesSavedTiles());
@@ -385,7 +503,7 @@ namespace DoomTest
 		{
 			for (int32 i = 0; i < 35; ++i)
 			{
-				Doom()->RunTic();
+				DoomTest::Doom()->RunTic();
 			}
 			return true;
 		}));

@@ -1,16 +1,16 @@
 // The level's geometry as Unreal components.
 //
 //  * One "static" chunk plus one chunk per movable sector (and one per switch line),
-//    each a pair of UProceduralMeshComponents: solid (with complex collision, used by
+//    each a pair of UDynamicMeshComponents: solid (with complex collision, used by
 //    the Character Movement Component and by line traces) and non-solid (masked
 //    middle textures such as grates).
-//  * One section per material (texture) per component, so a chunk is a handful of
-//    draw calls; moving a door only updates that door's small chunk.
+//  * One material ID per material (texture) per component, so a chunk is a handful of
+//    draw calls; moving a door only rebuilds that door's small chunk.
 //  * Sector light is not baked into vertices: every vertex carries its sector index in
 //    UV1.x and the material samples a 256-wide light texture (one texel per sector)
 //    that the game updates each tic, so flickering lights never touch the meshes.
 //  * Modern renderer: the static chunk is also drawn by UStaticMesh tiles (1024 map units
-//    square) so Lumen gets mesh distance fields and surface cards; the procedural chunk then
+//    square) so Lumen gets mesh distance fields and surface cards; the dynamic mesh chunk then
 //    stays hidden and only provides collision. Imported levels carry tiles baked in the editor
 //    as assets (they cook into packaged builds); otherwise editor builds bake them at load.
 //  * Invisible collision for impassable two-sided lines (players and monsters) and
@@ -19,11 +19,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Components/DynamicMeshComponent.h"
 #include "DoomLevel.generated.h"
 
 class FDoomMap;
 class FDoomGraphics;
-class UProceduralMeshComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
@@ -34,6 +34,20 @@ class UTexture2D;
 #define ECC_DoomMonster ECC_GameTraceChannel1
 /** Collision channel used by missiles (ECC_GameTraceChannel2 "DoomMissile"): they ignore impassable lines. */
 #define ECC_DoomMissile ECC_GameTraceChannel2
+
+/**
+ * A level chunk's mesh. Its collision is double-sided, as the procedural mesh's was: Dynamic Mesh
+ * cooks one-sided triangles, and a trace or a body then passes a wall from behind (a monster saw the
+ * player across a step's riser; another fell out of MAP29; DoomUE.Game.LevelCollision checks it).
+ */
+UCLASS(HideDropdown)
+class DOOMUE_API UDoomLevelMeshComponent : public UDynamicMeshComponent
+{
+	GENERATED_BODY()
+
+protected:
+	virtual UBodySetup* CreateBodySetupHelper() override;
+};
 
 UCLASS(HideDropdown)
 class DOOMUE_API ADoomLevel : public AActor
@@ -128,18 +142,18 @@ public:
 	    for distance fields. Material(Key) gives each slot's material. Call Build afterwards. */
 	static void FillTileMesh(UStaticMesh* Mesh, const FTile& Tile, TFunctionRef<UMaterialInterface*(FName)> Material);
 #endif
-	/** Procedural mesh components currently drawing or colliding (tests). */
+	/** Dynamic mesh components currently drawing or colliding (tests). */
 	int32 NumMeshComponents() const { return MeshComponents.Num(); }
 
 private:
 	struct FChunk
 	{
-		TObjectPtr<UProceduralMeshComponent> Solid;
-		TObjectPtr<UProceduralMeshComponent> NonSolid;
+		TObjectPtr<UDynamicMeshComponent> Solid;
+		TObjectPtr<UDynamicMeshComponent> NonSolid;
 		TArray<int32> Sectors;   // floors and ceilings drawn here
 		TArray<int32> Lines;     // walls drawn here
-		TMap<FName, int32> SolidSections, NonSolidSections;
-		TArray<int32> SolidCounts, NonSolidCounts; // vertex counts per section
+		/** Section key -> material ID (material slot); stable while the chunk lives. */
+		TMap<FName, int32> SolidSlots, NonSolidSlots;
 		bool bDynamic = false;
 		bool bDirty = true;
 	};
@@ -151,11 +165,12 @@ private:
 		float U0, float U1, float TexTop, float TexW, float TexH, int32 Sector, float Contrast, float Kind) const;
 	/** Commits one chunk's generated sections (and bakes the static chunk's tiles in the modern renderer). */
 	void CommitChunk(int32 Index, FChunkSections& Sections);
-	void Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FName, int32>& Sections, TArray<int32>& Counts, TMap<FName, FSectionData>& Data, bool bCollision);
+	/** Replaces a component's mesh with these sections (one material ID per key) and cooks its collision once. */
+	void Commit(UDynamicMeshComponent* Comp, TMap<FName, int32>& Slots, const TMap<FName, FSectionData>& Data, bool bCollision);
 	void BuildBlockingCollision();
 	FName SectionKey(FName Texture, bool bFlat, bool bSky) const;
 	UMaterialInterface* MaterialForKey(FName Key);
-	UProceduralMeshComponent* NewMeshComponent(const FString& Name, bool bCollision);
+	UDynamicMeshComponent* NewMeshComponent(const FString& Name, bool bCollision);
 	/** Bakes the static chunk's sections into static mesh tiles (modern renderer, editor builds). */
 	void BakeStaticChunk(const TMap<FName, FSectionData>& Solid, const TMap<FName, FSectionData>& NonSolid);
 	/** The saved tiles of this map's imported level, when they match the static chunk. */
@@ -172,7 +187,7 @@ private:
 	TArray<int32> LineChunk;            // line -> chunk
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UProceduralMeshComponent>> MeshComponents;
+	TArray<TObjectPtr<UDynamicMeshComponent>> MeshComponents;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> BakedComponents;
