@@ -67,6 +67,7 @@ void UDoomWorld::Deinitialize()
 {
 	StopMusic();
 	UnloadMap();
+	RestoreAntiAliasing();
 	Sound.Reset();
 	Gfx.Reset();
 	Wad.Reset();

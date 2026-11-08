@@ -51,9 +51,61 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
+#include "HAL/IConsoleManager.h"
+
+namespace DoomPresentationDetail
+{
+	/** Worlds in the classic renderer now (PIE can run several), and the method they replaced. */
+	int32 ClassicAntiAliasingWorlds = 0;
+	int32 SavedAntiAliasingMethod = 0;
+
+	IConsoleVariable* AntiAliasingMethod()
+	{
+		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod"));
+	}
+}
+
+void UDoomWorld::ApplyAntiAliasing()
+{
+	using namespace DoomPresentationDetail;
+	IConsoleVariable* AA = AntiAliasingMethod();
+	if (!AA || bModern == !bClassicAntiAliasing)
+	{
+		return;
+	}
+	if (bModern)
+	{
+		RestoreAntiAliasing();
+		return;
+	}
+	bClassicAntiAliasing = true;
+	if (ClassicAntiAliasingWorlds++ == 0)
+	{
+		SavedAntiAliasingMethod = AA->GetInt();
+		AA->Set(0, ECVF_SetByCode);
+	}
+}
+
+void UDoomWorld::RestoreAntiAliasing()
+{
+	using namespace DoomPresentationDetail;
+	if (!bClassicAntiAliasing)
+	{
+		return;
+	}
+	bClassicAntiAliasing = false;
+	if (--ClassicAntiAliasingWorlds == 0)
+	{
+		if (IConsoleVariable* AA = AntiAliasingMethod())
+		{
+			AA->Set(SavedAntiAliasingMethod, ECVF_SetByCode);
+		}
+	}
+}
 
 void UDoomWorld::SetupEnvironment()
 {
+	ApplyAntiAliasing();
 	UWorld* W = GetWorld();
 	FActorSpawnParameters SP;
 	SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;

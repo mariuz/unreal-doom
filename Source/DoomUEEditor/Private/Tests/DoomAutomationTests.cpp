@@ -29,6 +29,7 @@
 #include "DoomContentBuilder.h"
 #include "DoomLevel.h"
 #include "DoomTestCommon.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -338,6 +339,23 @@ namespace DoomTest
 			return true;
 		}));
 		LoadMap(Test, TEXT("E1M1"), bModern);
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("anti-aliasing"), [Test, bModern]()
+		{
+			// classic shows the palette pixels exactly: no temporal anti-aliasing blending frames
+			const IConsoleVariable* AA = IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod"));
+			if (Test->TestNotNull(TEXT("r.AntiAliasingMethod"), AA))
+			{
+				if (bModern)
+				{
+					Test->TestNotEqual(TEXT("modern keeps the project's anti-aliasing"), AA->GetInt(), 0);
+				}
+				else
+				{
+					Test->TestEqual(TEXT("classic has no anti-aliasing"), AA->GetInt(), 0);
+				}
+			}
+			return true;
+		}));
 		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("run 35 tics"), []()
 		{
 			for (int32 i = 0; i < 35; ++i)

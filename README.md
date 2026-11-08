@@ -57,7 +57,8 @@ with `-iwad=` / `-file=`.
 
 * **Classic** (default): unlit, with Doom's palette-space lighting: sector light, fake contrast,
   distance diminishing, full-bright frames, gun flash, and the invulnerability / light-amp colormaps.
-  Manual exposure and `ToneCurveAmount = 0` keep the palette colours 1:1. Spectres use a
+  Manual exposure and `ToneCurveAmount = 0` keep the palette colours 1:1, and anti-aliasing is
+  off so they stay sharp in motion. Spectres use a
   translucent material that copies the scene one 320x200 row above or below and darkens it,
   like Doom's fuzz.
 * **Modern** (`-modern`, or toggle in the menu): lit materials. Sector light becomes emissive
@@ -686,6 +687,12 @@ Tab never opened the automap (Slate took it, and the arrows, for focus moves and
 flushed), Esc went back one page instead of closing the menu (CommonUI's back key), and opening the
 menu selected the row under the resting mouse pointer. See [docs/Testing.md](docs/Testing.md#key-presses).
 
+Classic pixels (`feature/classic-pixels`): the classic renderer turns anti-aliasing off
+(`r.AntiAliasingMethod 0`); the project's TSR blended the palette pixels across frames, smearing
+moving sprites and the spectres' fuzz. Modern and the end of the game bring the project's method
+back (the setting is global, so classic worlds in PIE share one count). The screenshot tests check
+the setting in each renderer; the still E1M1 capture is unchanged.
+
 Not done yet (roughly in priority order):
 
 1. **A hand play-through**: the keys are tested now (`DoomUE.Input`), but feel (mouse, gamepad, HUD
@@ -708,3 +715,16 @@ Not done yet (roughly in priority order):
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
    * **UI framework, the rest**: the game's menu runs on CommonUI now; the in-game map editor's panels are still plain UMG built in code (CommonUI buttons would give them gamepad navigation).
+7. **Rendering**:
+   * **A low-resolution classic mode**: 320x200 or 640x400, scaled up with nearest-neighbour filtering (`r.ScreenPercentage` with `r.Upscale.Quality 0`), for Doom's own chunky pixels.
+   * **MegaLights for the modern renderer**: projectiles, explosions, the muzzle flash and lamps are all shadow-casting point lights, and a slaughter map has dozens at once; MegaLights is made for many shadowed lights at a steady cost. Measure on MAP29 first.
+   * **Nanite for the baked tiles** (item 4): the tiles are low-poly, but virtual shadow maps cache and cull far better with Nanite meshes.
+   * **Quality presets for modern**: Low / Medium / High for Lumen, shadows and fog in Options > Renderer, and an upscaler (TSR at a lower screen percentage, or the FSR / DLSS plugins); on a GTX 950 the modern frame waits on the GPU (about 8.3 ms).
+   * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
+   * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).
+8. **Future engine versions**:
+   * **`UDynamicMeshComponent` instead of `UProceduralMeshComponent`** for the level chunks: the procedural mesh is a legacy component (and the reason collision cooks again on every section change); Dynamic Mesh is Epic's maintained path for runtime meshes, with better collision options and a way to static meshes. It touches `DoomLevel` only.
+   * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
+   * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.
+   * **An engine-upgrade checklist** in AGENTS.md: regenerate the generated assets (`-run=DoomContent`: materials, Niagara, input, AI, game data) instead of resaving old ones, run data validation and every test, re-approve the screenshots with the engine version recorded.
+   * **One place for the Niagara builder's engine calls**: the effect builder uses Niagara's editor API, which changes between versions.

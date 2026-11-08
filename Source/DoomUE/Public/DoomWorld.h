@@ -432,6 +432,12 @@ private:
 	void Teleport(AActor* Actor, int32 Line, int32 Side);
 	bool ThingsBlockPlane(int32 Sector, float Floor, float Ceiling, bool bCrush);
 	void SetupEnvironment();
+	/** Classic: no anti-aliasing, so the palette pixels stay exact (TSR blends them across frames,
+	 *  smearing moving sprites and the spectres' fuzz); modern and the end of the game bring the
+	 *  project's method back. r.AntiAliasingMethod is global, so the classic worlds share one count. */
+	void ApplyAntiAliasing();
+	void RestoreAntiAliasing();
+	bool bClassicAntiAliasing = false;
 
 	TUniquePtr<FDoomWad> Wad;
 	TUniquePtr<FDoomGraphics> Gfx;
