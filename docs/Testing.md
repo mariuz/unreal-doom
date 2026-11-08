@@ -1,6 +1,9 @@
 # Automation tests
 
-DoomUE's checks are Unreal **automation tests** (`Source/DoomUEEditor/Private/Tests/DoomAutomationTests.cpp`).
+DoomUE's checks are Unreal **automation tests** in `Source/DoomUEEditor/Private/Tests`:
+`DoomAutomationTests.cpp` (maps, patches, the game, the editor, screenshots), `DoomPlayTestAutomation.cpp`
+(the scripted play-test, one test per step) and `DoomInputTests.cpp` (key presses), with the shared
+helpers in `DoomTestCommon.h`.
 They run from the editor's **Session Frontend** (Tools > Session Frontend > Automation, filter
 `DoomUE`) or headless, in CI:
 
@@ -38,6 +41,11 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, a line edit turns the first door line into an impassable wall with a new upper texture (without touching lines that shared its side), the connections overlay draws (with ghosts of door and lift travel), a second line edit points a special at tag 999 and the map checker must name that line (and its edit actor), and the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
 | `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
 | `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots` |
+| `DoomUE.PlayTest.<step>` | `-playtest` | One test per step of the scripted play-test (below), each on its own on E1M1; a step that skips passes with a warning |
+| `DoomUE.Input.MenuKeys` | | Real key presses: Esc opens the menu, Up and Down move, Enter opens Options, Backspace goes back one page, Esc closes the whole menu from any page (vanilla), F1 opens Read This!, Enter turns its page and Esc closes it |
+| `DoomUE.Input.Prompts` | | Down to Quit Game, Enter asks, N cancels and the game goes on; Options > End Game asks, a stray key cancels, Y ends the game (the title screen) |
+| `DoomUE.Input.AutomapKeys` | | Tab opens the automap; = and - held zoom; G grid, M mark, C clear, F follow off, then Right held pans; 0 the whole map and back; Tab closes it |
+| `DoomUE.Input.Gameplay` | | W held walks, Ctrl held fires, 3 brings up the shotgun |
 
 The game tests play in PIE on `/Engine/Maps/Entry`, as a `-game` run would. Steps wait for
 conditions, not for fixed times, because background work such as distance-field builds can slow
@@ -138,9 +146,41 @@ first 11 steps failed on E1M1.
 | `altdeath` | With deathmatch 2.0 rules, a clip picked up is back where it was 30 s later |
 | `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
 
-Keys pressed from the test (`InputKey`) reach the controller's own key handling (the prompts) but
-not Enhanced Input in the unfocused test window, and injected actions don't arrive either, so the
-menu's Esc and the automap keys aren't covered.
+Each step also runs on its own in PIE as `DoomUE.PlayTest.<step>` (`Tools/run_tests.bat
+DoomUE.PlayTest`, about 4 minutes for all 29), through `ADoomGameMode::StartPlayTest(Step, false)`,
+which keeps playing and hands back the results instead of quitting. A step must set up what it needs
+itself: `target` used to rely on the weapon steps before it for its plasma gun. `liftcorpse` failed
+once in three full `-playtest` runs (the corpse rested 0.7 units above the lowered floor); it passes
+on its own.
+
+## Key presses
+
+Keys pressed from the `-playtest` (`InputKey`) reach the controller's own key handling but not
+Enhanced Input in its unfocused `-game` window. The `DoomUE.Input` tests press keys the way a player
+does instead: Slate key events (`FSlateApplication::ProcessKeyDownEvent` / `ProcessKeyUpEvent`)
+into the PIE viewport, so they go through CommonUI, the game viewport, the player controller and
+Enhanced Input. Each press waits for the screen to settle (the CommonUI menu screen up exactly when
+the game is in the menu), holds the key for a few frames, and waits for what the key should do; an
+error names what didn't happen, with the game state and the focused widget. Every press is logged
+the same way.
+
+* In PIE the editor's play commands see every key first, and Esc is their Stop. A packaged game has
+  no such hook, so each test unbinds it from its own session's viewport (`OnGameViewportInputKey`);
+  the editor's settings aren't touched.
+* The menu tests move to a row by pressing until it is selected, so they don't depend on where the
+  mouse pointer rests over the PIE window.
+
+They found three bugs a player would have hit:
+
+* **Tab never opened the automap** (nor did the arrows pan it): `UPlayerInput` reports keys that only
+  Enhanced Input reads as unhandled, Slate then used Tab and the arrows to move the focus off the
+  viewport, and the lost focus flushed the key before Enhanced Input saw it.
+  `ADoomPlayerController::InputKey` now keeps every key it gets.
+* **Esc went back one page instead of closing the menu**: CommonUI took it as its back key (on Read
+  This! page 2 it went back to page 1). The menu screen now closes the whole menu on Esc, as
+  `M_ClearMenus` does; Backspace and the gamepad's B go back.
+* **Opening the menu selected the row under the mouse pointer**, wherever it rested, instead of
+  keeping the last row. Hovering now chooses a row only after the mouse has moved.
 
 Steps that need something the map lacks (a lift, a teleporter, room in front of the start) are
 skipped. Checked maps: Freedoom 1 E1M1, E1M2 and E1M4; Freedoom 2 MAP01 and MAP05 (add

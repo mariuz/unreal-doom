@@ -422,7 +422,11 @@ bool ADoomPlayerController::InputKey(const FInputKeyEventArgs& Params)
 			return true;
 		}
 	}
-	return Super::InputKey(Params);
+	// the game owns the keys that reach it: UPlayerInput reports keys only Enhanced Input reads (Tab, the
+	// arrows) as unhandled, and Slate would then use them to move focus off the viewport, which flushes
+	// the key before Enhanced Input sees it (Tab never opened the automap; DoomUE.Input.AutomapKeys)
+	const bool bResult = Super::InputKey(Params);
+	return bResult || !Params.Key.IsAnalog();
 }
 
 void ADoomPlayerController::OpenMenuPage(int32 Page)

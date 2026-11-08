@@ -112,7 +112,7 @@ void UDoomMenuRowButton::NativeOnInitialized()
 void UDoomMenuRowButton::NativeOnHovered()
 {
 	Super::NativeOnHovered();
-	if (Screen.IsValid()) Screen->RowHovered(Row);
+	if (Screen.IsValid() && Screen->HasMouseMoved()) Screen->RowHovered(Row);
 }
 
 void UDoomMenuRowButton::NativeOnClicked()
@@ -179,6 +179,7 @@ void UDoomMenuScreen::NativeOnActivated()
 	Super::NativeOnActivated();
 	if (APlayerController* PC = GetOwningPlayer()) PC->SetShowMouseCursor(true);
 	BuiltFor = 0;
+	bMouseMoved = false;
 }
 
 void UDoomMenuScreen::NativeOnDeactivated()
@@ -318,6 +319,13 @@ FReply UDoomMenuScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyE
 	{
 		return FReply::Handled();
 	}
+	// Esc closes the whole menu, from any page (M_ClearMenus); CommonUI would take it as its back key
+	// and go back one page (Backspace and the gamepad's B do that)
+	if (InKeyEvent.GetKey() == EKeys::Escape)
+	{
+		HandleClose();
+		return FReply::Handled();
+	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
@@ -329,6 +337,21 @@ FReply UDoomMenuScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry, con
 	}
 	// a click between the rows does nothing (it must not reach CommonUI's click action)
 	return FReply::Handled();
+}
+
+FReply UDoomMenuScreen::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// the cursor appears where it was when the menu opens: a row under it isn't chosen until the mouse
+	// moves, or the selection would jump there for a player using the keys (Doom keeps the last row)
+	if (!bMouseMoved && !InMouseEvent.GetCursorDelta().IsNearlyZero())
+	{
+		bMouseMoved = true;
+		for (UDoomMenuRowButton* B : Buttons)
+		{
+			if (B->IsHovered()) RowHovered(B->Row);
+		}
+	}
+	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
 }
 
 FReply UDoomMenuScreen::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

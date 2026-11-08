@@ -184,8 +184,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [AGENTS.md](AGENTS.md): handover notes for the next agent (AI or human): conventions, build and
   test commands, tooling and code traps already found, related projects, where things stand.
 * [docs/Testing.md](docs/Testing.md): the automation tests (maps and node formats, DeHackEd /
-  Boom / UMAPINFO patches, save and load, level exits, map editing, screenshot comparisons), run
-  from the Session Frontend or with `Tools/run_tests.bat` in CI.
+  Boom / UMAPINFO patches, save and load, level exits, map editing, screenshot comparisons, each
+  play-test step, real key presses in PIE), run from the Session Frontend or with
+  `Tools/run_tests.bat` in CI.
 * [docs/AI.md](docs/AI.md): SMART monsters (Options > Monster AI): an AI controller with
   perception, a Behavior Tree and EQS queries choose where monsters go, over paths through the
   map's subsectors; Doom's code still decides the attacks.
@@ -373,8 +374,8 @@ WAD tile sets: `-baketiles` bakes E1M1 and E1M2 with the same signatures the gam
 (`74c3d863`, `17b4800a`), and a modern `-warp=E1M2` run draws the 18 baked tiles of
 `/Game/Doom/Tiles/freedoom1/E1M2`. `DoomUE.Editor.WadTiles` checks the same in PIE.
 
-Automation tests ([docs/Testing.md](docs/Testing.md)): `Tools/run_tests.bat` runs 12 tests in
-about a minute: maps and node formats, the four patch kinds, save and load, the level exit, the map
+Automation tests ([docs/Testing.md](docs/Testing.md)): `Tools/run_tests.bat` ran 12 tests in
+about a minute at first (47 now, with the play-test steps and the key presses): maps and node formats, the four patch kinds, save and load, the level exit, the map
 editing, and the classic and modern screenshots. All pass. With `-NullRHI` the screenshot tests skip.
 The classic screenshot matches its approved image exactly, and the modern one differs by about
 0.07%. A failing test makes the run exit non-zero (checked with a deliberately wrong expectation).
@@ -676,11 +677,19 @@ The play-test gained `ammoswitch` and `lostsoul` steps and an automap screenshot
 skip on the same five maps, with no new stuck-monster warnings. Still not played by a human: expect
 tuning issues in feel (mouse, gamepad) and HUD offsets (roadmap item 1).
 
+Play-tests that press keys (`feature/pie-playtest`): every play-test step is also an automation
+test, `DoomUE.PlayTest.<step>`, run on its own in PIE (28 pass, `teleport` skips on E1M1), and four
+`DoomUE.Input` tests press real keys through Slate, CommonUI and Enhanced Input in the PIE viewport:
+the menu keys (Esc, arrows, Enter, Backspace, F1), the quit and end game prompts, the automap keys
+(Tab = - G M C F 0 and the arrows) and moving, firing and the weapon keys. They found three bugs:
+Tab never opened the automap (Slate took it, and the arrows, for focus moves and the key was
+flushed), Esc went back one page instead of closing the menu (CommonUI's back key), and opening the
+menu selected the row under the resting mouse pointer. See [docs/Testing.md](docs/Testing.md#key-presses).
+
 Not done yet (roughly in priority order):
 
-1. **A hand play-through**: the scripted play-test can't press keys through Enhanced Input in its
-   unfocused window, so Esc closing the menu and the automap keys (= - F 0 M C G, arrows to pan) are
-   checked by reading the code only. Then the vanilla differences still left from the audit:
+1. **A hand play-through**: the keys are tested now (`DoomUE.Input`), but feel (mouse, gamepad, HUD
+   offsets) needs a person. Then the vanilla differences still left from the audit:
    the arch-vile's fire sprite that follows its victim, and its
    attack timing; items can be picked up from up to about 40 units below (vanilla 8); the animated
    Doom 1 intermission backgrounds, the "you are here" splats and the WILV / WIF patches; the
@@ -690,7 +699,6 @@ Not done yet (roughly in priority order):
 3. DeHackEd frame / code pointer edits: they need Doom's original state table (GPL data from id Software's source); bringing a generated copy in is a licensing decision for the project.
 4. Unreal practices worth adopting next:
    * **Per-platform mappings**: one mapping set serves every platform (the gamepad's buttons are rebindable now; its sticks are fixed).
-   * **Play-tests that press keys**: `-playtest` can't drive Enhanced Input in its unfocused window. Running its steps as automation tests in the editor (the PIE viewport has input) would cover Esc, the automap keys and the prompts for real.
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):

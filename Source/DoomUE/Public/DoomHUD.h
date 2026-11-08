@@ -35,8 +35,7 @@ public:
 	void AutomapToggleGrid();
 	bool AutomapFollowing() const { return Automap.bFollow; }
 
-
-private:
+	/** What the automap's keys change: the key tests read it. */
 	struct FAutomapView
 	{
 		FString Map;               // the view resets on a new map
@@ -53,6 +52,9 @@ private:
 		float PixelsPerUnit = 1.f; // as last drawn
 		FVector2f ViewSize = FVector2f(1, 1);
 	};
+	const FAutomapView& GetAutomapView() const { return Automap; }
+
+private:
 	FAutomapView Automap;
 	/** Automap: lines the player can see become known, whether or not the map is open. */
 	void MarkSeenLines(class ADoomPlayer* P);
