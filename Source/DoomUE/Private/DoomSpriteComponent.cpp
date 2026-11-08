@@ -18,7 +18,10 @@ UDoomSpriteComponent::UDoomSpriteComponent(const FObjectInitializer& ObjectIniti
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SetCastShadow(false);
-	bUseAsyncCooking = false;
+	Mobility = EComponentMobility::Movable; // moved and resized every frame
+	SetCanEverAffectNavigation(false);
+	SetGenerateOverlapEvents(false);
+	bAffectDistanceFieldLighting = false;
 	SetUsingAbsoluteLocation(true);
 	SetUsingAbsoluteRotation(true);
 	SetUsingAbsoluteScale(true);
@@ -94,13 +97,8 @@ void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
 	DoomWorld = InWorld;
 	Sprite = InSprite;
 
-	// unit quad: Y right 0..1, Z up 0..1, facing -X (towards the viewer once rotated)
-	const TArray<FVector> V = { FVector(0, 0, 0), FVector(0, 0, 1), FVector(0, 1, 1), FVector(0, 1, 0) };
-	const TArray<int32> I = { 0, 1, 2, 0, 2, 3 };
-	const TArray<FVector> N = { FVector(-1, 0, 0), FVector(-1, 0, 0), FVector(-1, 0, 0), FVector(-1, 0, 0) };
-	const TArray<FVector2D> UV = { FVector2D(0, 1), FVector2D(0, 0), FVector2D(1, 0), FVector2D(1, 1) };
-	const TArray<FLinearColor> C = { FLinearColor::White, FLinearColor::White, FLinearColor::White, FLinearColor::White };
-	CreateMeshSection_LinearColor(0, V, I, N, UV, C, {}, false);
+	// the shared unit quad: Y right 0..1, Z up 0..1, facing -X (towards the viewer once rotated)
+	SetStaticMesh(DoomAssets::SpriteQuad());
 
 	MID = UMaterialInstanceDynamic::Create(DoomAssets::SpriteMaterial(), this);
 	MID->SetTextureParameterValue(TEXT("Colormap"), DoomWorld->GetGraphics()->ColormapTexture());
@@ -110,8 +108,6 @@ void UDoomSpriteComponent::Init(UDoomWorld* InWorld, const FString& InSprite)
 	{
 		Net.Sprite = Sprite;
 	}
-	// generous bounds: the quad is resized every frame
-	SetBoundsScale(4.f);
 	bDirty = true;
 }
 

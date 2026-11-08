@@ -707,8 +707,16 @@ map. `DoomUE.Game.LevelCollision` now traces every one-sided wall and closed doo
 and every subsector's floor on E1M1 and MAP29 (it found 528 holes before the fix, none after). The
 classic screenshots match pixel for pixel; `-perftest` against the procedural mesh on a GTX 950:
 game thread 2.84 / 3.20 ms (E1M1 / MAP29, was 2.81 / 3.16), moving chunks 0.03 / 0.08 ms a frame
-(was 0.05 / 0.12), every monster asleep in the asleep phase. The sprites still use the procedural
-mesh (one quad each).
+(was 0.05 / 0.12), every monster asleep in the asleep phase.
+
+Sprite quads (`feature/sprite-quads`): every sprite draws one shared unit quad
+(`DoomAssets::SpriteQuad`, a `UStaticMesh` built once at runtime from a mesh description, so packaged
+builds need no asset) through a `UStaticMeshComponent`, instead of a procedural mesh each. The
+`ProceduralMeshComponent` plugin is no longer used. The classic screenshots match pixel for pixel;
+`-perftest` on a GTX 950: render thread 4.93 / 4.46 ms asleep and 5.79 / 3.55 ms awake (E1M1 / MAP29,
+was 5.45 / 4.93 and 6.40 / 4.00), about 0.5 ms less, since static mesh draws are cached between
+frames; game thread and GPU unchanged. Each sprite still has its own material instance (the frame
+is a texture), so they don't batch yet (roadmap item 5).
 
 Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
 320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
@@ -735,7 +743,7 @@ Not done yet (roughly in priority order):
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **World Partition / level instances** for big PWAD maps, and **Nanite** for the baked tiles (they are saved static meshes now).
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
-   * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
+   * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. The sprites share one static quad mesh now; sharing materials too needs the frames in a texture array (or atlas) indexed by Custom Primitive Data, with the sector, brightness and mirror there as well. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
@@ -749,7 +757,6 @@ Not done yet (roughly in priority order):
    * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
    * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).
 8. **Future engine versions**:
-   * **The sprites off the procedural mesh too**: `UDoomSpriteComponent` is still a `UProceduralMeshComponent` (a quad each); a shared quad mesh with the frame in Custom Primitive Data would also serve the shared-materials item (5).
    * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
    * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.
    * **An engine-upgrade checklist** in AGENTS.md: regenerate the generated assets (`-run=DoomContent`: materials, Niagara, input, AI, game data) instead of resaving old ones, run data validation and every test, re-approve the screenshots with the engine version recorded.

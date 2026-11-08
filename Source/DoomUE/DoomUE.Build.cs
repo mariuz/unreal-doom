@@ -7,7 +7,7 @@ public class DoomUE : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags",
-			"ProceduralMeshComponent", "GeometryFramework", "GeometryCore", "DeveloperSettings", "AudioMixer", "AudioExtensions", "AIModule", "GameplayTasks",
+			"GeometryFramework", "GeometryCore", "DeveloperSettings", "AudioMixer", "AudioExtensions", "AIModule", "GameplayTasks",
 			"MeshDescription", "StaticMeshDescription", "Niagara", "NetCore", "UMG", "Slate", "SlateCore", "CommonUI", "CommonInput",
 			"DoomWadTools" // Plugins/DoomWadTools: WADs, maps, nodes, the generator, PWADs
 		});

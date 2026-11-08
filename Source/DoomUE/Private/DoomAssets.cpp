@@ -4,6 +4,9 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "NiagaraSystem.h"
+#include "Engine/StaticMesh.h"
+#include "StaticMeshAttributes.h"
+#include "UObject/Package.h"
 
 namespace
 {
@@ -41,6 +44,46 @@ UMaterialInterface* DoomAssets::SpriteFuzzMaterial()
 {
 	UMaterialInterface* M = LoadOrWarn<UMaterialInterface>(SpriteFuzzPath);
 	return M ? M : SpriteMaterial();
+}
+
+UStaticMesh* DoomAssets::SpriteQuad()
+{
+	static TObjectPtr<UStaticMesh> Quad; // rooted: shared by every sprite for the program's life
+	if (Quad)
+	{
+		return Quad;
+	}
+	FMeshDescription Desc;
+	FStaticMeshAttributes Attr(Desc);
+	Attr.Register();
+	// the corners and UVs the procedural quad had: the picture's top-left at (0, 0, 1)
+	const FVector3f Corners[4] = { FVector3f(0, 0, 0), FVector3f(0, 0, 1), FVector3f(0, 1, 1), FVector3f(0, 1, 0) };
+	const FVector2f UVs[4] = { FVector2f(0, 1), FVector2f(0, 0), FVector2f(1, 0), FVector2f(1, 1) };
+	const FPolygonGroupID Group = Desc.CreatePolygonGroup();
+	Attr.GetPolygonGroupMaterialSlotNames()[Group] = TEXT("Sprite");
+	FVertexInstanceID Inst[4];
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const FVertexID V = Desc.CreateVertex();
+		Attr.GetVertexPositions()[V] = Corners[i];
+		Inst[i] = Desc.CreateVertexInstance(V);
+		Attr.GetVertexInstanceNormals()[Inst[i]] = FVector3f(-1, 0, 0);
+		Attr.GetVertexInstanceTangents()[Inst[i]] = FVector3f(0, 1, 0);
+		Attr.GetVertexInstanceBinormalSigns()[Inst[i]] = 1.f;
+		Attr.GetVertexInstanceUVs().Set(Inst[i], 0, UVs[i]);
+		Attr.GetVertexInstanceColors()[Inst[i]] = FVector4f(1, 1, 1, 1);
+	}
+	Desc.CreateTriangle(Group, { Inst[0], Inst[1], Inst[2] });
+	Desc.CreateTriangle(Group, { Inst[0], Inst[2], Inst[3] });
+	UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage(), TEXT("DoomSpriteQuad"), RF_Transient);
+	Mesh->GetStaticMaterials().Add(FStaticMaterial(SpriteMaterial(), TEXT("Sprite")));
+	UStaticMesh::FBuildMeshDescriptionsParams Params;
+	Params.bBuildSimpleCollision = false;
+	Params.bFastBuild = true; // the runtime path: no editor build, works in packaged games
+	Mesh->BuildFromMeshDescriptions({ &Desc }, Params);
+	Mesh->AddToRoot();
+	Quad = Mesh;
+	return Quad;
 }
 
 UMaterialParameterCollection* DoomAssets::Collection()
