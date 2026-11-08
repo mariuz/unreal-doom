@@ -52,6 +52,7 @@
 #include "NiagaraSystem.h"
 #include "Tasks/Task.h"
 #include "HAL/IConsoleManager.h"
+#include "Engine/GameViewportClient.h"
 
 namespace DoomPresentationDetail
 {
@@ -62,6 +63,91 @@ namespace DoomPresentationDetail
 	IConsoleVariable* AntiAliasingMethod()
 	{
 		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod"));
+	}
+
+	/** Worlds drawing classic pixels now, and the screen percentage and upscale filter they replaced. */
+	int32 ClassicPixelWorlds = 0;
+	float SavedScreenPercentage = 0.f;
+	int32 SavedUpscaleQuality = 3;
+
+	IConsoleVariable* ScreenPercentage()
+	{
+		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"));
+	}
+
+	IConsoleVariable* UpscaleQuality()
+	{
+		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.Upscale.Quality"));
+	}
+}
+
+int32 UDoomWorld::ClassicPixelRows() const
+{
+	if (bModern)
+	{
+		return 0;
+	}
+	int32 Rows = GetDefault<UDoomSettings>()->ClassicPixelRows;
+	FParse::Value(FCommandLine::Get(), TEXT("-pixels="), Rows);
+	return Rows > 0 ? FMath::Clamp(Rows, 50, 2160) : 0;
+}
+
+void UDoomWorld::UpdateClassicPixels()
+{
+	using namespace DoomPresentationDetail;
+	const int32 Rows = ClassicPixelRows();
+	FVector2D Size = FVector2D::ZeroVector;
+	if (UGameViewportClient* VC = GetWorld()->GetGameViewport())
+	{
+		VC->GetViewportSize(Size);
+	}
+	IConsoleVariable* SP = ScreenPercentage();
+	IConsoleVariable* UQ = UpscaleQuality();
+	if (Rows <= 0 || Size.Y <= Rows || !SP || !UQ)
+	{
+		RestoreClassicPixels(); // off, or the window is no taller than the rows
+		return;
+	}
+	if (!bClassicPixels)
+	{
+		bClassicPixels = true;
+		if (ClassicPixelWorlds++ == 0)
+		{
+			SavedScreenPercentage = SP->GetFloat();
+			SavedUpscaleQuality = UQ->GetInt();
+		}
+	}
+	// the 3D view at Rows rows, scaled up with nearest filtering; the HUD and menus draw after it at
+	// the window's resolution
+	const float Percent = FMath::Clamp(100.f * Rows / (float)Size.Y, 1.f, 100.f);
+	if (!FMath::IsNearlyEqual(SP->GetFloat(), Percent, 0.001f))
+	{
+		SP->Set(Percent, ECVF_SetByCode);
+	}
+	if (UQ->GetInt() != 0)
+	{
+		UQ->Set(0, ECVF_SetByCode);
+	}
+}
+
+void UDoomWorld::RestoreClassicPixels()
+{
+	using namespace DoomPresentationDetail;
+	if (!bClassicPixels)
+	{
+		return;
+	}
+	bClassicPixels = false;
+	if (--ClassicPixelWorlds == 0)
+	{
+		if (IConsoleVariable* SP = ScreenPercentage())
+		{
+			SP->Set(SavedScreenPercentage, ECVF_SetByCode);
+		}
+		if (IConsoleVariable* UQ = UpscaleQuality())
+		{
+			UQ->Set(SavedUpscaleQuality, ECVF_SetByCode);
+		}
 	}
 }
 

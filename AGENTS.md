@@ -35,7 +35,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 47 automation tests (see [docs/Testing.md](docs/Testing.md)): 14 for maps, patches,
+* **Tests:** 48 automation tests (see [docs/Testing.md](docs/Testing.md)): 15 for maps, patches,
   the game, the editor and the screenshots, 29 `DoomUE.PlayTest.<step>` and 4 `DoomUE.Input` key-press
   tests, all passing at the time of writing.
   * Run them before merging.
@@ -135,7 +135,11 @@ Tools/run_tests.bat DoomUE -NullRHI
   Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
 * **The classic renderer turns anti-aliasing off** (`UDoomWorld::ApplyAntiAliasing`, a global cvar
   with a shared count for PIE's worlds) and puts the project's TSR back for modern and at the end;
-  anything else that changes `r.AntiAliasingMethod` must go through it.
+  anything else that changes `r.AntiAliasingMethod` must go through it. Options > Pixels
+  (`UDoomWorld::UpdateClassicPixels`, each frame from the local player controller) owns
+  `r.ScreenPercentage` and `r.Upscale.Quality` the same way.
+* **New Options rows** go into `EOptionsRow` and `FDoomMenu::Rows` in the same order; the page
+  scrolls (10 visible rows), so key tests reach a row with `PressToRow`, not a fixed count.
 * **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
   play-test drives `FDoomMenu` or the screen's handlers (they ignore locked input, so unlock around
   them). Esc is handled by the screen itself (it closes the whole menu; CommonUI would take it as

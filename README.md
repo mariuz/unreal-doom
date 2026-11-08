@@ -58,7 +58,8 @@ with `-iwad=` / `-file=`.
 * **Classic** (default): unlit, with Doom's palette-space lighting: sector light, fake contrast,
   distance diminishing, full-bright frames, gun flash, and the invulnerability / light-amp colormaps.
   Manual exposure and `ToneCurveAmount = 0` keep the palette colours 1:1, and anti-aliasing is
-  off so they stay sharp in motion. Spectres use a
+  off so they stay sharp in motion. **Options > Pixels** (`-pixels=`) draws the 3D view at
+  320x200 or 640x400 and scales it up with nearest-neighbour filtering, for Doom's chunky pixels. Spectres use a
   translucent material that copies the scene one 320x200 row above or below and darkens it,
   like Doom's fuzz.
 * **Modern** (`-modern`, or toggle in the menu): lit materials. Sector light becomes emissive
@@ -146,6 +147,7 @@ without saved tiles are baked when they load.
 | `-menupage=N [-menuitem=N]` | open a menu page (0 main, 2 skill, 4 options, 5 sound, 6 load, 7 save, 8 help, 9 quit) for screenshots |
 | `-respawn` | Nightmare-style monster respawning on any skill |
 | `-smooth` | the smooth light approximation instead of the exact COLORMAP |
+| `-pixels=200` / `-pixels=400` | classic renderer: draw 200 (320x200) or 400 (640x400) rows and scale them up with sharp pixels (Options > Pixels) |
 | `-forcepalette=N` | hold `PLAYPAL` palette N (1-8 pain, 9-12 pickup, 13 radiation suit) for screenshots |
 | `-fxtest` | with `-modern`: every particle burst in a row in front of the player, four times a second |
 | `-noparticles` | no Niagara bursts in the modern renderer |
@@ -693,6 +695,15 @@ moving sprites and the spectres' fuzz. Modern and the end of the game bring the 
 back (the setting is global, so classic worlds in PIE share one count). The screenshot tests check
 the setting in each renderer; the still E1M1 capture is unchanged.
 
+Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
+320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
+window's height, updated each frame so a resize keeps it) and scales it up with nearest-neighbour
+filtering (`r.Upscale.Quality 0`). The status bar, weapon and menus draw afterwards at the window's
+resolution. The modern renderer and the end of the game bring the project's values back.
+`DoomUE.Render.E1M1Classic200` compares the 320x200 view with its approved image, and
+`DoomUE.Input.MenuKeys` steps the Pixels row with the keys. The key tests now also hold off the real
+mouse while they run: the pointer moving over the editor window hovered menu rows and chose them.
+
 Not done yet (roughly in priority order):
 
 1. **A hand play-through**: the keys are tested now (`DoomUE.Input`), but feel (mouse, gamepad, HUD
@@ -716,7 +727,7 @@ Not done yet (roughly in priority order):
    * **CI**: a BuildGraph script (or a GitHub Actions runner with the engine) that builds both modules, runs `Tools/run_tests.bat -NullRHI` and the `-nodetest` / `-wadtest` / `-gentest` checks on every push.
    * **UI framework, the rest**: the game's menu runs on CommonUI now; the in-game map editor's panels are still plain UMG built in code (CommonUI buttons would give them gamepad navigation).
 7. **Rendering**:
-   * **A low-resolution classic mode**: 320x200 or 640x400, scaled up with nearest-neighbour filtering (`r.ScreenPercentage` with `r.Upscale.Quality 0`), for Doom's own chunky pixels.
+   * **The status bar and weapon at the low resolution too**: Options > Pixels lowers the 3D view only; the HUD (canvas) stays sharp at the window's resolution.
    * **MegaLights for the modern renderer**: projectiles, explosions, the muzzle flash and lamps are all shadow-casting point lights, and a slaughter map has dozens at once; MegaLights is made for many shadowed lights at a steady cost. Measure on MAP29 first.
    * **Nanite for the baked tiles** (item 4): the tiles are low-poly, but virtual shadow maps cache and cull far better with Nanite meshes.
    * **Quality presets for modern**: Low / Medium / High for Lumen, shadows and fog in Options > Renderer, and an upscaler (TSR at a lower screen percentage, or the FSR / DLSS plugins); on a GTX 950 the modern frame waits on the GPU (about 8.3 ms).

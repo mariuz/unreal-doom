@@ -321,6 +321,13 @@ public:
 	int32 GetTic() const { return Flow().LevelTic; }
 	int32 GetSkill() const { return Skill; }
 	bool IsModern() const { return bModern; }
+	/** The rows the classic renderer draws (Options > Pixels, -pixels=): 200, 400, or 0 for the
+	 *  window's own resolution; always 0 in the modern renderer. */
+	int32 ClassicPixelRows() const;
+	/** Each frame (the local player controller): the screen percentage for ClassicPixelRows at the
+	 *  viewport's height now, with nearest-neighbour upscaling; the project's values come back
+	 *  when the mode is off. */
+	void UpdateClassicPixels();
 	/** Monster AI: SMART (Unreal's AI framework picks where monsters go, DoomAI.h) or CLASSIC. */
 	bool IsSmartAI() const { return bSmartAI; }
 	/** Switches every monster now and the ones spawned later. */
@@ -438,6 +445,8 @@ private:
 	void ApplyAntiAliasing();
 	void RestoreAntiAliasing();
 	bool bClassicAntiAliasing = false;
+	void RestoreClassicPixels();
+	bool bClassicPixels = false;
 
 	TUniquePtr<FDoomWad> Wad;
 	TUniquePtr<FDoomGraphics> Gfx;

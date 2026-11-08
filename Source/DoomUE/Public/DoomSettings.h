@@ -59,6 +59,11 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Rendering")
 	bool bPaletteExact = true;
 
+	/** Classic renderer (Options > Pixels): draw only this many rows, 200 (320x200) or 400 (640x400),
+	 *  and scale them up with sharp pixels; 0 draws at the window's resolution. -pixels=200 overrides it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Rendering", meta = (ClampMin = 0, ClampMax = 400))
+	int32 ClassicPixelRows = 0;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	float MouseSensitivity = 1.0f;
 

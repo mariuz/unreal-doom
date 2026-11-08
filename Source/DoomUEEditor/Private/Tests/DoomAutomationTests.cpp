@@ -30,6 +30,8 @@
 #include "DoomLevel.h"
 #include "DoomTestCommon.h"
 #include "HAL/IConsoleManager.h"
+#include "DoomSettings.h"
+#include "Engine/GameViewportClient.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -323,7 +325,8 @@ namespace DoomTest
 	constexpr uint64 ModernSettleFrames = 600;
 
 	/** E1M1's start in one renderer, compared against the approved image (needs a real RHI). */
-	void Screenshot(FAutomationTestBase* Test, const FString& Name, bool bModern)
+	/** PixelRows: the classic renderer's Options > Pixels setting for the capture (0: full). */
+	void Screenshot(FAutomationTestBase* Test, const FString& Name, bool bModern, int32 PixelRows = 0)
 	{
 		if (!FApp::CanEverRender())
 		{
@@ -333,8 +336,11 @@ namespace DoomTest
 		StartGame(Test);
 		// Doom's clock stops before the map loads, and exactly 35 tics run: monsters, animations and
 		// lights are in the same state every run, while the engine keeps rendering
-		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("stop the clock"), []()
+		TSharedRef<int32> SavedRows = MakeShared<int32>(0);
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("stop the clock"), [SavedRows, PixelRows]()
 		{
+			*SavedRows = GetDefault<UDoomSettings>()->ClassicPixelRows;
+			GetMutableDefault<UDoomSettings>()->ClassicPixelRows = PixelRows;
 			PlayWorld()->GetAuthGameMode<ADoomGameMode>()->bClockStopped = true;
 			return true;
 		}));
@@ -356,6 +362,25 @@ namespace DoomTest
 			}
 			return true;
 		}));
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("pixels"), [Test, PixelRows]()
+		{
+			// the player controller sets the screen percentage each frame: give it one
+			if (PixelRows <= 0)
+			{
+				return true;
+			}
+			FVector2D Size = FVector2D::ZeroVector;
+			PlayWorld()->GetGameViewport()->GetViewportSize(Size);
+			const float Want = 100.f * PixelRows / FMath::Max(1.f, (float)Size.Y);
+			const float Now = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"))->GetFloat();
+			if (!FMath::IsNearlyEqual(Now, Want, 0.01f))
+			{
+				return false;
+			}
+			Test->AddInfo(FString::Printf(TEXT("%d rows of %.0f: screen percentage %.2f"), PixelRows, Size.Y, Now));
+			Test->TestEqual(TEXT("nearest-neighbour upscaling"), IConsoleManager::Get().FindConsoleVariable(TEXT("r.Upscale.Quality"))->GetInt(), 0);
+			return true;
+		}, 10.f));
 		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("run 35 tics"), []()
 		{
 			for (int32 i = 0; i < 35; ++i)
@@ -390,6 +415,11 @@ namespace DoomTest
 			}
 			return *bCompared;
 		}, 120.f));
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("the pixels setting back"), [SavedRows]()
+		{
+			GetMutableDefault<UDoomSettings>()->ClassicPixelRows = *SavedRows;
+			return true;
+		}));
 		EndGame(Test);
 	}
 }
@@ -405,6 +435,14 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomScreenshotModernTest, "DoomUE.Render.E1M1M
 bool FDoomScreenshotModernTest::RunTest(const FString& Parameters)
 {
 	Screenshot(this, TEXT("DoomUE_E1M1_Modern"), true);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomScreenshotClassic200Test, "DoomUE.Render.E1M1Classic200", DoomTest::Flags)
+bool FDoomScreenshotClassic200Test::RunTest(const FString& Parameters)
+{
+	// Options > Pixels 320X200: 200 rows scaled up with nearest-neighbour filtering
+	Screenshot(this, TEXT("DoomUE_E1M1_Classic200"), false, 200);
 	return true;
 }
 

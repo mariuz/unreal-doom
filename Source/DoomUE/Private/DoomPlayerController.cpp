@@ -269,6 +269,13 @@ void ADoomPlayerController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	ApplyContexts();
 	UpdateMenuScreen();
+	if (IsLocalController())
+	{
+		if (UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>())
+		{
+			W->UpdateClassicPixels(); // the window may have been resized, or the renderer switched
+		}
+	}
 }
 
 void ADoomPlayerController::UpdateMenuScreen()

@@ -8,6 +8,7 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/IInputProcessor.h"
 #include "Engine/GameViewportClient.h"
 #include "Widgets/SViewport.h"
 #include "GameFramework/PlayerController.h"
@@ -16,6 +17,7 @@
 #include "DoomPlayerController.h"
 #include "DoomHUD.h"
 #include "DoomMenu.h"
+#include "DoomSettings.h"
 #include "DoomUE.h"
 #include "DoomTestCommon.h"
 
@@ -23,6 +25,22 @@
 
 namespace DoomKeyTest
 {
+	/** Swallows the real mouse while a key test runs: the pointer moving over the editor window would
+	 *  hover menu rows and choose them, in the middle of the test's key presses. */
+	class FMouseBlocker : public IInputProcessor
+	{
+	public:
+		virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override {}
+		virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonUpEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& SlateApp, const FPointerEvent& InWheelEvent, const FPointerEvent* InGestureEvent) override { return true; }
+		virtual const TCHAR* GetDebugName() const override { return TEXT("DoomKeyTestMouseBlocker"); }
+	};
+
+	TSharedPtr<FMouseBlocker> MouseBlocker;
+
 	UDoomWorld* World()
 	{
 		return DoomTest::Doom();
@@ -106,6 +124,12 @@ namespace DoomKeyTest
 				if (GFrameCounter < SettledFrame + 3)
 				{
 					return false;
+				}
+				// pressing until something holds (moving to a row): no press if it already does
+				if (Presses == 0 && MaxPresses > 1 && Done && Done())
+				{
+					Test->AddInfo(FString::Printf(TEXT("%s (%s x0): %s"), *What, *Key.ToString(), *Describe()));
+					return true;
 				}
 				if (Presses == 0 && Before)
 				{
@@ -216,9 +240,28 @@ namespace DoomKeyTest
 				VC->OnGameViewportInputKey().Unbind();
 			}
 			FocusGame();
+			if (!MouseBlocker.IsValid())
+			{
+				MouseBlocker = MakeShared<FMouseBlocker>();
+				FSlateApplication::Get().RegisterInputPreProcessor(MouseBlocker, 0);
+			}
 			Test->TestFalse(TEXT("input is not locked"), World()->IsInputLocked());
 			Test->TestEqual(TEXT("playing"), (int32)World()->GetState(), (int32)EDoomGameState::Playing);
 		});
+	}
+
+	/** Gives the mouse back and ends PIE. */
+	void Finish(FAutomationTestBase* Test)
+	{
+		Then(Test, TEXT("the mouse back"), []()
+		{
+			if (MouseBlocker.IsValid())
+			{
+				FSlateApplication::Get().UnregisterInputPreProcessor(MouseBlocker);
+				MouseBlocker.Reset();
+			}
+		});
+		DoomTest::EndGame(Test);
 	}
 
 	bool InMenu(EMenuPage Page)
@@ -258,6 +301,22 @@ bool FDoomInputMenuTest::RunTest(const FString& Parameters)
 	Press(this, EKeys::Up, TEXT("Up moves back"), [Row]() { return World()->Menu.GetItem() == *Row; });
 	PressToRow(this, EKeys::Down, 1, TEXT("Down reaches Options"));
 	Press(this, EKeys::Enter, TEXT("Enter opens Options"), []() { return InMenu(EMenuPage::Options); });
+	// Pixels: Enter steps FULL, 640X400, 320X200 and round again, back to where it was
+	TSharedRef<int32> Rows = MakeShared<int32>(0);
+	auto PixelRows = []() { return GetDefault<UDoomSettings>()->ClassicPixelRows; };
+	auto Next = [](int32 R) { return R == 0 ? 400 : R == 400 ? 200 : 0; };
+	PressToRow(this, EKeys::Down, EOptionsRow::Pixels, TEXT("Down reaches Pixels"));
+	for (int32 i = 1; i <= 3; ++i)
+	{
+		Press(this, EKeys::Enter, FString::Printf(TEXT("Enter steps Pixels (%d of 3)"), i),
+			[Rows, PixelRows, Next, i]()
+			{
+				int32 Want = *Rows;
+				for (int32 k = 0; k < i; ++k) Want = Next(Want);
+				return PixelRows() == Want;
+			},
+			[Rows, PixelRows, i]() { if (i == 1) *Rows = PixelRows(); });
+	}
 	Press(this, EKeys::BackSpace, TEXT("Backspace goes back to the main menu, on Options"),
 		[]() { return InMenu(EMenuPage::Main) && World()->Menu.GetItem() == 1; });
 	Press(this, EKeys::Escape, TEXT("Esc closes the menu"), []() { return Playing(); });
@@ -269,7 +328,7 @@ bool FDoomInputMenuTest::RunTest(const FString& Parameters)
 	Press(this, EKeys::F1, TEXT("F1 opens Read This!"), []() { return InMenu(EMenuPage::ReadThis); });
 	Press(this, EKeys::Enter, TEXT("Enter turns the page"), []() { return InMenu(EMenuPage::ReadThis) && World()->Menu.GetHelpPage() == 1; });
 	Press(this, EKeys::Escape, TEXT("Esc closes Read This!"), []() { return Playing(); });
-	DoomTest::EndGame(this);
+	Finish(this);
 	return true;
 }
 
@@ -297,7 +356,7 @@ bool FDoomInputPromptTest::RunTest(const FString& Parameters)
 	PressToRow(this, EKeys::Up, EOptionsRow::EndGame, TEXT("Up reaches End Game again (the mouse may have moved the selection)"));
 	Press(this, EKeys::Enter, TEXT("Enter on End Game asks again"), []() { return InMenu(EMenuPage::EndGame); });
 	Press(this, EKeys::Y, TEXT("Y ends the game: the title screen"), []() { return World()->GetState() == EDoomGameState::Title; });
-	DoomTest::EndGame(this);
+	Finish(this);
 	return true;
 }
 
@@ -323,7 +382,7 @@ bool FDoomInputAutomapTest::RunTest(const FString& Parameters)
 	Press(this, EKeys::F, TEXT("F follows again"), [View]() { return View().bFollow; });
 	Press(this, EKeys::G, TEXT("G hides the grid"), [View]() { return !View().bGrid; });
 	Press(this, EKeys::Tab, TEXT("Tab closes the automap"), []() { return !World()->IsAutomapOpen(); });
-	DoomTest::EndGame(this);
+	Finish(this);
 	return true;
 }
 
@@ -368,7 +427,7 @@ bool FDoomInputPlayTest::RunTest(const FString& Parameters)
 			P->Inv().Weapons[(int32)EDoomWeapon::Shotgun] = true;
 			P->Inv().Ammo[(int32)EDoomAmmo::Shells] = 8;
 		});
-	DoomTest::EndGame(this);
+	Finish(this);
 	return true;
 }
 
