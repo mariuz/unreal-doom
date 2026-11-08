@@ -23,7 +23,7 @@ with `-iwad=` / `-file=`.
 | WAD lumps, `PLAYPAL`, `COLORMAP` | `FDoomWad` (plain C++), stacked IWAD + PWADs, last lump wins |
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
 | `VERTEXES`, `LINEDEFS`, `SIDEDEFS`, `SECTORS`, BSP `NODES/SEGS/SSECTORS` | `FDoomMap`: Doom units and records; subsector polygons built by clipping the map bounds through the BSP. Vanilla nodes, ZDoom extended nodes (`XNOD`/`ZNOD`, `XGLN`/`ZGLN`, `XGL2`/`ZGL2`, `XGL3`/`ZGL3`; the `Z` variants inflated with the engine's zlib) and glBSP GL nodes (`GL_<map>` lumps, versions 1 to 5) all load into the same structures. UDMF maps (`TEXTMAP` with `ZNODES`) load through the same path: vertices, sectors, sidedefs, linedefs (flags, Doom specials with the tag in `arg0`) and things (skill, ambush, single-player flags) |
-| Walls, floors, ceilings | `ADoomLevel`: `UProceduralMeshComponent` chunks (one static, one per movable sector, one per switch line), one section per texture, Doom's pegging rules, masked mid-textures in non-colliding components. With the modern renderer the static chunk is also baked at load into runtime **`UStaticMesh`** tiles (1024 map units square, built from `FMeshDescription`s) that get mesh **distance fields** and Lumen surface cards; the procedural chunk then only collides. Content-hash GUIDs make each map's distance fields come from the DDC after their first build. Imported levels carry these tiles as saved assets (`/Game/Doom/Maps/<MAP>_Tiles`, baked at import or with **Bake Static Meshes**). They are used whenever a geometry signature matches, and they are how packaged builds get distance fields |
+| Walls, floors, ceilings | `ADoomLevel`: `UDynamicMeshComponent` chunks (one static, one per movable sector, one per switch line; double-sided collision), one material ID per texture, Doom's pegging rules, masked mid-textures in non-colliding components. With the modern renderer the static chunk is also baked at load into runtime **`UStaticMesh`** tiles (1024 map units square, built from `FMeshDescription`s) that get mesh **distance fields** and Lumen surface cards; the dynamic mesh chunk then only collides. Content-hash GUIDs make each map's distance fields come from the DDC after their first build. Imported levels carry these tiles as saved assets (`/Game/Doom/Maps/<MAP>_Tiles`, baked at import or with **Bake Static Meshes**). They are used whenever a geometry signature matches, and they are how packaged builds get distance fields |
 | Palette-exact colours | Every texture also has a palette-index twin (mips pick the palette entry nearest each 2x2 average); the classic shader computes Doom's colormap row and looks the colour up in the WAD's `COLORMAP` through `PLAYPAL` (Options > Colors: exact / smooth). The weapon uses the psprite's own row. Damage, pickup and radiation-suit palettes switch the whole `PLAYPAL` set (world, sky, sprites, weapon, status bar) exactly as Doom does; the smooth and modern modes use screen tints |
 | Sector light, fake contrast, light diminishing | One texel per sector in a light texture updated each tic (`UpdateTextureRegions`), so flickering lights never rebuild meshes. A **Custom HLSL** node runs Doom's `scalelight` / `zlight` colormap selection per pixel from `PixelDepth` |
 | Gun flash light, invulnerability, light amp | `UMaterialParameterCollection` (`MPC_Doom`) globals: `ExtraLight`, `FixedColormap`, `Tic` |
@@ -695,6 +695,21 @@ moving sprites and the spectres' fuzz. Modern and the end of the game bring the 
 back (the setting is global, so classic worlds in PIE share one count). The screenshot tests check
 the setting in each renderer; the still E1M1 capture is unchanged.
 
+Dynamic Mesh (`feature/dynamic-mesh`): the level chunks are `UDynamicMeshComponent`s (Epic's
+maintained runtime mesh, in the engine's GeometryFramework module) instead of the legacy
+`UProceduralMeshComponent` plugin. Each chunk is one `FDynamicMesh3` with a material ID per texture,
+UV0, UV1 (sector, contrast), normals and the surface kind in the vertex colour, as before; collision
+is deferred and cooked once per change (`UpdateCollision`), which replaces the old workaround.
+Dynamic Mesh cooks one-sided collision, and the walls are wound against their normals, so
+`UDoomLevelMeshComponent` makes it double-sided as the procedural mesh did: with one-sided
+collision a sleeping E1M1 monster saw the player through a wall and a MAP29 monster fell out of the
+map. `DoomUE.Game.LevelCollision` now traces every one-sided wall and closed door from both sides
+and every subsector's floor on E1M1 and MAP29 (it found 528 holes before the fix, none after). The
+classic screenshots match pixel for pixel; `-perftest` against the procedural mesh on a GTX 950:
+game thread 2.84 / 3.20 ms (E1M1 / MAP29, was 2.81 / 3.16), moving chunks 0.03 / 0.08 ms a frame
+(was 0.05 / 0.12), every monster asleep in the asleep phase. The sprites still use the procedural
+mesh (one quad each).
+
 Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
 320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
 window's height, updated each frame so a resize keeps it) and scales it up with nearest-neighbour
@@ -734,7 +749,7 @@ Not done yet (roughly in priority order):
    * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
    * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).
 8. **Future engine versions**:
-   * **`UDynamicMeshComponent` instead of `UProceduralMeshComponent`** for the level chunks: the procedural mesh is a legacy component (and the reason collision cooks again on every section change); Dynamic Mesh is Epic's maintained path for runtime meshes, with better collision options and a way to static meshes. It touches `DoomLevel` only.
+   * **The sprites off the procedural mesh too**: `UDoomSpriteComponent` is still a `UProceduralMeshComponent` (a quad each); a shared quad mesh with the frame in Custom Primitive Data would also serve the shared-materials item (5).
    * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
    * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.
    * **An engine-upgrade checklist** in AGENTS.md: regenerate the generated assets (`-run=DoomContent`: materials, Niagara, input, AI, game data) instead of resaving old ones, run data validation and every test, re-approve the screenshots with the engine version recorded.

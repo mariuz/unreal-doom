@@ -72,7 +72,7 @@ In short:
 
 ## Rendering and assets
 
-* `ADoomLevel` builds the geometry: procedural mesh chunks, plus static-mesh tiles with
+* `ADoomLevel` builds the geometry: dynamic mesh chunks (`UDoomLevelMeshComponent`), plus static-mesh tiles with
   distance fields in the modern renderer.
 * `DoomGraphics` turns the WAD's pictures into textures. The editor module generates the
   materials and Niagara effects in code (`-run=DoomContent`).
@@ -124,10 +124,12 @@ new game, the next map after the intermission and the next map after a story tex
 `LoadMap` (the startup `-warp`, save games, network clients, the editor) runs the same steps without
 returning in between, and still uses the worker threads.
 
-Collision is cooked once per chunk. The procedural mesh component recooks its whole collision
-whenever any section changes, so `ADoomLevel::Commit` adds the sections without collision, then
-flags them and triggers one cook. Adding them one by one had cooked E1M1's static chunk 136 times:
-1.2 s of a 1.4 s level build.
+Collision is cooked once per chunk. Each chunk is a `UDynamicMeshComponent` with deferred collision
+updates: `ADoomLevel::Commit` builds one `FDynamicMesh3` from the chunk's sections (a material ID per
+texture), sets it and calls `UpdateCollision` once. (The procedural mesh it replaced recooked its whole
+collision on every section change; adding sections one by one had cooked E1M1's static chunk 136
+times, 1.2 s of a 1.4 s level build.) The collision is double-sided (`UDoomLevelMeshComponent`):
+Dynamic Mesh cooks one-sided triangles, and DoomUE's walls are wound against their normals.
 
 ## Editor
 

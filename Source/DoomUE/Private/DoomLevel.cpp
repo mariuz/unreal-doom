@@ -5,7 +5,10 @@
 #include "DoomAssets.h"
 #include "DoomMapTiles.h"
 #include "DoomUE.h"
-#include "ProceduralMeshComponent.h"
+#include "Components/DynamicMeshComponent.h"
+#include "DynamicMesh/DynamicMesh3.h"
+#include "DynamicMesh/DynamicMeshAttributeSet.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Texture2D.h"
 #include "TextureResource.h"
@@ -31,6 +34,99 @@ namespace
 		if (A.X == B.X) return 16.f;
 		return 0.f;
 	}
+
+	/**
+	 * Sections as one dynamic mesh: a material ID per section key (Slots keeps them stable across
+	 * rebuilds, adding new keys at the end), every section vertex its own mesh vertex with UV0, UV1
+	 * (sector, contrast), normal and colour (the surface kind), as the procedural mesh had them.
+	 * Triangles a manifold mesh refuses (floors whose triangles share an edge three ways, or the same
+	 * triangle twice) get their own copies of the vertices, so every triangle still draws and collides.
+	 */
+	int32 BuildDoomMesh(const TMap<FName, ADoomLevel::FSectionData>& Data, TMap<FName, int32>& Slots, UE::Geometry::FDynamicMesh3& Mesh)
+	{
+		using namespace UE::Geometry;
+		Mesh.EnableAttributes();
+		FDynamicMeshAttributeSet* Attr = Mesh.Attributes();
+		Attr->SetNumUVLayers(2);
+		Attr->EnablePrimaryColors();
+		Attr->EnableMaterialID();
+		FDynamicMeshUVOverlay* UV0 = Attr->GetUVLayer(0);
+		FDynamicMeshUVOverlay* UV1 = Attr->GetUVLayer(1);
+		FDynamicMeshNormalOverlay* Normals = Attr->PrimaryNormals();
+		FDynamicMeshColorOverlay* Colors = Attr->PrimaryColors();
+		FDynamicMeshMaterialAttribute* MaterialID = Attr->GetMaterialID();
+		int32 Dropped = 0;
+		TArray<int32> Vid, E0, E1, En, Ec;
+		for (const TPair<FName, ADoomLevel::FSectionData>& Pair : Data)
+		{
+			const ADoomLevel::FSectionData& D = Pair.Value;
+			if (D.I.Num() == 0)
+			{
+				continue;
+			}
+			const int32* Found = Slots.Find(Pair.Key);
+			const int32 Slot = Found ? *Found : Slots.Add(Pair.Key, Slots.Num());
+			auto AddVertex = [&](int32 i, int32& V, int32& A, int32& B, int32& N, int32& C)
+			{
+				V = Mesh.AppendVertex(D.V[i]);
+				A = UV0->AppendElement(FVector2f(D.UV0[i]));
+				B = UV1->AppendElement(FVector2f(D.UV1[i]));
+				N = Normals->AppendElement(FVector3f(D.N[i]));
+				C = Colors->AppendElement(FVector4f(D.C[i]));
+			};
+			const int32 NumV = D.V.Num();
+			Vid.SetNumUninitialized(NumV);
+			E0.SetNumUninitialized(NumV);
+			E1.SetNumUninitialized(NumV);
+			En.SetNumUninitialized(NumV);
+			Ec.SetNumUninitialized(NumV);
+			for (int32 i = 0; i < NumV; ++i)
+			{
+				AddVertex(i, Vid[i], E0[i], E1[i], En[i], Ec[i]);
+			}
+			for (int32 t = 0; t + 2 < D.I.Num(); t += 3)
+			{
+				int32 K[3] = { D.I[t], D.I[t + 1], D.I[t + 2] };
+				if (K[0] == K[1] || K[1] == K[2] || K[0] == K[2])
+				{
+					++Dropped; // degenerate: draws nothing either way
+					continue;
+				}
+				FIndex3i V(Vid[K[0]], Vid[K[1]], Vid[K[2]]), A(E0[K[0]], E0[K[1]], E0[K[2]]), B(E1[K[0]], E1[K[1]], E1[K[2]]),
+					N(En[K[0]], En[K[1]], En[K[2]]), C(Ec[K[0]], Ec[K[1]], Ec[K[2]]);
+				int32 Tri = Mesh.AppendTriangle(V);
+				if (Tri == FDynamicMesh3::NonManifoldID || Tri == FDynamicMesh3::DuplicateTriangleID)
+				{
+					for (int32 j = 0; j < 3; ++j)
+					{
+						AddVertex(K[j], V[j], A[j], B[j], N[j], C[j]);
+					}
+					Tri = Mesh.AppendTriangle(V);
+				}
+				if (Tri < 0)
+				{
+					++Dropped;
+					continue;
+				}
+				UV0->SetTriangle(Tri, A);
+				UV1->SetTriangle(Tri, B);
+				Normals->SetTriangle(Tri, N);
+				Colors->SetTriangle(Tri, C);
+				MaterialID->SetValue(Tri, Slot);
+			}
+		}
+		return Dropped;
+	}
+}
+
+UBodySetup* UDoomLevelMeshComponent::CreateBodySetupHelper()
+{
+	UBodySetup* Setup = Super::CreateBodySetupHelper();
+	if (Setup)
+	{
+		Setup->bDoubleSidedGeometry = true; // walls block from both sides (the procedural mesh's setting)
+	}
+	return Setup;
 }
 
 ADoomLevel::ADoomLevel()
@@ -39,16 +135,20 @@ ADoomLevel::ADoomLevel()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 }
 
-UProceduralMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool bCollision)
+UDynamicMeshComponent* ADoomLevel::NewMeshComponent(const FString& Name, bool bCollision)
 {
 	// transient: generated from the WAD every time, never saved into a level asset; unique names
 	// because the editor preview rebuilds while the previous components await garbage collection
-	UProceduralMeshComponent* C = NewObject<UProceduralMeshComponent>(this, MakeUniqueObjectName(this, UProceduralMeshComponent::StaticClass(), FName(*Name)), RF_Transient);
+	UDynamicMeshComponent* C = NewObject<UDoomLevelMeshComponent>(this, MakeUniqueObjectName(this, UDoomLevelMeshComponent::StaticClass(), FName(*Name)), RF_Transient);
 	C->SetupAttachment(RootComponent);
 	// cooked synchronously while the level loads, so nothing spawns before the floor exists;
-	// moving chunks switch to async cooking afterwards (see Build); the editor preview never waits
+	// moving chunks switch to async cooking afterwards (see FinishBuild); the editor preview never waits.
+	// Collision is cooked once per Commit (UpdateCollision), not on every mesh change.
 	C->bUseAsyncCooking = bEditorPreview;
-	C->bUseComplexAsSimpleCollision = true;
+	C->SetDeferredCollisionUpdatesEnabled(true, false);
+	C->SetComplexAsSimpleCollisionEnabled(bCollision, false);
+	// the modern renderer lights the movers (tangents for its lit materials); classic is unlit
+	C->SetTangentsType(bModern ? EDynamicMeshComponentTangentsMode::AutoCalculated : EDynamicMeshComponentTangentsMode::NoTangents);
 	C->SetCastShadow(bModern);
 	C->bAffectDistanceFieldLighting = true;
 	if (bCollision)
@@ -206,7 +306,7 @@ void ADoomLevel::FinishBuild()
 
 void ADoomLevel::ClearGeometry()
 {
-	for (UProceduralMeshComponent* C : MeshComponents)
+	for (UDynamicMeshComponent* C : MeshComponents)
 	{
 		if (C) C->DestroyComponent();
 	}
@@ -447,79 +547,25 @@ void ADoomLevel::Generate(const FChunk& Chunk, TMap<FName, FSectionData>& OutSol
 	}
 }
 
-void ADoomLevel::Commit(FChunk& Chunk, UProceduralMeshComponent* Comp, TMap<FName, int32>& Sections, TArray<int32>& Counts, TMap<FName, FSectionData>& Data, bool bCollision)
+void ADoomLevel::Commit(UDynamicMeshComponent* Comp, TMap<FName, int32>& Slots, const TMap<FName, FSectionData>& Data, bool bCollision)
 {
-	TArray<FProcMeshTangent> NoTangents;
-	TArray<FVector2D> Empty;
-	// The plugin recooks the whole component's collision on every section change, which made a
-	// 136-section chunk cook 136 times (most of a map's load time). Sections are created without
-	// collision while they change, then flagged together and cooked once at the end.
-	bool bCollisionChanged = false;
+	UE::Geometry::FDynamicMesh3 Mesh;
+	const int32 Dropped = BuildDoomMesh(Data, Slots, Mesh);
+	if (Dropped > 0)
+	{
+		UE_LOG(LogDoomRender, Verbose, TEXT("%s: %d degenerate triangles left out"), *Comp->GetName(), Dropped);
+	}
+	TArray<UMaterialInterface*> Mats;
+	Mats.SetNumZeroed(Slots.Num());
+	for (const TPair<FName, int32>& Pair : Slots)
+	{
+		Mats[Pair.Value] = Pair.Key.IsNone() ? nullptr : MaterialForKey(Pair.Key); // None: the invisible blockers
+	}
+	Comp->ConfigureMaterialSet(Mats);
+	Comp->SetMesh(MoveTemp(Mesh));
 	if (bCollision)
 	{
-		for (int32 i = 0; i < Comp->GetNumSections(); ++i)
-		{
-			Comp->GetProcMeshSection(i)->bEnableCollision = false;
-		}
-	}
-	// sections that disappeared
-	for (auto It = Sections.CreateIterator(); It; ++It)
-	{
-		if (!Data.Contains(It.Key()))
-		{
-			Comp->ClearMeshSection(It.Value());
-			Counts[It.Value()] = -1;
-			bCollisionChanged = true;
-		}
-	}
-	for (auto& Pair : Data)
-	{
-		FSectionData& D = Pair.Value;
-		if (D.I.Num() == 0)
-		{
-			continue;
-		}
-		int32* Existing = Sections.Find(Pair.Key);
-		const int32 Signature = D.V.Num() * 7919 + D.I.Num();
-		// In-place updates only without collision: for colliding sections the plugin rewrites the
-		// cooked triangle mesh's vertices directly, which breaks (out of range) as soon as any other
-		// section of the component appeared or vanished while async cooking catches up.
-		if (!bCollision && Existing && Counts.IsValidIndex(*Existing) && Counts[*Existing] == Signature)
-		{
-			Comp->UpdateMeshSection_LinearColor(*Existing, D.V, D.N, D.UV0, D.UV1, Empty, Empty, D.C, NoTangents, false);
-			continue;
-		}
-		int32 Index;
-		if (Existing)
-		{
-			Index = *Existing;
-		}
-		else
-		{
-			Index = Counts.Num();
-			Counts.Add(-1);
-			Sections.Add(Pair.Key, Index);
-		}
-		Comp->CreateMeshSection_LinearColor(Index, D.V, D.I, D.N, D.UV0, D.UV1, Empty, Empty, D.C, NoTangents, false, false);
-		Comp->SetMaterial(Index, MaterialForKey(Pair.Key));
-		Counts[Index] = Signature;
-		bCollisionChanged = true;
-	}
-	if (bCollision)
-	{
-		int32 Last = INDEX_NONE;
-		for (int32 i = 0; i < Comp->GetNumSections(); ++i)
-		{
-			FProcMeshSection* S = Comp->GetProcMeshSection(i);
-			S->bEnableCollision = S->ProcIndexBuffer.Num() > 0;
-			Last = S->bEnableCollision ? i : Last;
-		}
-		if (bCollisionChanged && Last != INDEX_NONE)
-		{
-			// re-setting a section is the plugin's public way to recook the component's collision
-			const FProcMeshSection Copy = *Comp->GetProcMeshSection(Last);
-			Comp->SetProcMeshSection(Last, Copy);
-		}
+		Comp->UpdateCollision(false); // one cook for the whole chunk
 	}
 }
 
@@ -566,8 +612,8 @@ void ADoomLevel::CommitChunk(int32 i, FChunkSections& Sections)
 	FChunk& C = Chunks[i];
 	TMap<FName, FSectionData>& Solid = Sections.Solid;
 	TMap<FName, FSectionData>& NonSolid = Sections.NonSolid;
-	Commit(C, C.Solid, C.SolidSections, C.SolidCounts, Solid, true);
-	Commit(C, C.NonSolid, C.NonSolidSections, C.NonSolidCounts, NonSolid, false);
+	Commit(C.Solid, C.SolidSlots, Solid, true);
+	Commit(C.NonSolid, C.NonSolidSlots, NonSolid, false);
 	if (i == 0 && bModern && !bEditorPreview)
 	{
 		// The static chunk only changes on rare texture swaps; loading a save marks it dirty
@@ -907,11 +953,11 @@ void ADoomLevel::BuildBlockingCollision()
 		EmitQuad(*Target, A, B, MinZ, MaxZ, 0, 1, 0, 1, 1, 0, 0, 0);
 		EmitQuad(*Target, B, A, MinZ, MaxZ, 0, 1, 0, 1, 1, 0, 0, 0);
 	}
-	TArray<FProcMeshTangent> NoTangents;
 	if (All.I.Num())
 	{
-		UProceduralMeshComponent* C = NewMeshComponent(TEXT("BlockingLines"), true);
-		C->CreateMeshSection_LinearColor(0, All.V, All.I, All.N, All.UV0, All.C, NoTangents, true);
+		UDynamicMeshComponent* C = NewMeshComponent(TEXT("BlockingLines"), true);
+		TMap<FName, int32> Slots;
+		Commit(C, Slots, { { NAME_None, All } }, true);
 		C->SetVisibility(false);
 		C->SetCastShadow(false);
 		// bullets and sight pass through impassable lines; bodies do not. Not WorldStatic: sight and
@@ -923,8 +969,9 @@ void ADoomLevel::BuildBlockingCollision()
 	}
 	if (Monsters.I.Num())
 	{
-		UProceduralMeshComponent* C = NewMeshComponent(TEXT("MonsterBlockingLines"), true);
-		C->CreateMeshSection_LinearColor(0, Monsters.V, Monsters.I, Monsters.N, Monsters.UV0, Monsters.C, NoTangents, true);
+		UDynamicMeshComponent* C = NewMeshComponent(TEXT("MonsterBlockingLines"), true);
+		TMap<FName, int32> Slots;
+		Commit(C, Slots, { { NAME_None, Monsters } }, true);
 		C->SetVisibility(false);
 		C->SetCastShadow(false);
 		C->SetCollisionObjectType(ECC_WorldDynamic); // not seen by WorldStatic sight traces

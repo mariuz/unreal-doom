@@ -35,7 +35,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 48 automation tests (see [docs/Testing.md](docs/Testing.md)): 15 for maps, patches,
+* **Tests:** 50 automation tests (see [docs/Testing.md](docs/Testing.md)): 17 for maps, patches, collision,
   the game, the editor and the screenshots, 29 `DoomUE.PlayTest.<step>` and 4 `DoomUE.Input` key-press
   tests, all passing at the time of writing.
   * Run them before merging.
@@ -163,9 +163,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   * The base tables come from `Content/Doom/Data/DA_DoomGameData`; DeHackEd patches apply on top.
   * A new field gets its check in `UDoomGameData::CheckTables` (Tools > Validate Data); `-validatetest`
     requires the built-in tables to have no errors or warnings, so the rules follow what the game accepts.
-* **Collision is cooked once per chunk** (`ADoomLevel::Commit`). The procedural mesh recooks the
-  whole component on every section change. Don't create sections with collision one by one: that
-  was 1.2 s of every load.
+* **Collision is cooked once per chunk** (`ADoomLevel::Commit`): the chunks are dynamic meshes with
+  deferred collision; set the mesh, then one `UpdateCollision`. Keep the collision double-sided
+  (`UDoomLevelMeshComponent::CreateBodySetupHelper`): with Dynamic Mesh's one-sided default, monsters
+  saw through walls and fell out of maps. `DoomUE.Game.LevelCollision` traces walls from both sides.
 * **Winding:** DoomUE's walls are wound against their normals. Its two-sided materials hide that,
   but one-sided materials and one-sided collision don't. The Lyra exporter and LyraDoom both
   rewind triangles to face their normals.
