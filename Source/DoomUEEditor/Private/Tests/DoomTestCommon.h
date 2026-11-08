@@ -8,6 +8,8 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/AutomationEditorCommon.h"
 #include "Editor.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/IInputProcessor.h"
 #include "DoomWorld.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -110,8 +112,48 @@ namespace DoomTest
 
 	/** Opens the empty entry map and plays it: the Doom game mode loads the WADs and parks the player.
 	 *  In the editor AutomationOpenMap queues both the map load and the PIE start. */
+	/** Swallows the real mouse while a game test runs: the pointer moving over the editor window turned
+	 *  the camera mid-screenshot (mouse look) and hovered menu rows mid-key-test. */
+	class FMouseBlocker : public IInputProcessor
+	{
+	public:
+		virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> Cursor) override {}
+		virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonUpEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SlateApp, const FPointerEvent& MouseEvent) override { return true; }
+		virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& SlateApp, const FPointerEvent& InWheelEvent, const FPointerEvent* InGestureEvent) override { return true; }
+		virtual const TCHAR* GetDebugName() const override { return TEXT("DoomTestMouseBlocker"); }
+	};
+
+	inline TSharedPtr<FMouseBlocker>& MouseBlocker()
+	{
+		static TSharedPtr<FMouseBlocker> Blocker;
+		return Blocker;
+	}
+
+	inline void BlockMouse(bool bBlock)
+	{
+		if (!FSlateApplication::IsInitialized())
+		{
+			return;
+		}
+		TSharedPtr<FMouseBlocker>& B = MouseBlocker();
+		if (bBlock && !B.IsValid())
+		{
+			B = MakeShared<FMouseBlocker>();
+			FSlateApplication::Get().RegisterInputPreProcessor(B, 0);
+		}
+		else if (!bBlock && B.IsValid())
+		{
+			FSlateApplication::Get().UnregisterInputPreProcessor(B);
+			B.Reset();
+		}
+	}
+
 	inline void StartGame(FAutomationTestBase* Test)
 	{
+		BlockMouse(true);
 		AutomationOpenMap(TEXT("/Engine/Maps/Entry"));
 		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("PIE with the WADs loaded and a player"), []()
 		{
@@ -132,6 +174,11 @@ namespace DoomTest
 			return true;
 		}));
 		ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("the mouse back"), []()
+		{
+			BlockMouse(false);
+			return true;
+		}));
 	}
 
 	/** Loads WADs and patches in the running game, then runs Check against the result. */

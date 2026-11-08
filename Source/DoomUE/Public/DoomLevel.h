@@ -106,6 +106,8 @@ public:
 
 	/** Static mesh tiles drawing the static chunk (0 when not baked). */
 	int32 NumBakedTiles() const { return BakedComponents.Num(); }
+	/** Tiles whose mesh has Nanite data (drawn by Nanite where the GPU and shader model allow it). */
+	int32 NumNaniteTiles() const;
 	/** True when the tiles came from saved assets (an imported level's bake), not a runtime bake. */
 	bool UsesSavedTiles() const { return bSavedTiles; }
 

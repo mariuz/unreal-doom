@@ -119,6 +119,8 @@ private:
 	/** The row the focus was last moved to. */
 	int32 FocusedItem = INDEX_NONE;
 	bool bMouseMoved = false;
+	/** When the row buttons were last rebuilt: focus settling on a new button then is not a choice. */
+	uint64 RebuiltFrame = 0;
 	/** Slate brushes for the WAD's pictures, made as they are first drawn. */
 	mutable TMap<TWeakObjectPtr<class UTexture2D>, FSlateBrush> Brushes;
 };

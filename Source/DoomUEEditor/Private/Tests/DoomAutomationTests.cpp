@@ -463,6 +463,23 @@ namespace DoomTest
 			return true;
 		}));
 		LoadMap(Test, TEXT("E1M1"), bModern);
+		if (bModern)
+		{
+			ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("Nanite tiles"), [Test]()
+			{
+				// the modern renderer draws the static chunk with the baked tiles, built with Nanite
+				const ADoomLevel* Level = DoomTest::Doom()->GetLevel();
+				if (Test->TestNotNull(TEXT("level"), Level))
+				{
+					const bool bNanite = DoesPlatformSupportNanite(GMaxRHIShaderPlatform);
+					Test->AddInfo(FString::Printf(TEXT("%d tiles, %d with Nanite data; Nanite %s on %s"), Level->NumBakedTiles(), Level->NumNaniteTiles(),
+						bNanite ? TEXT("runs") : TEXT("does not run (the fallback meshes draw)"), *LexToString(GMaxRHIShaderPlatform)));
+					Test->TestTrue(TEXT("the static chunk is drawn by tiles"), Level->NumBakedTiles() > 0);
+					Test->TestEqual(TEXT("every tile has Nanite data"), Level->NumNaniteTiles(), Level->NumBakedTiles());
+				}
+				return true;
+			}));
+		}
 		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("anti-aliasing"), [Test, bModern]()
 		{
 			// classic shows the palette pixels exactly: no temporal anti-aliasing blending frames

@@ -41,7 +41,7 @@ HTML and JSON report to `Saved/Automation/Report`. Directly:
 | `DoomUE.Editor.DataValidation` | `-run=DoomContent -validatetest` | The built-in tables have no problems; Tools > Validate Data passes the game data, input and AI assets; a copy of the game data with seven mistakes (an unknown missile and drop, a bad frame letter, a duplicate thing number, a missile with no speed, weapon slot 9, no starting health) reports exactly those seven, and `IsDataValid` says Invalid; broken copies of the gameplay mapping context (no action, no key), the blackboard (a key missing), the tree (no root) and a query (no options) report theirs |
 | `DoomUE.Editor.EditImportedMap` | `-run=DoomContent -edittest` | The imported E1M1 level opens, a sector edit raises the start room's floor, an imp marker becomes a baron, a line edit turns the first door line into an impassable wall with a new upper texture (without touching lines that shared its side), the connections overlay draws (with ghosts of door and lift travel), a second line edit points a special at tag 999 and the map checker must name that line (and its edit actor), and the level saves (`/Game/Doom/Tests`). It replaces the level open in the editor |
 | `DoomUE.Editor.WadTiles` | `-run=DoomContent -baketiles` | Bakes E1M2's tile set, then plays E1M2 from the WAD in the modern renderer: the static chunk is drawn by the saved tiles (what packaged builds rely on) |
-| `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots`; classic runs with no anti-aliasing, modern with the project's |
+| `DoomUE.Render.E1M1Classic`, `E1M1Modern` | `-autotest` screenshots | E1M1's start in each renderer, compared with the approved images in `Test/Screenshots` (`D3D12_SM5` and `D3D12_SM6`, whichever the GPU runs); classic runs with no anti-aliasing, modern with the project's, and every baked tile must have Nanite data |
 | `DoomUE.Render.E1M1Classic200` | | The classic start with Options > Pixels at 320X200: the screen percentage gives 200 rows at the window's height, the upscale is nearest-neighbour, and the image matches its approved one |
 | `DoomUE.PlayTest.<step>` | `-playtest` | One test per step of the scripted play-test (below), each on its own on E1M1; a step that skips passes with a warning |
 | `DoomUE.Input.MenuKeys` | | Real key presses: Esc opens the menu, Up and Down move, Enter opens Options, Enter steps Pixels through its three settings and back, Backspace goes back one page, Esc closes the whole menu from any page (vanilla), F1 opens Read This!, Enter turns its page and Esc closes it |
@@ -170,8 +170,11 @@ the same way.
   no such hook, so each test unbinds it from its own session's viewport (`OnGameViewportInputKey`);
   the editor's settings aren't touched.
 * The menu tests move to a row by pressing until it is selected (no press if it already is).
-* The real mouse is held off while a key test runs (a Slate input preprocessor swallows its events):
-  the pointer moving over the editor window hovered menu rows and chose them mid-test.
+* Each key test lets the new PIE session settle (30 frames and a second) and presses an unbound key
+  (Insert) first: the session's first keyboard key switches CommonUI's input type and was sometimes lost.
+* The real mouse is held off from `StartGame` to `EndGame` in every PIE test (a Slate input
+  preprocessor swallows its events): the pointer moving over the editor window hovered menu rows
+  mid-test and turned the camera during the modern screenshot's 600 frames.
 
 They found three bugs a player would have hit:
 

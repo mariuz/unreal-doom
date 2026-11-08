@@ -480,6 +480,30 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 		}
 		return bOk ? 0 : 1;
 	}
+	// -rebaketiles=E1M1[,E1M2...]|all: an imported level's tiles again with the current build settings
+	FString Rebake;
+	if (FParse::Value(*Params, TEXT("-rebaketiles="), Rebake, false))
+	{
+		TArray<FString> Names;
+		if (Rebake.Equals(TEXT("all"), ESearchCase::IgnoreCase))
+		{
+			for (const FString& N : DoomEditorData::MapNames())
+			{
+				if (FPackageName::DoesPackageExist(DoomContent::MapPackage(N))) Names.Add(N);
+			}
+		}
+		else
+		{
+			Rebake.ParseIntoArray(Names, TEXT(","));
+		}
+		int32 Failed = 0;
+		for (const FString& N : Names)
+		{
+			Failed += DoomContent::RebakeLevelTiles(N) ? 0 : 1;
+		}
+		UE_LOG(LogDoomContent, Display, TEXT("Rebake: %d levels, %d failed"), Names.Num(), Failed);
+		return Failed ? 1 : 0;
+	}
 	// -baketiles=E1M1,E1M2|all [-iwad= -file=]: tile sets for maps played straight from the WAD
 	FString BakeTiles;
 	if (FParse::Value(*Params, TEXT("-baketiles="), BakeTiles, false))

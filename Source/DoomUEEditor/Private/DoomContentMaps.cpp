@@ -165,6 +165,32 @@ bool DoomContent::BakeMapTiles(ADoomMapActor* MapActor)
 	return bOk;
 }
 
+bool DoomContent::RebakeLevelTiles(const FString& InMapName)
+{
+	const FString MapName = InMapName.ToUpper();
+	if (!FPackageName::DoesPackageExist(MapPackage(MapName)))
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Rebake: %s has no imported level (-importmap=%s)"), *MapName, *MapName);
+		return false;
+	}
+	UWorld* World = UEditorLoadingAndSavingUtils::LoadMap(FPackageName::LongPackageNameToFilename(MapPackage(MapName), FPackageName::GetMapPackageExtension()));
+	ADoomMapActor* MapActor = ADoomMapActor::Find(World);
+	if (!MapActor)
+	{
+		UE_LOG(LogDoomContent, Error, TEXT("Rebake: no map actor in %s"), *MapPackage(MapName));
+		return false;
+	}
+	const TArray<TSoftObjectPtr<UStaticMesh>> Before = MapActor->BakedTiles;
+	const int64 SignatureBefore = MapActor->BakedTileSignature;
+	bool bOk = BakeMapTiles(MapActor);
+	// the tiles keep their names: the level only changes when the set of tiles does
+	if (bOk && (MapActor->BakedTiles != Before || MapActor->BakedTileSignature != SignatureBefore))
+	{
+		bOk = UEditorLoadingAndSavingUtils::SaveMap(World, MapPackage(MapName));
+	}
+	return bOk;
+}
+
 FString DoomContent::MapPackage(const FString& MapName)
 {
 	// Epic's asset naming: levels are L_ (the Doom map's own name stays MapName on the map actor)

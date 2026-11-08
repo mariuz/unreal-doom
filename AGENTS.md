@@ -138,6 +138,12 @@ Tools/run_tests.bat DoomUE -NullRHI
   anything else that changes `r.AntiAliasingMethod` must go through it. Options > Pixels
   (`UDoomWorld::UpdateClassicPixels`, each frame from the local player controller) owns
   `r.ScreenPercentage` and `r.Upscale.Quality` the same way.
+* **SM6 and Nanite**: Windows targets SM5 and SM6; the 1660 Ti runs SM6, so screenshots compare
+  against `Test/Screenshots/.../D3D12_SM6` (approve new SM6 images there, `-sm5` for the old path).
+  The baked tiles are Nanite (`ADoomLevel::FillTileMesh`). After changing tile build settings, rebake
+  both kinds: `-rebaketiles=all` (imported levels, tracked in git) and `-baketiles=all` (WAD tile
+  sets, git-ignored and local; the game prefers them for maps played from the WAD). A stale local
+  set is how the Nanite check first found 0 Nanite tiles.
 * **New Options rows** go into `EOptionsRow` and `FDoomMenu::Rows` in the same order; the page
   scrolls (10 visible rows), so key tests reach a row with `PressToRow`, not a fixed count.
 * **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
