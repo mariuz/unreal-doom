@@ -667,8 +667,13 @@ weapons that build up towards the exit. Every map is checked walkable from the s
 before it is used. See [docs/EditingMaps.md](docs/EditingMaps.md#generated-maps).
 
 The node builder (`feature/node-builder`): `FDoomMap::Rebuild()` builds a map's segs, subsectors and
-nodes from its lines and sectors alone; `-run=DoomContent -nodetest=all` checks it against all 68
-Freedoom maps' own nodes (same area and sectors), and `-buildnodes` plays on the rebuilt nodes.
+nodes from its lines and sectors alone; `-run=DoomContent -nodetest=all` checks it against each map's
+walls (the right sector at sampled points, each closed sector's floor area) and passes where it does
+no worse than the map's own nodes: all 68 Freedoom maps and all 264 maps of the commercial IWADs
+(DOS and re-release). `-buildnodes` plays on the rebuilt nodes. The commercial maps found two
+builder bugs, now fixed: partitions rounded badly in exported maps, and a line with the same sector
+on both sides could give its sector to a subsector inside another one (see
+[docs/EditingMaps.md](docs/EditingMaps.md#the-node-builder)).
 
 The overlay also shows where doors open to and lifts lower to: a dimmer outline at that height with
 corner posts, drawn over the walls (E1M1: 136 such lines); `-edittest` checks they're drawn.

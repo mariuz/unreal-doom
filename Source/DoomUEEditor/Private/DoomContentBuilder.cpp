@@ -52,6 +52,143 @@
 
 DEFINE_LOG_CATEGORY(LogDoomContent);
 
+namespace
+{
+	// The map's own geometry as the reference for a BSP (the node and round-trip tests): a BSP may put
+	// anything in the void, and a WAD's nodes are not exact either (rounded split vertices can leave
+	// holes, a stray one-line sector can own a patch of void), so neither is compared with the other.
+	namespace MapTruth
+	{
+		/** Each sector's area from its own lines (shoelace over its sides, the sector on their right),
+		 *  or -1 if its sides don't form closed loops or one of its lines ends where no other line does
+		 *  (an open sector, or a stray line poking into the void: E3M4's line 1087, whose stub past a
+		 *  wall makes a subsector out in the void in any BSP). */
+		TArray<double> SectorAreas(const FDoomMap& M)
+		{
+			TArray<double> Area;
+			Area.Init(0.0, M.Sectors.Num());
+			TArray<TMap<int32, int32>> Degree; // per sector: vertex -> edges out minus edges in
+			Degree.SetNum(M.Sectors.Num());
+			for (const FDoomLine& L : M.Lines)
+			{
+				for (int32 s = 0; s < 2; ++s)
+				{
+					const int32 Side = L.Side[s];
+					if (Side == INDEX_NONE || !M.Sides.IsValidIndex(Side) || !Area.IsValidIndex(M.Sides[Side].Sector)) continue;
+					const int32 Sec = M.Sides[Side].Sector;
+					const int32 A = s == 0 ? L.V1 : L.V2, B = s == 0 ? L.V2 : L.V1; // the sector on the right
+					const FVector2d Pa(M.Vertices[A]), Pb(M.Vertices[B]);
+					Area[Sec] -= 0.5 * (Pa.X * Pb.Y - Pb.X * Pa.Y);
+					Degree[Sec].FindOrAdd(A) += 1;
+					Degree[Sec].FindOrAdd(B) -= 1;
+				}
+			}
+			TArray<int32> Uses; // lines ending at each vertex
+			Uses.Init(0, M.Vertices.Num());
+			for (const FDoomLine& L : M.Lines)
+			{
+				if (Uses.IsValidIndex(L.V1)) ++Uses[L.V1];
+				if (Uses.IsValidIndex(L.V2)) ++Uses[L.V2];
+			}
+			for (const FDoomLine& L : M.Lines)
+			{
+				if ((Uses.IsValidIndex(L.V1) && Uses[L.V1] == 1) || (Uses.IsValidIndex(L.V2) && Uses[L.V2] == 1))
+				{
+					for (int32 s = 0; s < 2; ++s)
+					{
+						if (L.Side[s] != INDEX_NONE && M.Sides.IsValidIndex(L.Side[s]) && Area.IsValidIndex(M.Sides[L.Side[s]].Sector))
+						{
+							Area[M.Sides[L.Side[s]].Sector] = -1.0;
+						}
+					}
+				}
+			}
+			for (int32 s = 0; s < Area.Num(); ++s)
+			{
+				bool bClosed = Area[s] > 0;
+				for (const TPair<int32, int32>& It : Degree[s]) bClosed &= It.Value == 0;
+				if (!bClosed) Area[s] = -1.0;
+			}
+			return Area;
+		}
+
+		/** The sector the walls around P enclose: the first line each of four rays (+-X, +-Y) meets,
+		 *  on P's side. INDEX_NONE in the void (a ray escapes or meets a side with no sidedef), -2 if
+		 *  the rays disagree (an open sector, overlapping lines). */
+		int32 SectorAt(const FDoomMap& M, const FVector2f& P)
+		{
+			const float Reach = (M.Bounds.Max - M.Bounds.Min).Size() * 2.f + 64.f;
+			static const FVector2f Dirs[4] = { FVector2f(1, 0), FVector2f(-1, 0), FVector2f(0, 1), FVector2f(0, -1) };
+			int32 Result = -3;
+			TArray<FLineHit> Hits;
+			for (const FVector2f& D : Dirs)
+			{
+				Hits.Reset();
+				M.TraceLines(P, P + D * Reach, Hits);
+				int32 Sec = INDEX_NONE;
+				if (Hits.Num())
+				{
+					const int32 Side = M.Lines[Hits[0].Line].Side[Hits[0].Side];
+					Sec = Side != INDEX_NONE ? M.Sides[Side].Sector : INDEX_NONE;
+				}
+				if (Result == -3) Result = Sec;
+				else if (Result != Sec) return -2;
+			}
+			return Result;
+		}
+
+		/** The BSP's floor area per sector (its subsector polygons). */
+		TArray<double> PolygonAreas(const FDoomMap& M)
+		{
+			TArray<double> Area;
+			Area.Init(0.0, M.Sectors.Num());
+			for (const FDoomSubsector& Ss : M.Subsectors)
+			{
+				double A = 0;
+				for (int32 k = 1; k + 1 < Ss.Polygon.Num(); ++k)
+				{
+					const FVector2f U = Ss.Polygon[k] - Ss.Polygon[0], W = Ss.Polygon[k + 1] - Ss.Polygon[0];
+					A += 0.5 * (U.X * W.Y - U.Y * W.X);
+				}
+				if (Area.IsValidIndex(Ss.Sector)) Area[Ss.Sector] += FMath::Abs(A);
+			}
+			return Area;
+		}
+
+		/** How far a BSP's floors are from the closed sectors' own areas: the sum of the per-sector
+		 *  differences over the sum of the areas (holes and spill into the void both count). */
+		double AreaError(const FDoomMap& M, const TArray<double>& Truth, TArray<double>* OutPerSector = nullptr)
+		{
+			const TArray<double> Have = PolygonAreas(M);
+			double Off = 0, Total = 0;
+			if (OutPerSector) OutPerSector->Init(0.0, Truth.Num());
+			for (int32 s = 0; s < Truth.Num(); ++s)
+			{
+				if (Truth[s] <= 0) continue;
+				Off += FMath::Abs(Have[s] - Truth[s]);
+				Total += Truth[s];
+				if (OutPerSector) (*OutPerSector)[s] = Have[s] - Truth[s];
+			}
+			return Total > 0 ? Off / Total : 0.0;
+		}
+
+		/** Points spread over the map that the walls place in one sector, at least 1 unit from any line. */
+		void SamplePoints(const FDoomMap& M, int32 Count, int32 Seed, TArray<TPair<FVector2f, int32>>& Out)
+		{
+			FRandomStream Rng(Seed);
+			for (int32 k = 0; k < Count; ++k)
+			{
+				const FVector2f Pt(Rng.FRandRange(M.Bounds.Min.X, M.Bounds.Max.X), Rng.FRandRange(M.Bounds.Min.Y, M.Bounds.Max.Y));
+				bool bNearLine = false;
+				for (int32 L = 0; L < M.Lines.Num() && !bNearLine; ++L) bNearLine = M.DistanceToLine(Pt, L) < 1.f;
+				if (bNearLine) continue;
+				const int32 Sec = SectorAt(M, Pt);
+				if (Sec >= 0) Out.Add({ Pt, Sec });
+			}
+		}
+	}
+}
+
 bool DoomContent::BuildGameData(bool bOverwrite)
 {
 	const TCHAR* DataFolder = TEXT("/Game/Doom/Data/");
@@ -148,42 +285,106 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 			const double T0 = FPlatformTime::Seconds();
 			const bool bBuilt = Built.Rebuild();
 			const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
-			const double AreaOrig = Orig.SubsectorArea(), AreaBuilt = Built.SubsectorArea();
-			FRandomStream Rng(1234);
-			int32 Samples = 0, Agree = 0;
-			for (int32 k = 0; k < 20000; ++k)
+			// both BSPs against the map's own walls (MapTruth): the sector at points the walls enclose, and
+			// each closed sector's floor area; the WAD's nodes are reported for reference
+			const TArray<double> Truth = MapTruth::SectorAreas(Orig);
+			TArray<double> OffBuilt;
+			const double AreaErrBuilt = MapTruth::AreaError(Built, Truth, &OffBuilt), AreaErrOrig = MapTruth::AreaError(Orig, Truth);
+			TArray<TPair<FVector2f, int32>> Points;
+			MapTruth::SamplePoints(Orig, 20000, 1234, Points);
+			int32 AgreeBuilt = 0, AgreeOrig = 0;
+			const bool bDebug = FParse::Param(*Params, TEXT("nodedebug"));
+			TMap<int32, TArray<FVector2f>> WrongAt; // built subsector -> points where it names another sector
+			for (const TPair<FVector2f, int32>& It : Points)
 			{
-				const FVector2f Pt(Rng.FRandRange(Orig.Bounds.Min.X, Orig.Bounds.Max.X), Rng.FRandRange(Orig.Bounds.Min.Y, Orig.Bounds.Max.Y));
-				// only points well inside a sector (not on a line) are comparable
-				bool bNearLine = false;
-				for (int32 L = 0; L < Orig.Lines.Num() && !bNearLine; ++L) bNearLine = Orig.DistanceToLine(Pt, L) < 1.f;
-				if (bNearLine) continue;
-				// and only points inside the map: in the void either BSP may name any sector
-				const int32 Ss = Orig.SubsectorAt(Pt);
-				if (!Orig.Subsectors.IsValidIndex(Ss)) continue;
-				const TArray<FVector2f>& Poly = Orig.Subsectors[Ss].Polygon;
-				bool bInside = Poly.Num() >= 3;
-				int32 Sign = 0;
-				for (int32 v = 0; v < Poly.Num() && bInside; ++v)
+				AgreeOrig += Orig.SectorAt(It.Key) == It.Value;
+				const bool bSame = Built.SectorAt(It.Key) == It.Value;
+				AgreeBuilt += bSame;
+				if (!bSame && bDebug)
 				{
-					const FVector2f E = Poly[(v + 1) % Poly.Num()] - Poly[v], Q = Pt - Poly[v];
-					const float C = E.X * Q.Y - E.Y * Q.X;
-					const int32 Sv = C > 0.f ? 1 : (C < 0.f ? -1 : 0);
-					if (Sv != 0 && Sign != 0 && Sv != Sign) bInside = false;
-					if (Sv != 0) Sign = Sv;
+					WrongAt.FindOrAdd(Built.SubsectorAt(It.Key)).Add(It.Key);
 				}
-				if (!bInside) continue;
-				++Samples;
-				Agree += Orig.SectorAt(Pt) == Built.SectorAt(Pt);
 			}
-			const double AreaErr = FMath::Abs(AreaBuilt - AreaOrig) / FMath::Max(AreaOrig, 1.0);
-			const double Disagree = Samples ? 1.0 - (double)Agree / Samples : 1.0;
-			// sectors are what matter; the outside of the map has no defined sector (either BSP may say anything)
-			const bool bPass = bBuilt && AreaErr < 0.001 && Disagree < 0.02;
+			if (bDebug)
+			{
+				// the closed sectors whose built floors are furthest from their walls' area, and the built
+				// subsectors that name the wrong sector
+				TArray<int32> Order;
+				for (int32 s = 0; s < OffBuilt.Num(); ++s) if (FMath::Abs(OffBuilt[s]) >= 1000) Order.Add(s);
+				Order.Sort([&OffBuilt](int32 X, int32 Y) { return FMath::Abs(OffBuilt[X]) > FMath::Abs(OffBuilt[Y]); });
+				for (int32 i = 0; i < FMath::Min(10, Order.Num()); ++i)
+				{
+					UE_LOG(LogDoomContent, Display, TEXT("  sector %d: built floor %+.0f against its walls' %.0f"), Order[i], OffBuilt[Order[i]], Truth[Order[i]]);
+				}
+				// the worst sector's built subsectors that reach outside it: a grid of points in each polygon
+				for (int32 i = 0; i < FMath::Min(1, Order.Num()); ++i)
+				{
+					for (int32 SsIndex = 0; SsIndex < Built.Subsectors.Num(); ++SsIndex)
+					{
+						const FDoomSubsector& Ss = Built.Subsectors[SsIndex];
+						if (Ss.Sector != Order[i] || Ss.Polygon.Num() < 3) continue;
+						FBox2f Box(Ss.Polygon);
+						int32 In = 0, Out = 0;
+						for (int32 gx = 0; gx < 24; ++gx)
+						{
+							for (int32 gy = 0; gy < 24; ++gy)
+							{
+								const FVector2f Pt(FMath::Lerp(Box.Min.X, Box.Max.X, (gx + 0.5f) / 24.f), FMath::Lerp(Box.Min.Y, Box.Max.Y, (gy + 0.5f) / 24.f));
+								bool bInside = true;
+								int32 Sign = 0;
+								for (int32 v = 0; v < Ss.Polygon.Num() && bInside; ++v)
+								{
+									const FVector2f E = Ss.Polygon[(v + 1) % Ss.Polygon.Num()] - Ss.Polygon[v], Q = Pt - Ss.Polygon[v];
+									const float C = E.X * Q.Y - E.Y * Q.X;
+									const int32 Sv = C > 0.f ? 1 : (C < 0.f ? -1 : 0);
+									if (Sv && Sign && Sv != Sign) bInside = false;
+									if (Sv) Sign = Sv;
+								}
+								if (!bInside) continue;
+								const int32 TrueSec = MapTruth::SectorAt(Orig, Pt);
+								(TrueSec == Ss.Sector || TrueSec == -2 ? In : Out) += 1;
+							}
+						}
+						if (Out * 10 < In + Out) continue;
+						FString SegText, PolyText;
+						for (int32 s = Ss.FirstSeg; s < Ss.FirstSeg + Ss.NumSegs; ++s)
+						{
+							const FDoomSeg& Sg = Built.Segs[s];
+							SegText += FString::Printf(TEXT(" L%d/%d(%.0f,%.0f>%.0f,%.0f)"), Sg.Line, Sg.Side,
+								Built.Vertices[Sg.V1].X, Built.Vertices[Sg.V1].Y, Built.Vertices[Sg.V2].X, Built.Vertices[Sg.V2].Y);
+						}
+						for (const FVector2f& P : Ss.Polygon) PolyText += FString::Printf(TEXT(" (%.0f,%.0f)"), P.X, P.Y);
+						UE_LOG(LogDoomContent, Display, TEXT("  spill: subsector %d, %d of %d grid points outside; segs%s; polygon%s"),
+							SsIndex, Out, In + Out, *SegText, *PolyText);
+					}
+				}
+				WrongAt.ValueSort([](const TArray<FVector2f>& X, const TArray<FVector2f>& Y) { return X.Num() > Y.Num(); });
+				int32 Shown = 0;
+				for (const TPair<int32, TArray<FVector2f>>& It : WrongAt)
+				{
+					if (Shown++ >= 8 || !Built.Subsectors.IsValidIndex(It.Key)) break;
+					const FDoomSubsector& Ss = Built.Subsectors[It.Key];
+					const FVector2f Pt = It.Value[0];
+					FString SegText;
+					for (int32 s = Ss.FirstSeg; s < Ss.FirstSeg + Ss.NumSegs; ++s)
+					{
+						const FDoomSeg& Sg = Built.Segs[s];
+						const int32 Side = Built.Lines[Sg.Line].Side[Sg.Side];
+						SegText += FString::Printf(TEXT(" L%d/%d(s%d %.0f,%.0f>%.0f,%.0f)"), Sg.Line, Sg.Side, Side != INDEX_NONE ? Built.Sides[Side].Sector : -1,
+							Built.Vertices[Sg.V1].X, Built.Vertices[Sg.V1].Y, Built.Vertices[Sg.V2].X, Built.Vertices[Sg.V2].Y);
+					}
+					UE_LOG(LogDoomContent, Display, TEXT("  subsector %d: %d wrong points, e.g. (%.0f,%.0f) walls say sector %d, built %d; segs%s"),
+						It.Key, It.Value.Num(), Pt.X, Pt.Y, MapTruth::SectorAt(Orig, Pt), Ss.Sector, *SegText);
+				}
+			}
+			const int32 Samples = Points.Num();
+			// no worse than the map's own nodes against the same walls: where both BSPs disagree with the walls,
+			// the map's sector references are inconsistent (E3M8, TNT MAP02 and MAP31), not the builder wrong
+			const bool bPass = bBuilt && AgreeBuilt >= AgreeOrig - Samples / 200 && AreaErrBuilt <= AreaErrOrig + 0.005;
 			Failed += bPass ? 0 : 1;
-			UE_LOG(LogDoomContent, Display, TEXT("Nodetest %s %s: %s in %.0f ms, %d subsectors (WAD %d), area %.0f (WAD %.0f), same sector at %d of %d points (%.2f%% differ)"),
-				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Built.NodesFormat, Ms, Built.Subsectors.Num(), Orig.Subsectors.Num(), AreaBuilt, AreaOrig,
-				Agree, Samples, Disagree * 100.0);
+			UE_LOG(LogDoomContent, Display, TEXT("Nodetest %s %s: %s in %.0f ms, %d subsectors (WAD %d); against the walls: right sector at %d of %d points (WAD nodes %d), floors off by %.2f%% (WAD nodes %.2f%%)"),
+				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Built.NodesFormat, Ms, Built.Subsectors.Num(), Orig.Subsectors.Num(),
+				AgreeBuilt, Samples, AgreeOrig, AreaErrBuilt * 100.0, AreaErrOrig * 100.0);
 		}
 		return Failed ? 1 : 0;
 	}
@@ -272,42 +473,29 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 				bSame = A.Floor == B.Floor && A.Ceiling == B.Ceiling && A.FloorPic == B.FloorPic && A.CeilingPic == B.CeilingPic
 					&& A.Light == B.Light && A.Special == B.Special && A.Tag == B.Tag;
 			}
-			int32 Samples = 0, Agree = 0;
+			// the read-back map (nodes built on export) against the map's own walls (MapTruth)
+			int32 Samples = 0, Agree = 0, AgreeOrig = 0;
+			double AreaErr = 1.0, AreaErrOrig = 0.0;
 			if (bRead)
 			{
-				FRandomStream Rng(99);
-				for (int32 k = 0; k < 5000; ++k)
+				TArray<TPair<FVector2f, int32>> Points;
+				MapTruth::SamplePoints(Orig, 5000, 99, Points);
+				Samples = Points.Num();
+				for (const TPair<FVector2f, int32>& It : Points)
 				{
-					const FVector2f Pt(Rng.FRandRange(Orig.Bounds.Min.X, Orig.Bounds.Max.X), Rng.FRandRange(Orig.Bounds.Min.Y, Orig.Bounds.Max.Y));
-					const int32 Ss = Orig.SubsectorAt(Pt);
-					if (!Orig.Subsectors.IsValidIndex(Ss)) continue;
-					bool bNear = false;
-					for (int32 L = 0; L < Orig.Lines.Num() && !bNear; ++L) bNear = Orig.DistanceToLine(Pt, L) < 2.f;
-					if (bNear) continue;
-					// inside the original subsector (either winding)
-					const TArray<FVector2f>& Poly = Orig.Subsectors[Ss].Polygon;
-					int32 Sign = 0;
-					bool bInside = Poly.Num() >= 3;
-					for (int32 v = 0; v < Poly.Num() && bInside; ++v)
-					{
-						const FVector2f E = Poly[(v + 1) % Poly.Num()] - Poly[v], Q = Pt - Poly[v];
-						const float C = E.X * Q.Y - E.Y * Q.X;
-						const int32 Sv = C > 0.f ? 1 : (C < 0.f ? -1 : 0);
-						if (Sv && Sign && Sv != Sign) bInside = false;
-						if (Sv) Sign = Sv;
-					}
-					if (!bInside) continue;
-					++Samples;
-					Agree += Orig.SectorAt(Pt) == Read.SectorAt(Pt);
+					Agree += Read.SectorAt(It.Key) == It.Value;
+					AgreeOrig += Orig.SectorAt(It.Key) == It.Value;
 				}
+				const TArray<double> Truth = MapTruth::SectorAreas(Orig);
+				AreaErr = MapTruth::AreaError(Read, Truth);
+				AreaErrOrig = MapTruth::AreaError(Orig, Truth);
 			}
 			const int32 ErrOrig = DoomMapCheck::Count(DoomMapCheck::Run(Orig, DoomEditorData::Graphics(), Name), FDoomMapIssue::ESeverity::Error);
 			const int32 ErrRead = bRead ? DoomMapCheck::Count(DoomMapCheck::Run(Read, DoomEditorData::Graphics(), Name), FDoomMapIssue::ESeverity::Error) : -1;
-			const double AreaErr = bRead ? FMath::Abs(Read.SubsectorArea() - Orig.SubsectorArea()) / FMath::Max(Orig.SubsectorArea(), 1.0) : 1.0;
-			const bool bPass = bSame && Samples > 0 && Agree >= Samples * 0.998 && ErrRead <= ErrOrig && AreaErr < 0.002;
+			const bool bPass = bSame && Samples > 0 && Agree >= AgreeOrig - Samples / 200 && ErrRead <= ErrOrig && AreaErr <= AreaErrOrig + 0.005;
 			Failed += bPass ? 0 : 1;
-			UE_LOG(LogDoomContent, Display, TEXT("Wadtest %s %s: %s; read back %s, same records %d, same sector at %d of %d points, area off %.3f%%, checker errors %d (was %d)"),
-				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Note, bRead ? TEXT("ok") : TEXT("FAILED"), bSame ? 1 : 0, Agree, Samples, AreaErr * 100.0, ErrRead, ErrOrig);
+			UE_LOG(LogDoomContent, Display, TEXT("Wadtest %s %s: %s; read back %s, same records %d, right sector at %d of %d points (before %d), floors off by %.2f%% (before %.2f%%), checker errors %d (was %d)"),
+				*Name, bPass ? TEXT("PASS") : TEXT("FAIL"), *Note, bRead ? TEXT("ok") : TEXT("FAILED"), bSame ? 1 : 0, Agree, Samples, AgreeOrig, AreaErr * 100.0, AreaErrOrig * 100.0, ErrRead, ErrOrig);
 		}
 		return Failed ? 1 : 0;
 	}
