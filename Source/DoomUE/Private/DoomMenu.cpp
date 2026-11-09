@@ -146,6 +146,10 @@ TArray<FMenuRow> FDoomMenu::Rows(UDoomWorld& W) const
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Colors", "COLORS: {0}"), S->bPaletteExact ? LOCTEXT("Exact", "EXACT") : LOCTEXT("Smooth", "SMOOTH")).ToString() });
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Pixels", "PIXELS: {0}"), S->ClassicPixelRows == 200 ? LOCTEXT("Pixels200", "320X200")
 			: S->ClassicPixelRows == 400 ? LOCTEXT("Pixels400", "640X400") : LOCTEXT("PixelsFull", "FULL")).ToString() });
+		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("Quality", "QUALITY: {0}"), S->ModernQuality <= 0 ? LOCTEXT("QualityLow", "LOW")
+			: S->ModernQuality == 1 ? LOCTEXT("QualityMedium", "MEDIUM") : LOCTEXT("QualityHigh", "HIGH")).ToString() });
+		R.Add({ EKind::Choice, FString(), S->ModernScreenPercent >= 100 ? LOCTEXT("UpscaleOff", "UPSCALE: OFF").ToString()
+			: FText::Format(LOCTEXT("Upscale", "UPSCALE: {0}%"), S->ModernScreenPercent).ToString() });
 		R.Add({ EKind::Choice, FString(), FText::Format(LOCTEXT("MonsterAI", "MONSTER AI: {0}"), W.IsSmartAI() ? LOCTEXT("Smart", "SMART") : LOCTEXT("Classic", "CLASSIC")).ToString() });
 		R.Add({ EKind::Choice, FString(), LOCTEXT("Controls", "CONTROLS").ToString() });
 		checkf(R.Num() == EOptionsRow::Count, TEXT("the Options page has %d rows, EOptionsRow %d"), R.Num(), (int32)EOptionsRow::Count);
@@ -443,6 +447,15 @@ void FDoomMenu::Adjust(UDoomWorld& W, int32 Dir)
 			S->ClassicPixelRows = Steps[(Now + Dir + 3) % 3];
 			break;
 		}
+		case EOptionsRow::Quality: S->ModernQuality = (FMath::Clamp(S->ModernQuality, 0, 2) + Dir + 3) % 3; break;
+		case EOptionsRow::Upscale:
+		{
+			// OFF, 75%, 50% and round again
+			static const int32 Steps[3] = { 100, 75, 50 };
+			const int32 Now = S->ModernScreenPercent <= 50 ? 2 : S->ModernScreenPercent < 100 ? 1 : 0;
+			S->ModernScreenPercent = Steps[(Now + Dir + 3) % 3];
+			break;
+		}
 		case EOptionsRow::MonsterAI: W.SetSmartAI(!W.IsSmartAI()); S->bSmartMonsters = W.IsSmartAI(); break;
 		default: bChanged = false; break;
 		}
@@ -532,7 +545,7 @@ void FDoomMenu::Select(UDoomWorld& W)
 		return;
 	}
 	W.PlaySound(TEXT("PISTOL"), nullptr);
-	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == EOptionsRow::Renderer || Item == EOptionsRow::FieldOfView || Item == EOptionsRow::Colors || Item == EOptionsRow::Pixels || Item == EOptionsRow::MonsterAI))
+	if (R[Item].Kind == FMenuRow::EKind::Slider || R[Item].Kind == FMenuRow::EKind::Toggle || (Page == EMenuPage::Options && (Item == EOptionsRow::Renderer || Item == EOptionsRow::FieldOfView || Item == EOptionsRow::Colors || Item == EOptionsRow::Pixels || Item == EOptionsRow::Quality || Item == EOptionsRow::Upscale || Item == EOptionsRow::MonsterAI))
 		|| (Page == EMenuPage::Multiplayer && Item <= EMultiplayerRow::Fast))
 	{
 		Adjust(W, 1);

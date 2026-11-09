@@ -454,11 +454,17 @@ namespace DoomTest
 		StartGame(Test);
 		// Doom's clock stops before the map loads, and exactly 35 tics run: monsters, animations and
 		// lights are in the same state every run, while the engine keeps rendering
-		TSharedRef<int32> SavedRows = MakeShared<int32>(0);
-		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("stop the clock"), [SavedRows, PixelRows]()
+		// the view settings the capture needs (the saved config may hold others): Pixels as asked,
+		// modern at HIGH with no upscale
+		struct FViewSettings { int32 PixelRows = 0, Quality = 2, ScreenPercent = 100; };
+		TSharedRef<FViewSettings> Saved = MakeShared<FViewSettings>();
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("stop the clock"), [Saved, PixelRows]()
 		{
-			*SavedRows = GetDefault<UDoomSettings>()->ClassicPixelRows;
-			GetMutableDefault<UDoomSettings>()->ClassicPixelRows = PixelRows;
+			UDoomSettings* S = GetMutableDefault<UDoomSettings>();
+			*Saved = { S->ClassicPixelRows, S->ModernQuality, S->ModernScreenPercent };
+			S->ClassicPixelRows = PixelRows;
+			S->ModernQuality = 2;
+			S->ModernScreenPercent = 100;
 			PlayWorld()->GetAuthGameMode<ADoomGameMode>()->bClockStopped = true;
 			return true;
 		}));
@@ -550,9 +556,12 @@ namespace DoomTest
 			}
 			return *bCompared;
 		}, 120.f));
-		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("the pixels setting back"), [SavedRows]()
+		ADD_LATENT_AUTOMATION_COMMAND(FStep(Test, TEXT("the view settings back"), [Saved]()
 		{
-			GetMutableDefault<UDoomSettings>()->ClassicPixelRows = *SavedRows;
+			UDoomSettings* S = GetMutableDefault<UDoomSettings>();
+			S->ClassicPixelRows = Saved->PixelRows;
+			S->ModernQuality = Saved->Quality;
+			S->ModernScreenPercent = Saved->ScreenPercent;
 			return true;
 		}));
 		EndGame(Test);
@@ -578,6 +587,129 @@ bool FDoomScreenshotClassic200Test::RunTest(const FString& Parameters)
 {
 	// Options > Pixels 320X200: 200 rows scaled up with nearest-neighbour filtering
 	Screenshot(this, TEXT("DoomUE_E1M1_Classic200"), false, 200);
+	return true;
+}
+
+namespace
+{
+	/** The cvars Options > Quality and Upscale set, as they are now. */
+	struct FQualityCVars
+	{
+		TArray<int32> Groups;
+		float ScreenPercentage = 0.f;
+		int32 UpscaleQuality = 0;
+
+		static FQualityCVars Now()
+		{
+			FQualityCVars C;
+			for (const TCHAR* Name : { TEXT("sg.ShadowQuality"), TEXT("sg.GlobalIlluminationQuality"), TEXT("sg.ReflectionQuality"), TEXT("sg.EffectsQuality"), TEXT("sg.PostProcessQuality") })
+			{
+				const IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Name);
+				C.Groups.Add(V ? V->GetInt() : -1);
+			}
+			C.ScreenPercentage = IConsoleManager::Get().FindConsoleVariable(TEXT("r.ScreenPercentage"))->GetFloat();
+			C.UpscaleQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("r.Upscale.Quality"))->GetInt();
+			return C;
+		}
+
+		bool AllGroupsAt(int32 Level) const
+		{
+			return !Groups.ContainsByPredicate([Level](int32 G) { return G != Level; });
+		}
+	};
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDoomModernQualityTest, "DoomUE.Render.ModernQuality", DoomTest::Flags)
+bool FDoomModernQualityTest::RunTest(const FString& Parameters)
+{
+	// Options > Quality sets the scalability groups and Upscale the screen percentage (TSR keeps its
+	// filter); classic, and the end of the game, put the engine's values back
+	StartGame(this);
+	struct FSaved { int32 PixelRows = 0, Quality = 2, ScreenPercent = 100; FQualityCVars CVars; };
+	TSharedRef<FSaved> Saved = MakeShared<FSaved>();
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("LOW at 50%"), [Saved]()
+	{
+		UDoomSettings* S = GetMutableDefault<UDoomSettings>();
+		Saved->PixelRows = S->ClassicPixelRows;
+		Saved->Quality = S->ModernQuality;
+		Saved->ScreenPercent = S->ModernScreenPercent;
+		Saved->CVars = FQualityCVars::Now();
+		S->ClassicPixelRows = 0;
+		S->ModernQuality = 0;
+		S->ModernScreenPercent = 50;
+		return true;
+	}));
+	LoadMap(this, TEXT("E1M1"), true);
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("LOW is set"), [this, Saved]()
+	{
+		// the player controller applies them on its next tick
+		const FQualityCVars C = FQualityCVars::Now();
+		if (!C.AllGroupsAt(1) || !FMath::IsNearlyEqual(C.ScreenPercentage, 50.f))
+		{
+			return false;
+		}
+		TestNotEqual(TEXT("the upscale is TSR's, not nearest-neighbour"), C.UpscaleQuality, 0);
+		GetMutableDefault<UDoomSettings>()->ModernQuality = 1;
+		return true;
+	}, 10.f));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("MEDIUM is set"), [this]()
+	{
+		if (!FQualityCVars::Now().AllGroupsAt(2))
+		{
+			return false;
+		}
+		GetMutableDefault<UDoomSettings>()->ModernQuality = 2;
+		return true;
+	}, 10.f));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("HIGH leaves the engine's levels"), [this, Saved]()
+	{
+		if (FQualityCVars::Now().Groups != Saved->CVars.Groups)
+		{
+			return false;
+		}
+		GetMutableDefault<UDoomSettings>()->ModernQuality = 0;
+		return true;
+	}, 10.f));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("LOW again, then classic"), []()
+	{
+		if (!FQualityCVars::Now().AllGroupsAt(1))
+		{
+			return false;
+		}
+		DoomTest::Doom()->SetModern(false);
+		return true;
+	}, 10.f));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("classic puts the engine's values back"), [this, Saved]()
+	{
+		const FQualityCVars C = FQualityCVars::Now();
+		if (C.Groups != Saved->CVars.Groups || !FMath::IsNearlyEqual(C.ScreenPercentage, Saved->CVars.ScreenPercentage))
+		{
+			return false;
+		}
+		TestEqual(TEXT("the upscale filter"), C.UpscaleQuality, Saved->CVars.UpscaleQuality);
+		DoomTest::Doom()->SetModern(true);
+		return true;
+	}, 10.f));
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("modern sets them again"), []()
+	{
+		return FQualityCVars::Now().AllGroupsAt(1);
+	}, 10.f));
+	EndGame(this);
+	ADD_LATENT_AUTOMATION_COMMAND(FStep(this, TEXT("the end of the game puts them back"), [this, Saved]()
+	{
+		if (PlayWorld())
+		{
+			return false; // PIE ends over a few frames; the worlds restore the cvars as they go
+		}
+		const FQualityCVars C = FQualityCVars::Now();
+		TestTrue(TEXT("the scalability groups"), C.Groups == Saved->CVars.Groups);
+		TestEqual(TEXT("the screen percentage"), C.ScreenPercentage, Saved->CVars.ScreenPercentage);
+		UDoomSettings* S = GetMutableDefault<UDoomSettings>();
+		S->ClassicPixelRows = Saved->PixelRows;
+		S->ModernQuality = Saved->Quality;
+		S->ModernScreenPercent = Saved->ScreenPercent;
+		return true;
+	}));
 	return true;
 }
 

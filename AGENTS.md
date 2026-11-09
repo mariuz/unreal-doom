@@ -35,7 +35,7 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 Tools/run_tests.bat DoomUE -NullRHI
 ```
 
-* **Tests:** 50 automation tests (see [docs/Testing.md](docs/Testing.md)): 17 for maps, patches, collision,
+* **Tests:** 51 automation tests (see [docs/Testing.md](docs/Testing.md)): 18 for maps, patches, collision,
   the game, the editor and the screenshots, 29 `DoomUE.PlayTest.<step>` and 4 `DoomUE.Input` key-press
   tests, all passing at the time of writing.
   * Run them before merging.
@@ -135,9 +135,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   Format new code with the repository's `.clang-format`, but don't reformat whole files. It wants the editor closed and takes about 10 minutes the first time.
 * **The classic renderer turns anti-aliasing off** (`UDoomWorld::ApplyAntiAliasing`, a global cvar
   with a shared count for PIE's worlds) and puts the project's TSR back for modern and at the end;
-  anything else that changes `r.AntiAliasingMethod` must go through it. Options > Pixels
-  (`UDoomWorld::UpdateClassicPixels`, each frame from the local player controller) owns
-  `r.ScreenPercentage` and `r.Upscale.Quality` the same way.
+  anything else that changes `r.AntiAliasingMethod` must go through it. Options > Pixels, Quality
+  and Upscale (`UDoomWorld::UpdateViewSettings`, each frame from the local player controller) own
+  `r.ScreenPercentage`, `r.Upscale.Quality` (nearest for Pixels only) and the `sg.*` scalability
+  groups the same way. The screenshot tests pin Pixels, HIGH and OFF, whatever the saved config holds.
 * **SM6 and Nanite**: Windows targets SM5 and SM6; the 1660 Ti runs SM6, so screenshots compare
   against `Test/Screenshots/.../D3D12_SM6` (approve new SM6 images there, `-sm5` for the old path).
   The baked tiles are Nanite (`ADoomLevel::FillTileMesh`). After changing tile build settings, rebake

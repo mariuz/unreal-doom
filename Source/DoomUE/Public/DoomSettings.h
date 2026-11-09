@@ -64,6 +64,18 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Rendering", meta = (ClampMin = 0, ClampMax = 400))
 	int32 ClassicPixelRows = 0;
 
+	/** Modern renderer (Options > Quality): 0 LOW, 1 MEDIUM, 2 HIGH. LOW and MEDIUM set the engine's
+	 *  scalability groups for shadows, global illumination, reflections, effects and post process to
+	 *  1 and 2 (Lumen stays on at both: Doom's lighting comes through it); HIGH leaves the engine's
+	 *  levels. -quality=low|medium|high overrides it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Rendering", meta = (ClampMin = 0, ClampMax = 2))
+	int32 ModernQuality = 2;
+
+	/** Modern renderer (Options > Upscale): the screen percentage the 3D view renders at, which TSR
+	 *  upscales to the window; 100 is off. -upscale=50 overrides it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Rendering", meta = (ClampMin = 25, ClampMax = 100))
+	int32 ModernScreenPercent = 100;
+
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	float MouseSensitivity = 1.0f;
 

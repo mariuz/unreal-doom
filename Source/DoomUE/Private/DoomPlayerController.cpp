@@ -273,7 +273,7 @@ void ADoomPlayerController::Tick(float DeltaSeconds)
 	{
 		if (UDoomWorld* W = GetWorld()->GetSubsystem<UDoomWorld>())
 		{
-			W->UpdateClassicPixels(); // the window may have been resized, or the renderer switched
+			W->UpdateViewSettings(); // the window may have been resized, or the renderer switched
 		}
 	}
 }
