@@ -65,8 +65,9 @@ namespace DoomPresentationDetail
 		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod"));
 	}
 
-	/** Worlds drawing classic pixels now, and the screen percentage and upscale filter they replaced. */
-	int32 ClassicPixelWorlds = 0;
+	/** Worlds setting the screen percentage now (classic pixels or the modern upscale), and the
+	 *  screen percentage and upscale filter they replaced. */
+	int32 ScreenPercentageWorlds = 0;
 	float SavedScreenPercentage = 0.f;
 	int32 SavedUpscaleQuality = 3;
 
@@ -78,6 +79,19 @@ namespace DoomPresentationDetail
 	IConsoleVariable* UpscaleQuality()
 	{
 		return IConsoleManager::Get().FindConsoleVariable(TEXT("r.Upscale.Quality"));
+	}
+
+	/** The engine's scalability groups Options > Quality sets, worlds setting them now, and their
+	 *  levels before. */
+	const TCHAR* const QualityGroups[] = { TEXT("sg.ShadowQuality"), TEXT("sg.GlobalIlluminationQuality"), TEXT("sg.ReflectionQuality"), TEXT("sg.EffectsQuality"), TEXT("sg.PostProcessQuality") };
+	constexpr int32 NumQualityGroups = UE_ARRAY_COUNT(QualityGroups);
+	int32 QualityWorlds = 0;
+	int32 SavedQuality[NumQualityGroups] = {};
+
+	/** Options > Quality's levels by name, for -quality= */
+	int32 ParseQuality(const FString& Name, int32 Default)
+	{
+		return Name == TEXT("low") ? 0 : Name == TEXT("medium") ? 1 : Name == TEXT("high") ? 2 : Name.IsNumeric() ? FMath::Clamp(FCString::Atoi(*Name), 0, 2) : Default;
 	}
 }
 
@@ -92,9 +106,64 @@ int32 UDoomWorld::ClassicPixelRows() const
 	return Rows > 0 ? FMath::Clamp(Rows, 50, 2160) : 0;
 }
 
-void UDoomWorld::UpdateClassicPixels()
+int32 UDoomWorld::ModernQuality() const
+{
+	if (!bModern)
+	{
+		return -1;
+	}
+	FString Name;
+	const int32 Setting = FMath::Clamp(GetDefault<UDoomSettings>()->ModernQuality, 0, 2);
+	return FParse::Value(FCommandLine::Get(), TEXT("-quality="), Name) ? DoomPresentationDetail::ParseQuality(Name.ToLower(), Setting) : Setting;
+}
+
+int32 UDoomWorld::ModernScreenPercent() const
+{
+	if (!bModern)
+	{
+		return 100;
+	}
+	int32 Percent = GetDefault<UDoomSettings>()->ModernScreenPercent;
+	FParse::Value(FCommandLine::Get(), TEXT("-upscale="), Percent);
+	return FMath::Clamp(Percent, 25, 100);
+}
+
+void UDoomWorld::UpdateViewSettings()
 {
 	using namespace DoomPresentationDetail;
+
+	// Options > Quality: the scalability groups at LOW (1) or MEDIUM (2); HIGH leaves them
+	const int32 Quality = ModernQuality();
+	if (Quality < 0 || Quality >= 2)
+	{
+		RestoreModernQuality();
+	}
+	else
+	{
+		if (!bOwnsQuality)
+		{
+			bOwnsQuality = true;
+			if (QualityWorlds++ == 0)
+			{
+				for (int32 i = 0; i < NumQualityGroups; ++i)
+				{
+					const IConsoleVariable* G = IConsoleManager::Get().FindConsoleVariable(QualityGroups[i]);
+					SavedQuality[i] = G ? G->GetInt() : 3;
+				}
+			}
+		}
+		for (const TCHAR* Group : QualityGroups)
+		{
+			IConsoleVariable* G = IConsoleManager::Get().FindConsoleVariable(Group);
+			if (G && G->GetInt() != Quality + 1)
+			{
+				G->Set(Quality + 1, ECVF_SetByCode); // applies the group's cvars from the scalability ini
+			}
+		}
+	}
+
+	// the screen percentage: classic pixels (Options > Pixels, nearest filtering) or the modern
+	// upscale (Options > Upscale, TSR); the HUD and menus draw after it at the window's resolution
 	const int32 Rows = ClassicPixelRows();
 	FVector2D Size = FVector2D::ZeroVector;
 	if (UGameViewportClient* VC = GetWorld()->GetGameViewport())
@@ -103,42 +172,67 @@ void UDoomWorld::UpdateClassicPixels()
 	}
 	IConsoleVariable* SP = ScreenPercentage();
 	IConsoleVariable* UQ = UpscaleQuality();
-	if (Rows <= 0 || Size.Y <= Rows || !SP || !UQ)
+	const bool bPixels = Rows > 0 && Size.Y > Rows; // not when the window is no taller than the rows
+	const float Percent = bPixels ? FMath::Clamp(100.f * Rows / (float)Size.Y, 1.f, 100.f) : (float)ModernScreenPercent();
+	if (!SP || !UQ || (!bPixels && Percent >= 100.f))
 	{
-		RestoreClassicPixels(); // off, or the window is no taller than the rows
+		RestoreScreenPercentage();
 		return;
 	}
-	if (!bClassicPixels)
+	if (!bOwnsScreenPercentage)
 	{
-		bClassicPixels = true;
-		if (ClassicPixelWorlds++ == 0)
+		bOwnsScreenPercentage = true;
+		if (ScreenPercentageWorlds++ == 0)
 		{
 			SavedScreenPercentage = SP->GetFloat();
 			SavedUpscaleQuality = UQ->GetInt();
 		}
 	}
-	// the 3D view at Rows rows, scaled up with nearest filtering; the HUD and menus draw after it at
-	// the window's resolution
-	const float Percent = FMath::Clamp(100.f * Rows / (float)Size.Y, 1.f, 100.f);
 	if (!FMath::IsNearlyEqual(SP->GetFloat(), Percent, 0.001f))
 	{
 		SP->Set(Percent, ECVF_SetByCode);
 	}
-	if (UQ->GetInt() != 0)
+	// nearest filtering for classic pixels only; TSR's upscale filter is the post process
+	// scalability group's (Options > Quality sets it too)
+	if (bPixels && UQ->GetInt() != 0)
 	{
 		UQ->Set(0, ECVF_SetByCode);
 	}
+	else if (!bPixels && UQ->GetInt() == 0 && SavedUpscaleQuality != 0)
+	{
+		UQ->Set(SavedUpscaleQuality, ECVF_SetByCode); // switched from classic pixels to the upscale
+	}
 }
 
-void UDoomWorld::RestoreClassicPixels()
+void UDoomWorld::RestoreModernQuality()
 {
 	using namespace DoomPresentationDetail;
-	if (!bClassicPixels)
+	if (!bOwnsQuality)
 	{
 		return;
 	}
-	bClassicPixels = false;
-	if (--ClassicPixelWorlds == 0)
+	bOwnsQuality = false;
+	if (--QualityWorlds == 0)
+	{
+		for (int32 i = 0; i < NumQualityGroups; ++i)
+		{
+			if (IConsoleVariable* G = IConsoleManager::Get().FindConsoleVariable(QualityGroups[i]))
+			{
+				G->Set(SavedQuality[i], ECVF_SetByCode);
+			}
+		}
+	}
+}
+
+void UDoomWorld::RestoreScreenPercentage()
+{
+	using namespace DoomPresentationDetail;
+	if (!bOwnsScreenPercentage)
+	{
+		return;
+	}
+	bOwnsScreenPercentage = false;
+	if (--ScreenPercentageWorlds == 0)
 	{
 		if (IConsoleVariable* SP = ScreenPercentage())
 		{

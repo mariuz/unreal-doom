@@ -324,10 +324,16 @@ public:
 	/** The rows the classic renderer draws (Options > Pixels, -pixels=): 200, 400, or 0 for the
 	 *  window's own resolution; always 0 in the modern renderer. */
 	int32 ClassicPixelRows() const;
+	/** The modern renderer's quality (Options > Quality, -quality=): 0 LOW, 1 MEDIUM, 2 HIGH; -1 in
+	 *  the classic renderer. */
+	int32 ModernQuality() const;
+	/** The modern renderer's screen percentage (Options > Upscale, -upscale=): 100 is off, and
+	 *  always 100 in the classic renderer. */
+	int32 ModernScreenPercent() const;
 	/** Each frame (the local player controller): the screen percentage for ClassicPixelRows at the
-	 *  viewport's height now, with nearest-neighbour upscaling; the project's values come back
-	 *  when the mode is off. */
-	void UpdateClassicPixels();
+	 *  viewport's height now (nearest-neighbour upscaling) or for ModernScreenPercent (TSR), and the
+	 *  scalability groups for ModernQuality; the project's values come back when they are off. */
+	void UpdateViewSettings();
 	/** Monster AI: SMART (Unreal's AI framework picks where monsters go, DoomAI.h) or CLASSIC. */
 	bool IsSmartAI() const { return bSmartAI; }
 	/** Switches every monster now and the ones spawned later. */
@@ -445,8 +451,10 @@ private:
 	void ApplyAntiAliasing();
 	void RestoreAntiAliasing();
 	bool bClassicAntiAliasing = false;
-	void RestoreClassicPixels();
-	bool bClassicPixels = false;
+	void RestoreScreenPercentage();
+	bool bOwnsScreenPercentage = false;
+	void RestoreModernQuality();
+	bool bOwnsQuality = false;
 
 	TUniquePtr<FDoomWad> Wad;
 	TUniquePtr<FDoomGraphics> Gfx;

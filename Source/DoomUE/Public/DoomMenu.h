@@ -15,7 +15,7 @@ enum class EMenuPage : uint8 { Main, Episode, Skill, Nightmare, Options, Sound, 
 /** The Options page's rows, in the order FDoomMenu::Rows builds them. */
 namespace EOptionsRow
 {
-	enum Type : int32 { EndGame, Messages, Sensitivity, SensitivityBar, Sound, Renderer, FieldOfView, WarpTo, Colors, Pixels, MonsterAI, Controls, Count };
+	enum Type : int32 { EndGame, Messages, Sensitivity, SensitivityBar, Sound, Renderer, FieldOfView, WarpTo, Colors, Pixels, Quality, Upscale, MonsterAI, Controls, Count };
 }
 
 /** The Multiplayer page's rows, in the order FDoomMenu::Rows builds them. */

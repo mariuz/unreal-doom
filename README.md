@@ -148,6 +148,8 @@ without saved tiles are baked when they load.
 | `-respawn` | Nightmare-style monster respawning on any skill |
 | `-smooth` | the smooth light approximation instead of the exact COLORMAP |
 | `-pixels=200` / `-pixels=400` | classic renderer: draw 200 (320x200) or 400 (640x400) rows and scale them up with sharp pixels (Options > Pixels) |
+| `-quality=low` / `medium` / `high` | modern renderer: the engine's scalability levels for shadows, GI, reflections, effects and post process (Options > Quality) |
+| `-upscale=50` | modern renderer: render the 3D view at this screen percentage and let TSR upscale it (Options > Upscale) |
 | `-forcepalette=N` | hold `PLAYPAL` palette N (1-8 pain, 9-12 pickup, 13 radiation suit) for screenshots |
 | `-fxtest` | with `-modern`: every particle burst in a row in front of the player, four times a second |
 | `-noparticles` | no Niagara bursts in the modern renderer |
@@ -734,6 +736,28 @@ Nanite (the log warns about it); Nanite adds about 2 ms of render thread for Doo
 (it turned the camera mid-capture), and focus settling on a rebuilt menu button no longer moves the
 selection (it made `DoomUE.Input.MenuKeys` fail now and then).
 
+Quality presets (`feature/quality-presets`): **Options > Quality** (LOW, MEDIUM, HIGH;
+`-quality=low`) sets the engine's scalability groups for shadows, global illumination, reflections,
+effects and post process to 1 or 2; HIGH leaves the engine's own levels (today's look). Lumen stays
+on at LOW too (UE 5.8's level 1 is its irradiance volume), because the modern renderer's sector
+light reaches the walls through it. **Options > Upscale** (OFF, 75%, 50%; `-upscale=50`) renders the
+modern 3D view at that screen percentage and TSR upscales it; the HUD stays at the window's
+resolution. Like Pixels, these are global cvars with a shared count for PIE's worlds, and classic
+or the end of the game puts the engine's values back; `DoomUE.Render.ModernQuality` checks both.
+FSR and DLSS are not included: they are separate vendor plugins. `-perftest` on a GTX 1660 Ti at
+960x540, SM6 with Nanite, monsters asleep:
+
+| Modern | E1M1 GPU | E1M1 frame | MAP29 GPU | MAP29 frame |
+|---|---|---|---|---|
+| HIGH | 10.0 ms | 12.1 ms | 9.1 ms | 16.6 ms |
+| MEDIUM | 6.2 ms | 11.8 ms | 7.5 ms | 17.6 ms |
+| LOW | 5.0 ms | 10.3 ms | 6.4 ms | 16.2 ms |
+| HIGH, 50% | 3.9 ms | 11.9 ms | 5.8 ms | 24.8 ms (a hitch in the run) |
+| LOW, 50% | 3.7 ms | 10.3 ms | 5.6 ms | 16.4 ms |
+
+The presets cut the GPU time by half or more, but the frame barely moves: on SM6 the render
+thread (10-17 ms) is the limit now, not the GPU (see "Make SM6 pay off" below).
+
 Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
 320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
 window's height, updated each frame so a resize keeps it) and scales it up with nearest-neighbour
@@ -759,7 +783,7 @@ Not done yet (roughly in priority order):
    * **A pinned test environment**: record the engine version and scalability levels with the approved screenshots, so `E1M1Modern` means the same on every machine (see [docs/Testing.md](docs/Testing.md)).
    * **World Partition / level instances** for big PWAD maps.
 5. Performance (measure first: `stat unit` and Unreal Insights on a slaughter map such as MAP29):
-   * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. The sprites share one static quad mesh now; sharing materials too needs the frames in a texture array (or atlas) indexed by Custom Primitive Data, with the sector, brightness and mirror there as well. Measured with `-perftest` (render thread and GPU times) on a GTX 950 at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
+   * **One material instance per sprite**: each sprite creates its own dynamic material instance (`UDoomSpriteComponent`), which stops batching. The sprites share one static quad mesh now; sharing materials too needs the frames in a texture array (or atlas) indexed by Custom Primitive Data, with the sector, brightness and mirror there as well. Measured with `-perftest` (render thread and GPU times) on a GTX 1660 Ti at 960x540: the frame is GPU-bound at about 8.3 ms on E1M1 and MAP29 alike, with vsync and the frame cap off, so sharing materials (sector, fullbright and fuzz as Custom Primitive Data) would mostly save CPU submission work this frame doesn't wait on. Worth redoing on a faster GPU or a map with many more sprites.
    * **Moving sectors**: a moving door or lift regenerates its own small chunk every tic. Measured with `-perftest`'s movers phase, which starts every door and lift at once: 0.11 ms a frame on E1M1 (27 movers), 0.51 ms on MAP29 (11), about 1.3 ms more game thread in all. Moving them by transform would save little, so it waits until a map shows otherwise.
 6. **Epic Games standards** (Epic's [coding standard](https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine), [asset naming](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects) and project practices), from an audit of the code:
    * **Translations that show**: the port's text is `LOCTEXT` now, but the game's menus and HUD draw it in Doom's STCFN font, which has capitals, digits and some punctuation only; a translation with other letters needs a fallback font there. In network games the server sends messages as its own text, so clients see the server's language.
@@ -768,8 +792,7 @@ Not done yet (roughly in priority order):
 7. **Rendering**:
    * **The status bar and weapon at the low resolution too**: Options > Pixels lowers the 3D view only; the HUD (canvas) stays sharp at the window's resolution.
    * **MegaLights for the modern renderer**: projectiles, explosions, the muzzle flash and lamps are all shadow-casting point lights, and a slaughter map has dozens at once; MegaLights is made for many shadowed lights at a steady cost. Measure on MAP29 first.
-   * **Make SM6 pay off**: the tiles are Nanite now, but SM6 is slower than SM5 on a GTX 1660 Ti (E1M1 modern frame 12.3 ms against 7.7). Virtual shadow maps suffer from the non-Nanite parts: give the moving chunks and sprites cheaper shadows (or none), try `r.Shadow.Virtual.Cache`, and measure Nanite against `r.Nanite 0` again; if SM6 stays slower, default the modern renderer to SM5 and keep SM6 opt-in.
-   * **Quality presets for modern**: Low / Medium / High for Lumen, shadows and fog in Options > Renderer, and an upscaler (TSR at a lower screen percentage, or the FSR / DLSS plugins); on a GTX 950 the modern frame waits on the GPU (about 8.3 ms).
+   * **Make SM6 pay off**: the tiles are Nanite now, but SM6 is slower than SM5 on a GTX 1660 Ti (E1M1 modern frame 12.3 ms against 7.7). Virtual shadow maps suffer from the non-Nanite parts: give the moving chunks and sprites cheaper shadows (or none), try `r.Shadow.Virtual.Cache`, and measure Nanite against `r.Nanite 0` again; if SM6 stays slower, default the modern renderer to SM5 and keep SM6 opt-in. The quality presets showed the limit is the render thread (10-17 ms on SM6, against a 4-10 ms GPU): profile it with Unreal Insights first.
    * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
    * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).
 8. **Future engine versions**:
