@@ -760,6 +760,20 @@ FSR and DLSS are not included: they are separate vendor plugins. `-perftest` on 
 The presets cut the GPU time by half or more, but the frame barely moves: on SM6 the render
 thread (10-17 ms) is the limit now, not the GPU (see "Make SM6 pay off" below).
 
+Engine upgrades (`feature/engine-upgrade`): [docs/EngineUpgrade.md](docs/EngineUpgrade.md) is the
+checklist for a new engine version, and `Tools/upgrade_check.bat` runs it against the engine in
+`UE_ENGINE`. It builds, regenerates the generated assets, rebakes the tiles, then runs validation, the
+WAD checks and the tests. It passed end to end on 5.8.4. (Regenerating rewrites all 71 generated assets,
+even on the same engine.) A review of the 5.9 branch's source against 5.8.4 found nothing that
+breaks the project. One behaviour change: material regeneration now waits for the shaders and
+reports HLSL errors. The doc lists 5.9 features worth using. The 5.9 run itself waits for a
+source build of the engine (about 8-10 hours on this 4-core i5; `SKIP_GAME_BUILD=1` skips the
+game target's hours more). The doc also covers Unreal Engine 6. Epic moves gameplay to Verse and
+Scene Graph, with Early Access at the end of 2027, and reports from November 2026 say Actors,
+Blueprints and C++ gameplay are removed. The doc measures how much of DoomUE that touches (most of
+the 28,000 runtime lines). It lists what to do now (stay on the latest UE 5, keep content generated,
+keep `DoomWadTools` engine-neutral, keep Doom's rules in data) and what to wait for.
+
 Low-resolution classic mode (`feature/classic-lowres`): **Options > Pixels** (FULL, 640X400,
 320X200; `-pixels=200`) draws the classic 3D view at that many rows (`r.ScreenPercentage` from the
 window's height, updated each frame so a resize keeps it) and scales it up with nearest-neighbour
@@ -800,5 +814,6 @@ Not done yet (roughly in priority order):
 8. **Future engine versions**:
    * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
    * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.
-   * **An engine-upgrade checklist** in AGENTS.md: regenerate the generated assets (`-run=DoomContent`: materials, Niagara, input, AI, game data) instead of resaving old ones, run data validation and every test, re-approve the screenshots with the engine version recorded.
+   * **The UE 5.9 run**: build the engine from source (`E:/Work/UnrealEngine`, branch `5.9`), then `Tools/upgrade_check.bat` in a worktree with `UE_ENGINE` set ([docs/EngineUpgrade.md](docs/EngineUpgrade.md)); then use 5.9's custom-node `Preamble` and material error reporting in the generator.
+   * **Unreal Engine 6 readiness**: Verse and Scene Graph replace the C++ gameplay layer; until UE 6 Early Access (end of 2027) shows what a project's C++ may still do, keep content generated, `DoomWadTools` engine-neutral and Doom's rules in data, and don't start a rewrite ([docs/EngineUpgrade.md](docs/EngineUpgrade.md)).
    * **One place for the Niagara builder's engine calls**: the effect builder uses Niagara's editor API, which changes between versions.
