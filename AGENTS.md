@@ -17,7 +17,13 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
   map generator, the PWAD writer). Core and CoreUObject only: keep game code out of it.
 * `Source/DoomUEEditor`: the editor module. `-run=DoomContent` generates materials, effects and the
   game-table asset, and imports maps; the automation tests live in `Private/Tests`.
-* `docs/`: Architecture, Testing, Multiplayer, EditingMaps, Lyra, AI. Keep them current with changes.
+* `docs/`: Architecture, Testing, Multiplayer, EditingMaps, Lyra, AI, EngineUpgrade. Keep them current with changes.
+* **Engine upgrades** follow [docs/EngineUpgrade.md](docs/EngineUpgrade.md): `Tools/upgrade_check.bat`
+  with `UE_ENGINE` set builds, regenerates (never resave generated assets), rebakes, validates and
+  tests on another engine. Try a new engine in a git worktree (`git worktree add ../DoomUE-5.9`) so
+  this checkout's binaries and assets stay on the current one. For Unreal Engine 6 (gameplay
+  moving to Verse and Scene Graph), keep content generated, `DoomWadTools` on Core and CoreUObject
+  only, and Doom's rules in data tables rather than actor overrides.
 * `Tools/`: `run_tests.bat`, test-WAD generators, the Lyra export scripts and plugin.
 * The roadmap is the "Not done yet" list at the end of the README.
 

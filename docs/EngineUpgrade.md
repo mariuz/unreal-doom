@@ -21,6 +21,9 @@ Do it on a branch (`engine/5.9`), with the old engine still installed so you can
    * run data validation and the WAD checks (`-nodetest`, `-wadtest`, `-gentest`);
    * run the automation tests.
 
+   With an engine built from source, `set SKIP_GAME_BUILD=1` skips the game target: it compiles
+   most of the engine again, which takes hours on a 4-core CPU. Build it before packaging.
+
    Every tool in `Tools` reads `UE_ENGINE`, so `run_tests.bat`, `package.bat`, `analyze.bat` and
    `check_includes.bat` work against the new engine the same way.
 3. **Fix the build.** Read the compiler's deprecation warnings (C4996) as well as the errors:
@@ -36,6 +39,11 @@ Do it on a branch (`engine/5.9`), with the old engine still installed so you can
    Content` should list only regenerated assets:
    * `Content/Doom/Materials`, `Effects`, `AI`, `Input`;
    * `Maps/*_Tiles`.
+
+   Expect all of them to change: a regenerated asset is never byte-identical, even on the same
+   engine. On 5.8.4 the check rewrote 71 files with nothing else changed. Commit them with the
+   upgrade. When trying the check on the current engine, put them back with
+   `git checkout -- Content`.
 
    Two exceptions are not regenerated:
    * `Content/Doom/Data/DA_DoomGameData` may hold hand edits. Check it loads (the tests do); its
@@ -77,6 +85,44 @@ Do it on a branch (`engine/5.9`), with the old engine still installed so you can
     * Update the README's requirements and build lines.
     * Update the engine notes in AGENTS.md.
     * Merge as usual.
+
+## 5.8.4 to 5.9: what changed for DoomUE
+
+Reviewed in November 2026 against the `5.9` branch of the engine's source (before the 5.9 preview).
+The review diffed the 63 engine headers the project includes that changed, the Niagara, CommonUI,
+Enhanced Input and Dynamic Mesh plugins, and `Engine/Config`.
+
+* **Nothing found that breaks the build.** No API the project uses was removed or renamed. A
+  build is still the real test: 5.9 drops some transitive includes (for example the `Particles/*`
+  headers from `NiagaraComponent.h` and `GameplayStatics.h`), and a missing include only shows
+  when compiling.
+* **Behaviour changes:**
+  * `UMaterialEditingLibrary::RecompileMaterial` now waits for the shaders to compile, and returns
+    shader-compiler errors too. The first editor launch and Doom > Regenerate take longer, and a
+    broken custom HLSL node now fails the generator instead of passing silently. A commandlet
+    without rendering returns no errors, as before.
+  * `FSavePackageArgs::Error` defaults to `GWarn`. The project already sets it everywhere.
+  * Scalability level 1 (Options > Quality LOW) adds Lumen card culling
+    (`r.LumenScene.SurfaceCache.CardClipSphereCulling.Radius=2500`). Lumen stays on, so LOW
+    still works as designed.
+  * A latent automation command added from inside a running one now runs before the queued ones.
+    The tests don't do that.
+* **Harmless:**
+  * Niagara stateless emitters: no module or property was renamed, so the reflection-based
+    builder is fine.
+  * CommonUI, Enhanced Input and `UDynamicMeshComponent`: no changes the project uses.
+  * Config: the project's Lumen, virtual shadow map, TSR, distance-field and DX12 SM5 / SM6
+    settings are untouched, and so are the cvars the quality presets set.
+* **Worth using after the upgrade:**
+  * `UMaterialExpressionCustom::Preamble`: shared HLSL helper functions for the generated
+    materials (roadmap: fewer custom HLSL nodes).
+  * Generator errors from `RecompileMaterial` and `GetMaterialErrorExpressions` can fail
+    `-run=DoomContent`.
+  * Comment boxes, named reroutes and `CreateMaterialFunctionCall` in `UMaterialEditingLibrary`,
+    for tidier generated graphs.
+  * `USkyLightComponent::SetPreFilteredSky`, to skip the modern renderer's runtime sky capture.
+  * `FMeshNaniteSettings::IsFallbackPotentiallyReduced`, to assert the tile fallbacks stay lossless.
+  * `UCommonActivatableWidget::InputModeTagsToAdd`, for Enhanced Input modes per menu screen.
 
 ## Unreal Engine 6
 
