@@ -3,7 +3,13 @@
 // where a partition crosses them; a set of segs that is convex (every seg's line has the others on its
 // front, right-hand side) becomes a subsector; otherwise the seg line that splits fewest segs and
 // balances best becomes a node's partition. No minisegs: FDoomMap::BuildSubsectorPolygons clips the
-// subsector polygons from the node partitions and the segs, as it does for vanilla nodes.
+// subsector polygons from the node partitions and the segs, as it does for vanilla nodes. A subsector's
+// sector is its first seg's (as in Doom), so a subsector puts a seg of a sector's boundary first, not
+// one of a line with the same sector on both sides: those are tricks inside a sector and may run
+// through others (Plutonia MAP32's line 158 crosses sector 61, which then lost its floor). A
+// partition is its seg's whole line, between the line's own vertices: a seg cut short starts at a
+// split vertex, which a PWAD rounds to whole units, and a short seg's direction rounds badly (TNT
+// MAP27 exported with sectors wrong at 0.8% of points).
 #include "DoomMap.h"
 #include "DoomWadTools.h"
 
@@ -25,9 +31,20 @@ namespace
 		TArray<FDoomSeg>& Segs;
 		TArray<FDoomSubsector>& Subsectors;
 		TArray<FDoomNode>& Nodes;
+		const TArray<FDoomLine>& Lines;
+		const TBitArray<>& SelfReferencing; // per line: the same sector on both sides
 		int32 Splits = 0;
 
 		FVector2d P(int32 V) const { return FVector2d(Vertices[V]); }
+
+		/** The partition along a seg: its line's own vertices, facing the seg's way. */
+		void PartLine(const FBSeg& Part, FVector2d& OutA, FVector2d& OutD) const
+		{
+			const FDoomLine& L = Lines[Part.Line];
+			const int32 A = Part.Side == 0 ? L.V1 : L.V2, B = Part.Side == 0 ? L.V2 : L.V1;
+			OutA = P(A);
+			OutD = P(B) - OutA;
+		}
 
 		/** Signed distance of point Q from the line through A in direction D: < 0 front (right), > 0 back. */
 		static double Side(const FVector2d& A, const FVector2d& D, const FVector2d& Q)
@@ -39,7 +56,8 @@ namespace
 		/** -1 entirely front (or on it, facing the same way), 1 entirely back, 0 crosses. */
 		int32 Classify(const FBSeg& Part, const FBSeg& S, double& OutDA, double& OutDB) const
 		{
-			const FVector2d A = P(Part.V1), D = P(Part.V2) - A;
+			FVector2d A, D;
+			PartLine(Part, A, D);
 			OutDA = Side(A, D, P(S.V1));
 			OutDB = Side(A, D, P(S.V2));
 			const bool bOnA = FMath::Abs(OutDA) <= OnEps, bOnB = FMath::Abs(OutDB) <= OnEps;
@@ -94,6 +112,8 @@ namespace
 		{
 			if (Depth > 2000 || IsConvex(Set))
 			{
+				// a boundary seg first: it gives the subsector its sector
+				Set.StableSort([this](const FBSeg& X, const FBSeg& Y) { return !SelfReferencing[X.Line] && SelfReferencing[Y.Line]; });
 				FDoomSubsector Ss;
 				Ss.FirstSeg = Segs.Num();
 				Ss.NumSegs = Set.Num();
@@ -122,7 +142,8 @@ namespace
 				return Build(MoveTemp(Set), 100000);
 			}
 			const FBSeg Part = Set[Best];
-			const FVector2d A = P(Part.V1), D = P(Part.V2) - A;
+			FVector2d A, D;
+			PartLine(Part, A, D);
 			TArray<FBSeg> Front, Back;
 			for (const FBSeg& S : Set)
 			{
@@ -160,9 +181,12 @@ bool FDoomMap::BuildNodes()
 	Subsectors.Reset();
 	Nodes.Reset();
 	TArray<FBSeg> All;
+	TBitArray<> SelfReferencing(false, Lines.Num());
 	for (int32 i = 0; i < Lines.Num(); ++i)
 	{
 		const FDoomLine& L = Lines[i];
+		SelfReferencing[i] = L.Side[0] != INDEX_NONE && L.Side[1] != INDEX_NONE && Sides.IsValidIndex(L.Side[0]) && Sides.IsValidIndex(L.Side[1])
+			&& Sides[L.Side[0]].Sector == Sides[L.Side[1]].Sector;
 		if (L.V1 == L.V2 || !Vertices.IsValidIndex(L.V1) || !Vertices.IsValidIndex(L.V2) || Vertices[L.V1].Equals(Vertices[L.V2], 0.01f))
 		{
 			continue; // zero length
@@ -174,7 +198,7 @@ bool FDoomMap::BuildNodes()
 	{
 		return false;
 	}
-	FBuilder B{ Vertices, Segs, Subsectors, Nodes };
+	FBuilder B{ Vertices, Segs, Subsectors, Nodes, Lines, SelfReferencing };
 	const int32 Root = B.Build(MoveTemp(All), 0);
 	if (Nodes.Num() == 0)
 	{

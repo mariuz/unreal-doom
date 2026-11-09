@@ -197,9 +197,25 @@ partitions, as for a WAD's own nodes). The partition is the seg line with the fe
 best balance, from up to 96 candidates per node. It is what generated maps and new geometry drawn
 in the editors are built with; E1M1 takes about 35 ms.
 
+* A partition runs between its line's own vertices, not the split seg's: an exported map rounds
+  split vertices to whole units, and a short seg's direction rounds badly (TNT MAP27 came back with
+  the wrong sector at 0.8% of points).
+* A subsector takes its sector from its first seg, as in Doom, so a subsector lists a seg of its
+  sector's boundary first, before segs of lines with the same sector on both sides. Those lines are
+  tricks inside a sector and may run through another (Plutonia MAP32's line 158 crosses sector 61,
+  which lost its floor).
+
 * `-run=DoomContent -nodetest=all` (add `-iwad=freedoom2.wad`) rebuilds every map's nodes and
-  compares them with the WAD's: the total floor area within 0.1% and the same sector at sampled
-  points inside the map. All 68 Freedoom maps pass (E1M1: 6,713,392 against 6,712,686).
+  measures them, and the WAD's own nodes, against the map's walls: the sector at sampled points
+  that four rays to the nearest walls agree on (points in the void are skipped), and each closed
+  sector's floor area against the area its lines enclose. The rebuilt nodes pass if they are no
+  worse than the WAD's (0.5% of points, 0.5% of floor area). The WAD's nodes are not the reference
+  themselves: rounded split vertices leave holes (TNT MAP20's big outdoor sector misses 6% of its
+  floor), and any BSP may hand a patch of void to whatever sector (Doom II MAP18 gives one to a
+  stray one-line sector). Open sectors, and sectors with a line end no other line shares (E3M4's
+  line 1087 pokes through a wall, and its stub makes a subsector out in the void), have no defined
+  area and are left out. `-nodedebug` lists the sectors furthest off and the subsectors behind it.
+  All 68 Freedoom maps and the 264 maps of the commercial IWADs pass.
 * `-buildnodes` in a `-game` run plays every map on the rebuilt nodes; `-warp=E1M1 -playtest
   -buildnodes` passes.
 
@@ -241,7 +257,8 @@ port or editor opens. The edits are the sector and line edits, and the thing mar
 * **Playing it:** `-file=path.wad -warp=E1M1`, here or in another port.
 * **Tests:**
   * `-run=DoomContent -wadtest=all` (or `E1M1,RND00003`) writes each map and reads it back: the same
-    lines, sides, sectors and things, the same sector at sampled points, no new checker errors. All
+    lines, sides, sectors and things, no new checker errors, and against the walls (as `-nodetest`)
+    the read-back nodes no worse than the original map's. All
     36 Freedoom 1 maps and generated maps pass.
   * `-edittest` exports the edited E1M1 and checks that the edits are in the PWAD.
 
