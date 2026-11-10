@@ -13,8 +13,9 @@
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
-#include "Input/CommonUIInputTypes.h"
 #include "InputAction.h"
+#include "EnhancedInputSubsystems.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Rendering/DrawElements.h"
@@ -152,26 +153,9 @@ void UDoomMenuScreen::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
 	WidgetTree->RootWidget = Canvas;
-	// the menu context's other actions, for the keys Slate's navigation doesn't know (W/A/S/D, Esc);
-	// the arrow keys, d-pad and stick navigate between the row buttons first
-	if (const ADoomPlayerController* PC = Cast<ADoomPlayerController>(GetOwningPlayer()))
-	{
-		auto Bind = [this](const UInputAction* Action, TFunction<void()> Do)
-		{
-			if (Action) RegisterUIActionBinding(FBindUIActionArgs(Action, false, FSimpleDelegate::CreateLambda(MoveTemp(Do))));
-		};
-		Bind(PC->GetMenuUpAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Up); });
-		Bind(PC->GetMenuDownAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Down); });
-		Bind(PC->GetMenuLeftAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Left); });
-		Bind(PC->GetMenuRightAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Right); });
-		Bind(PC->GetMenuCloseAction(), [this]() { HandleClose(); });
-		// Y and Space (Enter and the gamepad's A are the focused row button's own accept keys)
-		Bind(PC->GetMenuSelectAction(), [this]()
-		{
-			UDoomWorld* W = DoomWorld();
-			if (W && !W->IsInputLocked() && !TakesRawKeys()) RowClicked(W->Menu.GetItem());
-		});
-	}
+	// the menu's keys (arrows, W/A/S/D, Enter, Y, N, Space, Backspace, the d-pad) are read in
+	// NativeOnKeyDown from the menu context's own actions (MenuKey); the stick still moves the
+	// focus between the row buttons through Slate's navigation
 }
 
 void UDoomMenuScreen::NativeOnActivated()
@@ -329,7 +313,51 @@ FReply UDoomMenuScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyE
 		HandleClose();
 		return FReply::Handled();
 	}
+	if (MenuKey(InKeyEvent.GetKey(), InKeyEvent.IsRepeat()))
+	{
+		return FReply::Handled();
+	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+bool UDoomMenuScreen::MenuKey(const FKey& Key, bool bRepeat)
+{
+	// the keys the menu context maps to each action, so a key does what the Controls page says;
+	// read here rather than through CommonUI's action bindings, which UE 5.9 stopped routing to
+	// the menu (and which couldn't move past rows scrolled out of view)
+	const ADoomPlayerController* PC = Cast<ADoomPlayerController>(GetOwningPlayer());
+	const ULocalPlayer* Player = GetOwningLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* Input = Player ? Player->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	UDoomWorld* W = DoomWorld();
+	if (!PC || !Input || !W || TakesRawKeys())
+	{
+		return false;
+	}
+	auto Mapped = [Input, &Key](const UInputAction* Action) { return Action && Input->QueryKeysMappedToAction(Action).Contains(Key); };
+	const TPair<const UInputAction*, EUINavigation> Moves[] = {
+		{ PC->GetMenuUpAction(), EUINavigation::Up }, { PC->GetMenuDownAction(), EUINavigation::Down },
+		{ PC->GetMenuLeftAction(), EUINavigation::Left }, { PC->GetMenuRightAction(), EUINavigation::Right },
+	};
+	for (const TPair<const UInputAction*, EUINavigation>& Move : Moves)
+	{
+		if (Mapped(Move.Key))
+		{
+			Navigate(INDEX_NONE, Move.Value); // held keys repeat, as Doom's menu does
+			FocusSelected();
+			return true;
+		}
+	}
+	if (Mapped(PC->GetMenuBackAction()))
+	{
+		if (!bRepeat) HandleBack();
+		return true;
+	}
+	if (Mapped(PC->GetMenuSelectAction()))
+	{
+		if (!bRepeat && !W->IsInputLocked()) W->Menu.Select(*W);
+		return true;
+	}
+	return false;
 }
 
 FReply UDoomMenuScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

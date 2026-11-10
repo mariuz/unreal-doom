@@ -104,6 +104,8 @@ private:
 	UDoomWorld* DoomWorld() const;
 	/** Typing, capturing a key, a prompt or a Read This! page: keys go to the screen, no rows. */
 	bool TakesRawKeys() const;
+	/** A key the menu context maps to one of the menu's actions; true if it was one. */
+	bool MenuKey(const FKey& Key, bool bRepeat);
 	/** A raw key while TakesRawKeys(); true if used. */
 	bool RawKey(const FKey& Key);
 	/** Rebuilds the row buttons when the page, the visible rows or the screen's size change. */

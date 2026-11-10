@@ -271,6 +271,8 @@ else if (doomLevel >= 0.0)
 	{
 		UMaterial* M = NewMaterial(bModern ? TEXT("M_DoomWorldLit") : TEXT("M_DoomWorld"));
 		M->SetShadingModel(bModern ? MSM_DefaultLit : MSM_Unlit);
+		// the baked tiles are Nanite: without the flag a cooked game draws them with the default material
+		M->SetUsageByFlag(MATUSAGE_Nanite, bModern);
 		M->BlendMode = BLEND_Masked;
 		M->OpacityMaskClipValue = 0.5f;
 
@@ -362,6 +364,7 @@ else if (doomLevel >= 0.0)
 	{
 		UMaterial* M = NewMaterial(TEXT("M_DoomSky"));
 		M->SetShadingModel(MSM_Unlit);
+		M->SetUsageByFlag(MATUSAGE_Nanite, true); // sky surfaces are part of the Nanite tiles too
 		M->BlendMode = BLEND_Opaque;
 
 		UMaterialExpressionScalarParameter* Height = Scalar(M, -900, 0, TEXT("SkyHeight"), 128.f);
