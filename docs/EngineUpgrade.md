@@ -124,6 +124,35 @@ Enhanced Input and Dynamic Mesh plugins, and `Engine/Config`.
   * `FMeshNaniteSettings::IsFallbackPotentiallyReduced`, to assert the tile fallbacks stay lossless.
   * `UCommonActivatableWidget::InputModeTagsToAdd`, for Enhanced Input modes per menu screen.
 
+## The 5.9.0 run (November 2026)
+
+`Tools/upgrade_check.bat` against the launcher's 5.9.0 (CL 60351404), in a worktree on `engine/5.9`.
+
+* **Build:** both targets build with no errors and no deprecation warnings.
+* **Generators, tiles, validation, WAD checks:** all pass.
+* **Tests:** 47 of 49 passed on the first run. The failures and what fixed them (all three fixes
+  also run on 5.8, so they are on `main`):
+  * `DoomUE.Input.MenuKeys`, the arrows, W/A/S/D and Backspace: CommonUI's action bindings for the
+    menu's Enhanced Input actions no longer reach the menu screen, so only Slate's own focus
+    navigation moved the selection, and it stopped at rows scrolled out of view. The screen now
+    reads those keys itself (`UDoomMenuScreen::MenuKey`, from the menu context's mappings). The row
+    buttons are the mouse's only (unfocusable), so a key can't also click the row a stale focus
+    is on.
+  * `DoomUE.Input.MenuKeys`, F1: 5.9 enables Epic's experimental **AIAssistant** editor plugin by
+    default. Its input preprocessor binds plain F1 ("Query UI with Assistant") and takes the key
+    before the game, in Play In Editor too. `DoomUE.uproject` turns the plugin off; packaged and
+    `-game` runs never load it.
+  * A warning, not a failure: `M_DoomWorldLit` and `M_DoomSky` lacked the Nanite usage flag, so a
+    cooked game would draw the Nanite tiles with the default material. The generator sets it with
+    `SetUsageByFlag` (5.9 deprecates writing `bUsedWithNanite`).
+* **Still open:**
+  * `DoomUE.Render.E1M1Modern` is 13.7% brighter than the approved SM6 image, with the same
+    picture otherwise (floors and walls textured): Lumen's lighting, as with the known 5.8 failure
+    on this machine. Approve a 5.9 image only after comparing on the machine that approved the
+    current one.
+  * Steps 7 to 10 of the checklist: `-perftest`, a packaged build, a hand play, then the version
+    change.
+
 ## Unreal Engine 6
 
 ### What is known (November 2026)

@@ -78,6 +78,7 @@ public:
 	const UInputAction* GetMenuLeftAction() const { return MenuLeftAction; }
 	const UInputAction* GetMenuRightAction() const { return MenuRightAction; }
 	const UInputAction* GetMenuSelectAction() const { return MenuSelectAction; }
+	const UInputAction* GetMenuBackAction() const { return MenuBackAction; }
 	const UInputAction* GetMenuCloseAction() const { return MenuCloseAction; }
 
 private:

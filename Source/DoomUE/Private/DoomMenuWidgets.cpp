@@ -13,8 +13,9 @@
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
-#include "Input/CommonUIInputTypes.h"
 #include "InputAction.h"
+#include "EnhancedInputSubsystems.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Rendering/DrawElements.h"
@@ -93,11 +94,6 @@ UDoomMenuRowButtonStyle::UDoomMenuRowButtonStyle()
 	}
 }
 
-UWidget* UDoomMenuRowButton::Navigate(EUINavigation Direction)
-{
-	return Screen.IsValid() ? Screen->Navigate(Row, Direction) : nullptr;
-}
-
 void UDoomMenuRowButton::NativeOnInitialized()
 {
 	// an empty, invisible content: UCommonButtonBase wraps the root in its internal button
@@ -107,6 +103,9 @@ void UDoomMenuRowButton::NativeOnInitialized()
 	}
 	Super::NativeOnInitialized();
 	SetStyle(UDoomMenuRowButtonStyle::StaticClass());
+	// the mouse's only: keys and the gamepad go to the screen (MenuKey, NativeOnNavigation), so a
+	// focused button can't also take Enter as its own click
+	SetIsFocusable(false);
 }
 
 void UDoomMenuRowButton::NativeOnHovered()
@@ -119,12 +118,6 @@ void UDoomMenuRowButton::NativeOnClicked()
 {
 	Super::NativeOnClicked();
 	if (Screen.IsValid()) Screen->RowClicked(Row);
-}
-
-void UDoomMenuRowButton::HandleFocusReceived()
-{
-	Super::HandleFocusReceived();
-	if (Screen.IsValid()) Screen->RowFocused(Row);
 }
 
 // --- the menu screen -----------------------------------------------------------------------------
@@ -152,26 +145,9 @@ void UDoomMenuScreen::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
 	WidgetTree->RootWidget = Canvas;
-	// the menu context's other actions, for the keys Slate's navigation doesn't know (W/A/S/D, Esc);
-	// the arrow keys, d-pad and stick navigate between the row buttons first
-	if (const ADoomPlayerController* PC = Cast<ADoomPlayerController>(GetOwningPlayer()))
-	{
-		auto Bind = [this](const UInputAction* Action, TFunction<void()> Do)
-		{
-			if (Action) RegisterUIActionBinding(FBindUIActionArgs(Action, false, FSimpleDelegate::CreateLambda(MoveTemp(Do))));
-		};
-		Bind(PC->GetMenuUpAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Up); });
-		Bind(PC->GetMenuDownAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Down); });
-		Bind(PC->GetMenuLeftAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Left); });
-		Bind(PC->GetMenuRightAction(), [this]() { Navigate(INDEX_NONE, EUINavigation::Right); });
-		Bind(PC->GetMenuCloseAction(), [this]() { HandleClose(); });
-		// Y and Space (Enter and the gamepad's A are the focused row button's own accept keys)
-		Bind(PC->GetMenuSelectAction(), [this]()
-		{
-			UDoomWorld* W = DoomWorld();
-			if (W && !W->IsInputLocked() && !TakesRawKeys()) RowClicked(W->Menu.GetItem());
-		});
-	}
+	// the menu's keys (arrows, W/A/S/D, Enter, Y, N, Space, Backspace, the d-pad) are read in
+	// NativeOnKeyDown from the menu context's own actions (MenuKey); the stick still moves the
+	// focus between the row buttons through Slate's navigation
 }
 
 void UDoomMenuScreen::NativeOnActivated()
@@ -190,12 +166,20 @@ void UDoomMenuScreen::NativeOnDeactivated()
 
 UWidget* UDoomMenuScreen::NativeGetDesiredFocusTarget() const
 {
-	const UDoomWorld* W = DoomWorld();
-	for (UDoomMenuRowButton* B : Buttons)
-	{
-		if (W && B->Row == W->Menu.GetItem()) return B;
-	}
+	// the screen itself: it reads every key (the row buttons are the mouse's)
 	return const_cast<UDoomMenuScreen*>(this);
+}
+
+FNavigationReply UDoomMenuScreen::NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply)
+{
+	// the gamepad's stick (the keys and the d-pad arrive as keys first, in MenuKey)
+	const EUINavigation Dir = InNavigationEvent.GetNavigationType();
+	if (!TakesRawKeys() && (Dir == EUINavigation::Up || Dir == EUINavigation::Down || Dir == EUINavigation::Left || Dir == EUINavigation::Right))
+	{
+		Navigate(INDEX_NONE, Dir);
+		return FNavigationReply::Stop();
+	}
+	return Super::NativeOnNavigation(MyGeometry, InNavigationEvent, InDefaultReply);
 }
 
 bool UDoomMenuScreen::TakesRawKeys() const
@@ -246,15 +230,6 @@ void UDoomMenuScreen::RowHovered(int32 Row)
 	W->Menu.SetItem(Row);
 	W->PlaySound(TEXT("STNMOV"), nullptr); // the menu's move sound (FDoomMenu::Up / Down)
 	FocusSelected();
-}
-
-void UDoomMenuScreen::RowFocused(int32 Row)
-{
-	UDoomWorld* W = DoomWorld();
-	// focus landing on a new button while the page's buttons are rebuilt (going back a page, scrolling)
-	// is Slate settling, not the player: the selection stays (DoomUE.Input.MenuKeys saw it jump)
-	if (GFrameCounter < RebuiltFrame + 3) return;
-	if (W && !TakesRawKeys()) W->Menu.SetItem(Row);
 }
 
 void UDoomMenuScreen::RowClicked(int32 Row)
@@ -329,7 +304,51 @@ FReply UDoomMenuScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyE
 		HandleClose();
 		return FReply::Handled();
 	}
+	if (MenuKey(InKeyEvent.GetKey(), InKeyEvent.IsRepeat()))
+	{
+		return FReply::Handled();
+	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+bool UDoomMenuScreen::MenuKey(const FKey& Key, bool bRepeat)
+{
+	// the keys the menu context maps to each action, so a key does what the Controls page says;
+	// read here rather than through CommonUI's action bindings, which UE 5.9 stopped routing to
+	// the menu (and which couldn't move past rows scrolled out of view)
+	const ADoomPlayerController* PC = Cast<ADoomPlayerController>(GetOwningPlayer());
+	const ULocalPlayer* Player = GetOwningLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* Input = Player ? Player->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>() : nullptr;
+	UDoomWorld* W = DoomWorld();
+	if (!PC || !Input || !W || TakesRawKeys())
+	{
+		return false;
+	}
+	auto Mapped = [Input, &Key](const UInputAction* Action) { return Action && Input->QueryKeysMappedToAction(Action).Contains(Key); };
+	const TPair<const UInputAction*, EUINavigation> Moves[] = {
+		{ PC->GetMenuUpAction(), EUINavigation::Up }, { PC->GetMenuDownAction(), EUINavigation::Down },
+		{ PC->GetMenuLeftAction(), EUINavigation::Left }, { PC->GetMenuRightAction(), EUINavigation::Right },
+	};
+	for (const TPair<const UInputAction*, EUINavigation>& Move : Moves)
+	{
+		if (Mapped(Move.Key))
+		{
+			Navigate(INDEX_NONE, Move.Value); // held keys repeat, as Doom's menu does
+			FocusSelected();
+			return true;
+		}
+	}
+	if (Mapped(PC->GetMenuBackAction()))
+	{
+		if (!bRepeat) HandleBack();
+		return true;
+	}
+	if (Mapped(PC->GetMenuSelectAction()))
+	{
+		if (!bRepeat && !W->IsInputLocked()) W->Menu.Select(*W);
+		return true;
+	}
+	return false;
 }
 
 FReply UDoomMenuScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -416,12 +435,6 @@ void UDoomMenuScreen::Refresh(const FGeometry& Geometry)
 				UDoomMenuRowButton* B = CreateWidget<UDoomMenuRowButton>(this, UDoomMenuRowButton::StaticClass());
 				B->Row = i;
 				B->Screen = this;
-				FCustomWidgetNavigationDelegate Nav;
-				Nav.BindUFunction(B, GET_FUNCTION_NAME_CHECKED(UDoomMenuRowButton, Navigate));
-				for (EUINavigation Dir : { EUINavigation::Up, EUINavigation::Down, EUINavigation::Left, EUINavigation::Right })
-				{
-					B->SetNavigationRuleCustom(Dir, Nav);
-				}
 				UCanvasPanelSlot* RowSlot = Canvas->AddChildToCanvas(B);
 				RowSlot->SetAutoSize(false);
 				RowSlot->SetPosition(FVector2D(Frame.OX + Box.Min.X * Frame.SX, Frame.OY + Box.Min.Y * Frame.SY));
