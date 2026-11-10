@@ -77,6 +77,9 @@ UStaticMesh* DoomAssets::SpriteQuad()
 	Desc.CreateTriangle(Group, { Inst[0], Inst[2], Inst[3] });
 	UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage(), TEXT("DoomSpriteQuad"), RF_Transient);
 	Mesh->GetStaticMaterials().Add(FStaticMaterial(SpriteMaterial(), TEXT("Sprite")));
+	// the runtime build leaves the UV density unset (the editor's computes it), and the renderer
+	// ensures on that in cooked games
+	Mesh->GetStaticMaterials()[0].UVChannelData = FMeshUVChannelInfo(1.f);
 	UStaticMesh::FBuildMeshDescriptionsParams Params;
 	Params.bBuildSimpleCollision = false;
 	Params.bFastBuild = true; // the runtime path: no editor build, works in packaged games

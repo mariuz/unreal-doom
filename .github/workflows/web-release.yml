@@ -1,0 +1,75 @@
+# The web build of each release: built on the project's self-hosted Windows runner (it has
+# Unreal Engine 5.9 and emscripten; GitHub's hosted runners have neither), published to GitHub
+# Pages, and attached to the release as a zip. See docs/WebRelease.md for the runner and the
+# repository settings it needs.
+#
+# It runs only when a release is published (or by hand from the Actions tab): never on pull
+# requests, so code from forks never reaches the self-hosted runner.
+name: Web release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to build (the release's tag, for a rebuild)
+        required: true
+        default: main
+
+permissions:
+  contents: write   # attach the zip to the release
+  pages: write      # publish to GitHub Pages
+  id-token: write   # the Pages deployment's OIDC token
+
+concurrency:
+  group: web-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package for the web
+    runs-on: [self-hosted, Windows, X64, unreal-5.9]
+    timeout-minutes: 480
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
+
+      - name: Package (Shipping, Wasm)
+        shell: cmd
+        run: call Tools\package_web.bat Saved\Web Shipping
+
+      - name: Pack the Pages artifact
+        shell: cmd
+        # what actions/upload-pages-artifact does, with Windows' own tar (that action needs sh)
+        run: tar -cf Saved\Web\artifact.tar -C Saved\Web\Wasm .
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-pages
+          path: Saved/Web/artifact.tar
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Attach the zip to the release
+        if: github.event_name == 'release'
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "%TAG%" Saved\Web\DoomUE-web.zip --clobber
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

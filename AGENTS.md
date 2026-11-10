@@ -25,6 +25,12 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
   moving to Verse and Scene Graph), keep content generated, `DoomWadTools` on Core and CoreUObject
   only, and Doom's rules in data tables rather than actor overrides.
 * `Tools/`: `run_tests.bat`, test-WAD generators, the Lyra export scripts and plugin.
+* **The web build** (UE 5.9's Wasm platform): `Tools/package_web.bat`, published by
+  `.github/workflows/web-release.yml` from a self-hosted runner on each release
+  ([docs/WebRelease.md](docs/WebRelease.md)). It needs emscripten 6.0.10 exactly
+  (`WASM_EMSDK_ROOT`, on this machine `F:\Tools\emsdk`). The engine's own guide is
+  `Engine/Platforms/Wasm/Skills/web-deploy/SKILL.md`. Its browser harness (`webrun.py`) looks for
+  Chrome; this machine has Edge only: `set PROBE_CHROME=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`.
 * The roadmap is the "Not done yet" list at the end of the README.
 
 ## Building, running, testing
@@ -164,6 +170,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   its back key), and the other menu keys too (`UDoomMenuScreen::MenuKey`, from the menu context's
   mappings): UE 5.9's CommonUI stopped routing the menu's action bindings to it. Hovering a row
   chooses it only after the mouse has moved.
+* **The web is compiled by clang with warnings as errors** (emscripten): MSVC accepts things it
+  doesn't (`&&` inside `||` without parentheses). Build `Tools/package_web.bat` after larger changes.
+  The web has the mobile renderer only: the modern renderer is refused there
+  (`UDoomWorld::CanUseModern`, `PLATFORM_WASM`).
 * **The AIAssistant editor plugin stays off** (`DoomUE.uproject`): from UE 5.9 it is on by default
   and takes F1, Doom's Read This! key, in Play In Editor. Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in

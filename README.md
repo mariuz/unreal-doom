@@ -97,6 +97,13 @@ The first time each material permutation is used, Unreal compiles shaders on dem
 modern mode). A packaged build precompiles them. When packaging, `Content/WADs` is staged as
 loose files.
 
+### Playing in the browser
+
+Each release has a web build on GitHub Pages, **https://mariuz.github.io/unreal-doom/**: UE 5.9's
+Wasm platform (WebAssembly with WebGPU) in Chrome, Edge or Safari, on the classic renderer (the web
+has no Lumen). `Tools/package_web.bat` builds it, and the `Web release` workflow runs it on a
+self-hosted runner when a release is published; see [docs/WebRelease.md](docs/WebRelease.md).
+
 ### Packaging
 
 The project packages as a standalone Win64 game:
@@ -200,6 +207,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
 * [docs/EngineUpgrade.md](docs/EngineUpgrade.md): the checklist for a new engine version
   (`Tools/upgrade_check.bat`), what changed from 5.8 to 5.9, and what is known about Unreal Engine 6.
+* [docs/WebRelease.md](docs/WebRelease.md): the web build (UE 5.9's Wasm platform) and the
+  release workflow that publishes it to GitHub Pages: the self-hosted runner, emscripten, the
+  page's settings, testing it locally.
 * [docs/Lyra.md](docs/Lyra.md): Doom maps as **Lyra Starter Game** arenas (E1M1 as an Elimination
   map with Lyra's heroes, weapon pads, launch pads, bots and materials), and how to build more.
 
@@ -775,6 +785,15 @@ FSR and DLSS are not included: they are separate vendor plugins. `-perftest` on 
 
 The presets cut the GPU time by half or more, but the frame barely moves: on SM6 the render
 thread (10-17 ms) is the limit now, not the GPU (see "Make SM6 pay off" below).
+
+The web build (`engine/5.9`): `Tools/package_web.bat` packages DoomUE for UE 5.9's Wasm platform
+(a Shipping stage of 273 MB, the game a 135 MB `.wasm`, 25 MB with Brotli), and
+`.github/workflows/web-release.yml` publishes it to GitHub Pages and attaches the zip whenever a
+release is published, from a self-hosted runner ([docs/WebRelease.md](docs/WebRelease.md)). In Edge
+the title screen is up 15 s after the page opens, after 104 MB of downloads, and E1M1 plays with no
+WebGPU errors. The web stays on the classic renderer (`UDoomWorld::CanUseModern`). The port
+needed one clang fix (emscripten treats `&&` within `||` without parentheses as an error) and the
+runtime sprite quad's UV density (an ensure in cooked games).
 
 Unreal Engine 5.9 (`engine/5.9`): the project's engine is 5.9 now (`EngineAssociation`, the
 default engine folder in `Tools/*.bat`). The upgrade check passed on the launcher's 5.9.0 with three
