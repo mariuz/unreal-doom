@@ -160,7 +160,11 @@ Tools/run_tests.bat DoomUE -NullRHI
 * **The menu is a CommonUI screen** (`DoomMenuWidgets.h`): `FDoomMenu` is still its logic, and the
   play-test drives `FDoomMenu` or the screen's handlers (they ignore locked input, so unlock around
   them). Esc is handled by the screen itself (it closes the whole menu; CommonUI would take it as
-  its back key), and hovering a row chooses it only after the mouse has moved. Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
+  its back key), and the other menu keys too (`UDoomMenuScreen::MenuKey`, from the menu context's
+  mappings): UE 5.9's CommonUI stopped routing the menu's action bindings to it. Hovering a row
+  chooses it only after the mouse has moved.
+* **The AIAssistant editor plugin stays off** (`DoomUE.uproject`): from UE 5.9 it is on by default
+  and takes F1, Doom's Read This! key, in Play In Editor. Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
   `DoomMenu.h`): a new row goes into the enum in the order `FDoomMenu::Rows` adds it, or the page's
   `checkf` fires. The Options page scrolls past 10 rows.
