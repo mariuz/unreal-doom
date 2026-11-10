@@ -70,13 +70,22 @@ in about 1.5 ms when first needed).
 * **Crossing between sectors** follows Doom's rules: not through blocking or monster-blocking
   lines, a step of 24 or less up or down (flyers ignore steps), enough headroom, and through DR
   doors (special 1) even when shut. Monsters can't open keyed doors or use switches.
+* **Inside a sector**, a blocking line with the sector on both sides is a rail no monster crosses
+  (E4M1's line 196).
+* **Width:** each join knows how far its clearest point is from the walls beside it (one-sided and
+  blocking lines, and openings lower than any monster, 56, that aren't doors). A monster wider than
+  that doesn't fit: E4M1's spectres stay behind the block a switch lowers (gaps of 8 units), Doom
+  II MAP02's monsters behind the 24-unit gap between a pillar and the shut bars, and a mancubus
+  (radius 48) doesn't take a 64-unit doorway. `-navtest -navdebug` lists the narrow joins near the
+  start and the monsters that would only get through them.
 * **Pathfinding** is A\* over the joins, crossing each one at the point nearest the way so far, kept
   a radius from its ends.
 * **Walking:** a monster walks the path in straight lines (not Doom's eight directions). It turns
   to face the way in 45° steps, as `A_Chase` does, and opens a door it bumps into.
 
 Doom's maps confine many monsters by design (ledges, lifts, switch doors, teleporter-only areas),
-and SMART monsters are confined the same way. On E1M1, 5 of the 53 monsters can walk to the start.
+and SMART monsters are confined the same way. On E1M1, 2 of the 53 monsters can walk to the start
+(5 before joins knew their width; the other 3 went through an 8-unit gap).
 
 ## Testing
 

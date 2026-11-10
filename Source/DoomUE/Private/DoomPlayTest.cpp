@@ -64,6 +64,8 @@ namespace
 		FTimerHandle Timer;
 		/** Movement steps: push forward every frame (input is used up each frame). */
 		bool bHoldForward = false;
+		/** Real time the game left play under a step (-1 while it plays). */
+		double OffPlaySince = -1.0;
 	};
 }
 
@@ -72,7 +74,7 @@ const TArray<FString>& ADoomGameMode::PlayTestStepNames()
 	static const TArray<FString> Names = { TEXT("door"), TEXT("lift"), TEXT("teleport"), TEXT("splash"), TEXT("walk"),
 		TEXT("rate_Pistol"), TEXT("rate_Chaingun"), TEXT("rate_Plasma"), TEXT("rate_Shotgun"), TEXT("rate_Rocket"),
 		TEXT("flyer"), TEXT("target"), TEXT("sleepers"), TEXT("chase"), TEXT("smartai"), TEXT("automap"), TEXT("quitprompt"),
-		TEXT("commonui"), TEXT("renderer"), TEXT("ammoswitch"), TEXT("lostsoul"), TEXT("liftcorpse"), TEXT("corpses"),
+		TEXT("commonui"), TEXT("renderer"), TEXT("ammoswitch"), TEXT("lostsoul"), TEXT("corpses"), TEXT("liftcorpse"),
 		TEXT("things"), TEXT("rebind"), TEXT("colours"), TEXT("fast"), TEXT("altdeath"), TEXT("intermission") };
 	return Names;
 }
@@ -93,6 +95,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 	{
 		ADoomPlayer* P = W->GetPlayer();
 		P->SetActorLocation(*Home, false, nullptr, ETeleportType::TeleportPhysics);
+		P->LastDoomPos = P->DoomPos(); // put there, not walked: no lines crossed on the way (E2M1's teleporters)
 		P->GetCharacterMovement()->StopMovementImmediately();
 		P->GetController()->SetControlRotation(*HomeView);
 		P->Inv().Health = 100;
@@ -177,9 +180,19 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 		Run->Steps.Add({ TEXT("lift"),
 			[W, Map, L, FindLine, Player](FString& Msg)
 			{
-				L->Line = FindLine({ 62, 88, 10, 21, 120, 121, 122, 123 }, false, true);
-				if (L->Line < 0) { Msg = TEXT("no lift line"); return false; }
-				L->Sector = Map->SectorsWithTag(Map->Lines[L->Line].Tag)[0];
+				// a lift with somewhere to go: it lowers to its lowest neighbouring floor, and on MAP21 the
+				// first one's neighbours are all as low as it until other parts of the map move
+				L->Line = INDEX_NONE;
+				for (int32 i = 0; i < Map->Lines.Num() && L->Line < 0; ++i)
+				{
+					const FDoomLine& Ln = Map->Lines[i];
+					if (Ln.Tag == 0 || !TArray<int32>({ 62, 88, 10, 21, 120, 121, 122, 123 }).Contains(Ln.Special)) continue;
+					for (int32 Sec : Map->SectorsWithTag(Ln.Tag))
+					{
+						if (Map->LowestFloorSurrounding(Sec) < Map->Sectors[Sec].Floor - 1.f) { L->Line = i; L->Sector = Sec; break; }
+					}
+				}
+				if (L->Line < 0) { Msg = TEXT("no lift line with a lower floor beside it"); return false; }
 				L->Start = Map->Sectors[L->Sector].Floor;
 				return W->ActivateSpecial(L->Line, 0, Player(), EActivation::Use, true);
 			},
@@ -225,14 +238,33 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 
 	// --- 4. splash damage falls off with distance (P_RadiusAttack) --------------------------------
 	{
-		struct FSplash { int32 Near = 0, Far = 0, WantNear = 0; float Pushed = 0; };
+		struct FSplash { int32 Near = 0, Far = 0, WantNear = 0; float Pushed = 0; float Yaw = 0, Open = 0; };
 		TSharedRef<FSplash> B = MakeShared<FSplash>();
 		Run->Steps.Add({ TEXT("splash"),
 			[W, B, GoHome, Player](FString& Msg)
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				const FVector Fwd = FRotator(0, P->GetControlRotation().Yaw, 0).Vector();
+				// along an axis: P_RadiusAttack measures the larger of |dx| and |dy|, so 40 units ahead on a
+				// diagonal start angle is only 28 away (115 damage, E3M6, MAP04)
+				// (the most open of the four: a wall within 40 units hides the blast from the player)
+				const float Start = FMath::RoundToFloat(P->GetControlRotation().Yaw / 90.f) * 90.f;
+				float AxisYaw = Start, BestOpen = -1.f;
+				FCollisionQueryParams OpenQ(SCENE_QUERY_STAT(DoomPlaytest), false, P);
+				for (int32 a = 0; a < 4; ++a)
+				{
+					const float Yaw = Start + a * 90.f;
+					FHitResult Hit;
+					const FVector From = P->GetActorLocation();
+					const float Open = W->GetWorld()->LineTraceSingleByChannel(Hit, From, From + FRotator(0, Yaw, 0).Vector() * 200.f * Doom::Scale, ECC_Visibility, OpenQ)
+						? Hit.Distance / Doom::Scale : 200.f;
+					if (Open > BestOpen + 1.f) { BestOpen = Open; AxisYaw = Yaw; }
+				}
+				B->Yaw = AxisYaw;
+				B->Open = BestOpen;
+				// a start room under 80 units across (TNT MAP30's 4-line box) has no spot 40 units out
+				if (BestOpen < 48.f) { Msg = FString::Printf(TEXT("no room for a blast 40 units out (open for %.0f at most)"), BestOpen); return false; }
+				const FVector Fwd = FRotator(0, AxisYaw, 0).Vector();
 				// 128 damage, 40 units ahead: 128 - (40 - 16 player radius) = 104 (halved on skill 1)
 				B->WantNear = W->GetSkill() == 1 ? 52 : 104;
 				W->RadiusAttack(nullptr, nullptr, P->GetActorLocation() + Fwd * 40.f * Doom::Scale, 128.f);
@@ -247,15 +279,15 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			},
 			[B](int32 Tics, FString& Msg)
 			{
-				Msg = FString::Printf(TEXT("40 units: %d damage (want %d), 160 units: %d (want 0); no knockback without an inflictor (%.0f u/s)"),
-					B->Near, B->WantNear, B->Far, B->Pushed);
+				Msg = FString::Printf(TEXT("40 units: %d damage (want %d), 160 units: %d (want 0); no knockback without an inflictor (%.0f u/s); at %.0f degrees, open for %.0f units"),
+					B->Near, B->WantNear, B->Far, B->Pushed, B->Yaw, B->Open);
 				return B->Near == B->WantNear && B->Far == 0 ? EStep::Pass : EStep::Fail;
 			} });
 	}
 
 	// --- 5. walking: top speed and slide (before shots wake the monsters) -------------------------------
 	{
-		struct FWalk { float Top = 0; FVector2f Release; float Slide = -1; int32 ReleaseTic = -1; FRotator Dir; };
+		struct FWalk { float Top = 0; FVector2f Release; float Slide = -1; int32 ReleaseTic = -1; FRotator Dir; FVector2f From; FString Track; FString Bumped; int32 AirTics = 0; };
 		TSharedRef<FWalk> K = MakeShared<FWalk>();
 		TSharedRef<FPlayRun> RunRef = Run;
 		Run->Steps.Add({ TEXT("walk"),
@@ -283,24 +315,67 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 						if (W->GetWorld()->SweepSingleByChannel(Hit, From, From, FQuat::Identity, ECC_Pawn, P->GetCapsuleComponent()->GetCollisionShape(), Q)) break; // spot taken
 						const float Dist = W->GetWorld()->SweepSingleByChannel(Hit, From, To, FQuat::Identity, ECC_Pawn, P->GetCapsuleComponent()->GetCollisionShape(), Q)
 							? Hit.Distance / Doom::Scale : 1000.f;
-						// the floor must stay level all the way (a step or a drop changes the speed)
-						FHitResult Floor;
-						const FVector End = From + Dir.Vector() * Dist * Doom::Scale * 0.95f;
-						const bool bLevel = W->GetWorld()->LineTraceSingleByChannel(Floor, End, End - FVector(0, 0, Half + 8.f * Doom::Scale), ECC_Visibility, Q)
-							&& FMath::Abs(Floor.ImpactPoint.Z - (From.Z - Half - 2.f)) < 2.f * Doom::Scale;
+						// the floor must stay level all the way, every 16 units (a step or a drop part way
+						// changes the speed or the slide: E2M1, E3M3, E4M5-E4M8, MAP06)
+						bool bLevel = Dist > Best;
+						for (float t = 0.f; bLevel && t <= Dist * 0.95f; t += 16.f)
+						{
+							FHitResult Floor;
+							const FVector At = From + Dir.Vector() * t * Doom::Scale;
+							// within half a unit: even a 1-unit step down lifts the player off the floor for a tic or
+							// two, and Doom applies no friction in the air (the slide runs long)
+							bLevel = W->GetWorld()->LineTraceSingleByChannel(Floor, At, At - FVector(0, 0, Half + 8.f * Doom::Scale), ECC_Visibility, Q)
+								&& FMath::Abs(Floor.ImpactPoint.Z - (From.Z - Half - 2.f)) < 0.5f * Doom::Scale;
+						}
+						// and nothing solid within reach of the path (a sleeping monster, a barrel, a lamp)
+						const FVector2f A2 = Doom::ToDoom2D(From), B2 = Doom::ToDoom2D(From + Dir.Vector() * Dist * Doom::Scale);
+						auto NearPath = [&A2, &B2](const FVector2f& Pt, float Radius)
+						{
+							const FVector2f AB = B2 - A2;
+							const float T = FMath::Clamp(FVector2f::DotProduct(Pt - A2, AB) / FMath::Max(AB.SizeSquared(), 1.f), 0.f, 1.f);
+							return FVector2f::Distance(Pt, A2 + AB * T) < Radius + 24.f;
+						};
+						for (const TWeakObjectPtr<ADoomMonster>& Mo : W->GetMonsters())
+						{
+							if (bLevel && Mo.IsValid() && !Mo->IsDead() && NearPath(Mo->DoomPos(), Mo->Def->Radius)) bLevel = false;
+						}
+						// and no line with a special across it (a teleporter on the way stops the player dead: E2M1)
+						if (bLevel)
+						{
+							TArray<FLineHit> Crossed;
+							M->TraceLines(A2, B2, Crossed);
+							for (const FLineHit& H : Crossed) bLevel &= M->Lines[H.Line].Special == 0;
+						}
+						for (const TWeakObjectPtr<ADoomThing>& Th : W->GetThings())
+						{
+							if (bLevel && Th.IsValid() && Th->GetDef() && (Th->GetDef()->Flags & EThingFlag::Solid)
+								&& NearPath(Doom::ToDoom2D(Th->GetActorLocation()), Th->GetDef()->Radius)) bLevel = false;
+						}
 						if (bLevel && Dist > Best) { Best = Dist; K->Dir = Dir; BestFrom = From; }
 					}
 				}
 				if (Best < 800.f) { Msg = FString::Printf(TEXT("no 800-unit level run on the map (longest %.0f)"), Best); return false; }
 				P->SetActorLocation(BestFrom, false, nullptr, ETeleportType::TeleportPhysics);
+				P->LastDoomPos = P->DoomPos(); // put there: the line from home to here crossed a teleporter (E2M1)
+				K->From = Doom::ToDoom2D(BestFrom);
 				P->GetController()->SetControlRotation(K->Dir);
 				RunRef->bHoldForward = true;
 				return true;
 			},
-			[K, RunRef, Player](int32 Tics, FString& Msg)
+			[W, K, RunRef, Player](int32 Tics, FString& Msg)
 			{
 				ADoomPlayer* P = Player();
 				const float Speed = P->GetVelocity().Size2D() / Doom::Scale / Doom::TicRate;
+				if (Tics % 5 == 0) K->Track += FString::Printf(TEXT(" %d:(%.0f,%.0f)"), Tics, P->DoomPos().X, P->DoomPos().Y);
+				K->AirTics += P->GetCharacterMovement()->IsMovingOnGround() ? 0 : 1; // no friction in the air
+				// a live monster walking into the run (E3M3) stops the player as a wall would
+				for (const TWeakObjectPtr<ADoomMonster>& Mo : W->GetMonsters())
+				{
+					if (K->Bumped.IsEmpty() && Mo.IsValid() && !Mo->IsDead() && FVector2f::Distance(Mo->DoomPos(), P->DoomPos()) < Mo->Def->Radius + 16.f + 8.f)
+					{
+						K->Bumped = FString::Printf(TEXT("%s at (%.0f,%.0f), tic %d"), *Mo->Def->Name, Mo->DoomPos().X, Mo->DoomPos().Y, Tics);
+					}
+				}
 				if (Tics <= 30)
 				{
 					K->Top = FMath::Max(K->Top, Speed);
@@ -315,7 +390,16 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				}
 				if (Speed > 0.01f && Tics - K->ReleaseTic < 140) return EStep::Running;
 				K->Slide = FVector2f::Distance(P->DoomPos(), K->Release);
-				Msg = FString::Printf(TEXT("top speed %.1f units/tic after 30 tics (vanilla 16.7, ~15.5 by then), slid %.0f units after letting go (vanilla ~160)"), K->Top, K->Slide);
+				// a monster awake from the start can hit the player on the way (E2M8's cyberdemon): the
+				// knockback spoils the measure, so that run says so and skips
+				if (P->Inv().Health < 100 || !K->Bumped.IsEmpty())
+				{
+					Msg = FString::Printf(TEXT("a monster got in the way (health %d%s%s): top speed %.1f, slid %.0f, not measured"), P->Inv().Health,
+						K->Bumped.IsEmpty() ? TEXT("") : TEXT(", ran into "), *K->Bumped, K->Top, K->Slide);
+					return EStep::Skip;
+				}
+				Msg = FString::Printf(TEXT("top speed %.1f units/tic after 30 tics (vanilla 16.7, ~15.5 by then), slid %.0f units after letting go (vanilla ~160); from (%.0f,%.0f) at %.0f degrees, let go at (%.0f,%.0f), stopped at (%.0f,%.0f), %d tics off the floor; on the way:%s"),
+					K->Top, K->Slide, K->From.X, K->From.Y, K->Dir.Yaw, K->Release.X, K->Release.Y, P->DoomPos().X, P->DoomPos().Y, K->AirTics, *K->Track);
 				return K->Top > 14.f && K->Top < 17.5f && K->Slide > 110.f && K->Slide < 210.f ? EStep::Pass : EStep::Fail;
 			} });
 	}
@@ -329,7 +413,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			{ EDoomWeapon::Shotgun, 111, 3, 4 }, { EDoomWeapon::Rocket, 60, 3, 4 } };
 		for (const FGun& G : Guns)
 		{
-			struct FRate { int32 Ammo0 = 0; int32 FireTic = -1; int32 Shots = 0; };
+			struct FRate { int32 Ammo0 = 0; int32 FireTic = -1; int32 Shots = 0; int32 LastAmmo = 0; int32 Spent = 0; };
 			TSharedRef<FRate> R = MakeShared<FRate>();
 			const FString Name = FString::Printf(TEXT("rate_%s"), *UEnum::GetDisplayValueAsText(G.Weapon).ToString());
 			Run->Steps.Add({ Name,
@@ -359,11 +443,17 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 						{
 							R->FireTic = Tics;
 							R->Ammo0 = Ammo;
+							R->LastAmmo = Ammo;
+							R->Spent = 0;
 							P->bFireHeld = true;
 						}
 						return Tics > 200 ? EStep::Fail : EStep::Running;
 					}
-					R->Shots = (R->Ammo0 - Ammo) / FMath::Max(1, D.AmmoPerShot);
+					// ammo spent, tic by tic: a pickup on the spot (a clip a zombie dropped in an earlier step,
+					// E4M9) must not take shots off
+					if (Ammo < R->LastAmmo) R->Spent += R->LastAmmo - Ammo;
+					R->LastAmmo = Ammo;
+					R->Shots = R->Spent / FMath::Max(1, D.AmmoPerShot);
 					Msg = FString::Printf(TEXT("%d shots in %d tics (want %d-%d)"), R->Shots, Tics - R->FireTic, G.MinShots, G.MaxShots);
 					if (Tics - R->FireTic >= G.HoldTics)
 					{
@@ -397,6 +487,8 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				const EMovementMode Mode = (*Caco)->GetCharacterMovement()->MovementMode;
 				Msg = FString::Printf(TEXT("movement mode %d after %d tics (flying = %d), health %d"), (int32)Mode, Tics, (int32)MOVE_Flying, (*Caco)->Health);
 				if (Tics < 70) return EStep::Running;
+				// killed by something else meanwhile (Plutonia MAP31): a dead one falls, nothing to measure
+				if ((*Caco)->IsDead()) { Msg = TEXT("killed by something else before it could be checked: ") + Msg; return EStep::Skip; }
 				const bool bPass = Mode == MOVE_Flying;
 				UGameplayStatics::ApplyDamage(Caco->Get(), 100000.f, nullptr, nullptr, nullptr); // out of the way
 				return bPass ? EStep::Pass : EStep::Fail;
@@ -405,7 +497,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 
 	// --- 8. plasma hurts a monster in front of the player -----------------------------------------
 	{
-		struct FTarget { TWeakObjectPtr<ADoomMonster> M; int32 Health0 = 0; };
+		struct FTarget { TWeakObjectPtr<ADoomMonster> M; int32 Health0 = 0; int32 ReadyTic = -1; };
 		TSharedRef<FTarget> T = MakeShared<FTarget>();
 		Run->Steps.Add({ TEXT("target"),
 			[W, T, GoHome, Player, ClearestYaw](FString& Msg)
@@ -413,10 +505,36 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				GoHome();
 				ADoomPlayer* P = Player();
 				P->SetGodMode(true);
-				// face the open side of the start, so the baron stands in the open
+				// face an open side of the start with the floor at the player's height 128 units out, so the
+				// baron stands in the open in the line of fire (over a drop it fell 128 into a pit: MAP11)
 				float Clear = 0;
-				const float Yaw = ClearestYaw(P, Clear);
-				if (Clear < 200.f) { Msg = FString::Printf(TEXT("no room for a baron at the start (clear %.0f)"), Clear); return false; }
+				float Yaw = ClearestYaw(P, Clear);
+				FCollisionQueryParams FloorQ(SCENE_QUERY_STAT(DoomPlaytest), false, P);
+				const FVector Eye = P->GetActorLocation();
+				const float FeetZ = Eye.Z - Doom::HalfHeight(P);
+				auto LevelAt = [&](float TryYaw)
+				{
+					const FVector At = Eye + FRotator(0, TryYaw, 0).Vector() * 128.f * Doom::Scale;
+					FHitResult Floor;
+					return W->GetWorld()->LineTraceSingleByChannel(Floor, At, At - FVector(0, 0, 200.f * Doom::Scale), ECC_Visibility, FloorQ)
+						&& FMath::Abs(Floor.ImpactPoint.Z - FeetZ) < 24.f * Doom::Scale;
+				};
+				if (Clear < 200.f || !LevelAt(Yaw))
+				{
+					// the clearest way drops or is shut: any of 16 with 200 units clear and a level floor
+					Clear = 0;
+					for (int32 a = 0; a < 16; ++a)
+					{
+						const float TryYaw = a * 22.5f;
+						FHitResult Hit;
+						const FVector Dir = FRotator(0, TryYaw, 0).Vector();
+						const FVector From = Eye + FVector(0, 0, 8.f * Doom::Scale);
+						const float Dist = W->GetWorld()->SweepSingleByChannel(Hit, From, From + Dir * 1000.f * Doom::Scale, FQuat::Identity, ECC_Pawn,
+							FCollisionShape::MakeSphere(16.f * Doom::Scale), FloorQ) ? Hit.Distance / Doom::Scale : 1000.f;
+						if (Dist >= 200.f && Dist > Clear && LevelAt(TryYaw)) { Clear = Dist; Yaw = TryYaw; }
+					}
+				}
+				if (Clear < 200.f) { Msg = FString::Printf(TEXT("no room for a baron at the start (clear %.0f on a level floor)"), Clear); return false; }
 				P->GetController()->SetControlRotation(FRotator(0, Yaw, 0));
 				const FVector Fwd = FRotator(0, Yaw, 0).Vector();
 				const FVector Feet = P->GetActorLocation() - FVector(0, 0, Doom::HalfHeight(P)) + Fwd * 128.f * Doom::Scale;
@@ -438,7 +556,10 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				const FVector ToBaron = T->M->GetActorLocation() - P->GetActorLocation();
 				P->GetController()->SetControlRotation(FRotator(0, ToBaron.Rotation().Yaw, 0));
 				if (Tics == 60) Shot(TEXT("plasma"));
-				Msg = FString::Printf(TEXT("baron health %d -> %d after %d tics of plasma"), T->Health0, T->M->Health, Tics);
+				if (T->ReadyTic < 0 && P->Inv().Ready == EDoomWeapon::Plasma) T->ReadyTic = Tics;
+				Msg = FString::Printf(TEXT("baron health %d -> %d after %d tics of plasma (gun up at tic %d, %d cells used, baron %.0f units off and %.0f above the player)"),
+					T->Health0, T->M->Health, Tics, T->ReadyTic, 300 - P->Inv().Ammo[(int32)EDoomAmmo::Cells],
+					FVector::Dist2D(T->M->GetActorLocation(), P->GetActorLocation()) / Doom::Scale, T->M->DoomZ() - P->DoomZ());
 				if (Tics < 105) return EStep::Running;
 				P->bFireHeld = false;
 				const bool bPass = T->M->Health < T->Health0 - 100;
@@ -484,7 +605,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 
 	// --- 9. awake monsters actually walk (no freezing in low rooms or doorways) -------------------
 	{
-		struct FChase { TMap<TWeakObjectPtr<ADoomMonster>, FVector2f> Start, Last; TMap<TWeakObjectPtr<ADoomMonster>, float> Path; };
+		struct FChase { TMap<TWeakObjectPtr<ADoomMonster>, FVector2f> Start, Last; TMap<TWeakObjectPtr<ADoomMonster>, float> Path; int32 ShutIn = 0; TSet<TWeakObjectPtr<ADoomMonster>> Attacked; };
 		TSharedRef<FChase> C = MakeShared<FChase>();
 		Run->Steps.Add({ TEXT("chase"),
 			[W, C, GoHome, Player](FString& Msg)
@@ -496,6 +617,13 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				{
 					if (M.IsValid() && !M->IsDead() && M->Def->Speed > 0)
 					{
+						// boxed in from the start (no step free in any direction, and no path out of its own
+						// sector: MAP13's demons in 64-unit teleport closets behind bars, imps on pillar tops
+						// over drops) can't chase; counted apart. A monster with no step free in a room it
+						// could walk out of still counts (a stuck one)
+						int32 Free = 0;
+						for (int32 d = 0; d < 8; ++d) Free += M->TestMove(d);
+						if (Free == 0 && !W->GetNav().CanLeaveSector(*W->GetMap(), M->DoomPos(), M->Def->Radius, M->Def->Height, (M->Def->Flags & EThingFlag::Float) != 0)) { ++C->ShutIn; continue; }
 						M->Target = P;
 						M->StartState(EMonsterState::Chase);
 						C->Start.Add(M, M->DoomPos());
@@ -514,6 +642,10 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					if (!E.Key.IsValid()) continue;
 					C->Path[E.Key] += FVector2f::Distance(E.Key->DoomPos(), E.Value);
 					E.Value = E.Key->DoomPos();
+					// a monster with the player in sight stands to shoot, as in Doom (a chaingunner fires on
+					// as long as it sees its target): that is chasing too
+					const EMonsterState St = E.Key->GetState();
+					if (St == EMonsterState::Missile || St == EMonsterState::Melee || St == EMonsterState::Charging) C->Attacked.Add(E.Key);
 				}
 				if (Tics < 175) return EStep::Running;
 				int32 Moved = 0, Alive = 0;
@@ -522,7 +654,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				{
 					if (!E.Key.IsValid() || E.Key->IsDead()) continue;
 					++Alive;
-					if (FVector2f::Distance(E.Key->DoomPos(), E.Value) > 32.f || C->Path[E.Key] > 64.f) ++Moved;
+					if (FVector2f::Distance(E.Key->DoomPos(), E.Value) > 32.f || C->Path[E.Key] > 64.f || C->Attacked.Contains(E.Key)) ++Moved;
 					else
 					{
 						// why: free walking directions, the room's height, and whether the sector is closed in
@@ -535,7 +667,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 							S ? S->Ceiling - S->Floor : -1.f, C->Path[E.Key]);
 					}
 				}
-				Msg = FString::Printf(TEXT("%d of %d awake monsters got 32 units away or walked 64 in 5 s; still:%s"), Moved, Alive, *Stuck);
+				Msg = FString::Printf(TEXT("%d of %d awake monsters got 32 units away, walked 64 or attacked in 5 s (%d more boxed in from the start); still:%s"), Moved, Alive, C->ShutIn, *Stuck);
 				return Alive > 0 && Moved * 10 >= Alive * 9 ? EStep::Pass : EStep::Fail;
 			} });
 	}
@@ -598,6 +730,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					Running += AI && AI->GetBrainComponent() && AI->GetBrainComponent()->IsRunning() ? 1 : 0;
 					Sensed += AI ? AI->NumSensed : 0;
 				}
+				FString Behind;
 				for (const TPair<TWeakObjectPtr<ADoomMonster>, float>& E : C->StartWalk)
 				{
 					if (!E.Key.IsValid() || E.Key->IsDead()) continue;
@@ -605,16 +738,41 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					const float Now = WalkTo(E.Key.Get(), P->DoomPos());
 					const bool bCloser = Now >= 0 && Now < E.Value - 64.f;
 					Closer += bCloser ? 1 : 0;
-					Engaged += (bCloser || C->Saw.Contains(E.Key) || E.Value < 128.f) ? 1 : 0;
+					const bool bEngaged = bCloser || C->Saw.Contains(E.Key) || E.Value < 128.f;
+					Engaged += bEngaged ? 1 : 0;
+					if (!bEngaged)
+					{
+						// why not: where it is, how far it walked, its path to the player then and now, its state
+						// and its path-following move (0 none, 1 moving, 2 arrived, 3 failed)
+						const ADoomMonster* M = E.Key.Get();
+						Behind += FString::Printf(TEXT(" %s(%.0f,%.0f walk %.0f->%.0f state %d move %d goal %.0f,%.0f)"), *M->Def->Name, M->DoomPos().X, M->DoomPos().Y,
+							E.Value, Now, (int32)M->GetState(), (int32)M->GetSmartMove(), M->GetSmartGoal().X, M->GetSmartGoal().Y);
+					}
 				}
 				int32 Live = 0;
 				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters()) Live += M.IsValid() && !M->IsDead() ? 1 : 0;
-				Msg = FString::Printf(TEXT("%d of %d live monsters have the AI controller (%d trees running), %d perception events; of %d that can walk to the player, %d closed in by 64+ units and %d closed in or saw the player in 10 s"),
-					Controllers, Live, Running, Sensed, Alive, Closer, Engaged);
+				Msg = FString::Printf(TEXT("%d of %d live monsters have the AI controller (%d trees running), %d perception events (%d had the player in sight); of %d that can walk to the player, %d closed in by 64+ units and %d closed in or saw the player in 10 s%s%s"),
+					Controllers, Live, Running, Sensed, C->Saw.Num(), Alive, Closer, Engaged, Behind.IsEmpty() ? TEXT("") : TEXT("; not:"), *Behind);
 				const bool bBaseline = !W->IsSmartAI();
+				// the ones with Doom's sight of the player: how far off their facing it is, and what Unreal's
+				// sight trace (perception's) meets on the way
+				for (const TWeakObjectPtr<ADoomMonster>& Mo : C->Saw)
+				{
+					if (!Mo.IsValid() || Mo->IsDead()) continue;
+					FVector Eye; FRotator View;
+					Mo->GetActorEyesViewPoint(Eye, View);
+					const float Off = FMath::FindDeltaAngleDegrees(View.Yaw, (P->GetActorLocation() - Eye).Rotation().Yaw);
+					FHitResult Hit;
+					FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPlaytest), true, Mo.Get());
+					const bool bHit = W->GetWorld()->LineTraceSingleByChannel(Hit, Eye, P->GetActorLocation(), ECC_Visibility, Q);
+					Msg += FString::Printf(TEXT(" [saw: %s %.0f units, facing off %.0f, trace %s]"), *Mo->Def->Name,
+						FVector::Dist(Eye, P->GetActorLocation()) / Doom::Scale, Off,
+						bHit ? *FString::Printf(TEXT("hits %s/%s"), Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("-"), Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("-")) : TEXT("clear"));
+				}
 				if (!C->bWasSmart) W->SetSmartAI(false);
 				if (bBaseline) { Msg = TEXT("CLASSIC baseline: ") + Msg; return EStep::Pass; }
-				const bool bOk = Controllers == Live && Running == Live && Sensed > 0 && Alive > 0 && Engaged * 10 >= Alive * 7;
+				// perception events come from sight: none are due if no monster had the player in view (E3M6, MAP05)
+				const bool bOk = Controllers == Live && Running == Live && (Sensed > 0 || C->Saw.Num() == 0) && Alive > 0 && Engaged >= FMath::Max(1, Alive * 7 / 10); // 70%, rounded down (1 of 2), at least one
 				return bOk ? EStep::Pass : EStep::Fail;
 			} });
 	}
@@ -658,9 +816,18 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				++Seen;
 				if (L.FrontSector != Here && L.BackSector != Here) ++Away;
 			}
-			Msg = FString::Printf(TEXT("%d lines known after 20 tics with the map closed, %d of them away from the player's sector"), Seen, Away);
+			// the open ways out of the player's sector: a start room shut by doors (E1M4, E1M8, MAP07)
+			// shows nothing beyond it, in Doom too
+			int32 Ways = 0;
+			for (int32 Li : Map->Sectors[Here].Lines)
+			{
+				float Top, Bottom;
+				Ways += Map->Lines[Li].BackSector != INDEX_NONE && Map->OtherSector(Li, Here) != INDEX_NONE && Map->OtherSector(Li, Here) != Here && Map->LineOpening(Li, Top, Bottom) ? 1 : 0;
+			}
+			Msg = FString::Printf(TEXT("%d lines known after 20 tics with the map closed, %d of them away from the player's sector (%d open ways out of it)"), Seen, Away, Ways);
 			// the old code learned nothing with the map closed; a generated start room has only ~7 lines
-			return Seen >= 5 && Away > 0 ? EStep::Pass : EStep::Fail;
+			// (a start room may have fewer than 5 lines in all: a 4-line box in TNT)
+			return Seen >= FMath::Min(5, Map->Sectors[Here].Lines.Num()) && (Away > 0 || Ways == 0) ? EStep::Pass : EStep::Fail;
 		} });
 
 	// --- 11. a stray click on the quit prompt cancels it (only Y, Enter or A confirm) ------------
@@ -863,65 +1030,7 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			} });
 	}
 
-	// --- 15. a corpse resting on a lift goes down with it (a sleeping corpse wakes when its floor drops)
-	{
-		struct FLiftCorpse { int32 Line = -1, Sector = -1, Special = 0; TWeakObjectPtr<ADoomMonster> M; bool bAsleep = false; float Low = 1e9f; float Gap = 1e9f; };
-		TSharedRef<FLiftCorpse> C = MakeShared<FLiftCorpse>();
-		// picked now: the lift step may use up a W1 lift line, and the renderer step reloads the map (so
-		// the step below looks the map up again rather than keep a pointer)
-		C->Line = FindLine({ 62, 88, 10, 21, 120, 121, 122, 123 }, false, true);
-		if (C->Line >= 0)
-		{
-			C->Special = Map->Lines[C->Line].Special;
-			C->Sector = Map->SectorsWithTag(Map->Lines[C->Line].Tag)[0];
-		}
-		Run->Steps.Add({ TEXT("liftcorpse"),
-			[W, C, Player](FString& Msg)
-			{
-				if (C->Line < 0) { Msg = TEXT("no lift line"); return false; }
-				FDoomMap* Map = W->GetMap();
-				Map->Lines[C->Line].Special = C->Special; // the lift step may have used it up
-				const FDoomSector& S = Map->Sectors[C->Sector];
-				if (W->SectorHasMover(C->Sector)) { Msg = TEXT("the lift is busy"); return false; }
-				C->M = W->SpawnMonster(3004, Doom::ToUE(S.Center, S.Floor), 0.f); // a zombieman on the lift
-				if (!C->M.IsValid()) { Msg = TEXT("could not spawn on the lift"); return false; }
-				UGameplayStatics::ApplyDamage(C->M.Get(), 1000.f, nullptr, nullptr, nullptr);
-				return true;
-			},
-			[W, C, Player](int32 Tics, FString& Msg)
-			{
-				if (!C->M.IsValid()) { Msg = TEXT("the corpse vanished"); return EStep::Fail; }
-				const FDoomSector& S = W->GetMap()->Sectors[C->Sector];
-				if (!C->bAsleep)
-				{
-					if (C->M->IsCorpseAsleep())
-					{
-						C->bAsleep = true;
-						W->ActivateSpecial(C->Line, 0, Player(), EActivation::Use, true); // down it goes
-					}
-					if (Tics <= 200) return EStep::Running;
-					Msg = FString::Printf(TEXT("the corpse never fell asleep: at z %.1f on a floor of %.0f, speed %.1f, sector moving %d"),
-						C->M->DoomZ(), S.Floor, C->M->GetVelocity().Size(), W->SectorHasMover(C->Sector));
-					return EStep::Fail;
-				}
-				// while the lift waits at the bottom the corpse must come to lie on the floor, not float
-				// where the lift was (the gap at the bottom: its smallest value once it has fallen)
-				const float Feet = C->M->DoomZ();
-				if (W->SectorHasMover(C->Sector))
-				{
-					if (S.Floor < C->Low - 0.01f) { C->Low = S.Floor; C->Gap = Feet - S.Floor; }
-					else if (FMath::IsNearlyEqual(S.Floor, C->Low, 0.01f)) { C->Gap = FMath::Min(C->Gap, Feet - S.Floor); }
-				}
-				Msg = FString::Printf(TEXT("sector %d: corpse asleep %d, lowest floor %.0f, corpse settled %.1f units above it, floor now %.0f, corpse %.0f"),
-					C->Sector, C->bAsleep, C->Low, C->Gap, S.Floor, Feet);
-				if (W->SectorHasMover(C->Sector) && Tics < 400) return EStep::Running;
-				const bool bPass = C->Gap < 2.f && FMath::Abs(Feet - S.Floor) < 2.f;
-				C->M->Destroy();
-				return bPass ? EStep::Pass : EStep::Fail;
-			} });
-	}
-
-	// --- 16. corpses go to sleep (no movement, actor or sprite ticks) and still face the camera ----
+	// --- 15. corpses go to sleep (no movement, actor or sprite ticks) and still face the camera ----
 	{
 		struct FCorpses { int32 Dead = 0; TWeakObjectPtr<ADoomMonster> Near; float Yaw0 = 0; bool bMoved = false; int32 MovedTic = 0; };
 		TSharedRef<FCorpses> K = MakeShared<FCorpses>();
@@ -930,9 +1039,11 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			{
 				GoHome();
 				ADoomPlayer* P = Player();
-				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				// a copy: a dying pain elemental adds lost souls to the list (MAP08)
+				const TArray<TWeakObjectPtr<ADoomMonster>> All = W->GetMonsters();
+				for (const TWeakObjectPtr<ADoomMonster>& M : All)
 				{
-					if (M.IsValid() && !M->IsDead()) UGameplayStatics::ApplyDamage(M.Get(), 100000.f, P->GetController(), P, nullptr);
+					if (M.IsValid() && !M->IsDead() && M->Def->DoomEdNum != 88) UGameplayStatics::ApplyDamage(M.Get(), 100000.f, P->GetController(), P, nullptr); // the boss brain stays: its death ends the level (MAP30)
 				}
 				return true;
 			},
@@ -964,7 +1075,17 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					{
 						K->Yaw0 = K->Near->Sprite->GetComponentRotation().Yaw;
 						const FVector Side = FRotationMatrix(FRotator(0, (K->Near->GetActorLocation() - P->GetActorLocation()).Rotation().Yaw, 0)).GetUnitAxis(EAxis::Y);
-						P->SetActorLocation(P->GetActorLocation() + Side * 48.f * Doom::Scale, true);
+						// the move is swept: next to a wall it goes nowhere (E4M1, MAP03), so the other side then
+						const FVector From = P->GetActorLocation();
+						P->SetActorLocation(From + Side * 48.f * Doom::Scale, true);
+						if (FVector::Dist2D(P->GetActorLocation(), From) < 16.f * Doom::Scale)
+						{
+							P->SetActorLocation(From, false, nullptr, ETeleportType::TeleportPhysics);
+							P->SetActorLocation(From - Side * 48.f * Doom::Scale, true);
+						}
+						P->LastDoomPos = P->DoomPos();
+						// walls close on both sides: no step aside, so no turn to check
+						if (FVector::Dist2D(P->GetActorLocation(), From) < 16.f * Doom::Scale) K->Near = nullptr;
 					}
 					K->bMoved = true;
 					K->MovedTic = Tics;
@@ -979,15 +1100,118 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 				{
 					const float Yaw1 = K->Near->Sprite->GetComponentRotation().Yaw;
 					const float Want = (K->Near->GetActorLocation() - P->EyeLocation()).Rotation().Yaw;
-					bFacing = FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, Want)) < 3.f && FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, K->Yaw0)) > 1.f;
+					// it faces the new spot and turned at least half the way the step asked (a far corpse turns
+					// only a degree or so: E4M1)
+					const float Due = FMath::Abs(FMath::FindDeltaAngleDegrees(K->Yaw0, Want));
+					bFacing = FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, Want)) < 3.f && Due > 0.2f
+						&& FMath::Abs(FMath::FindDeltaAngleDegrees(Yaw1, K->Yaw0)) >= Due * 0.5f;
 					Facing = FString::Printf(TEXT("a sleeping corpse turned %.1f degrees to face the moved camera (off by %.1f)"),
 						FMath::FindDeltaAngleDegrees(K->Yaw0, Yaw1), FMath::FindDeltaAngleDegrees(Yaw1, Want));
 				}
-				Msg = FString::Printf(TEXT("%d corpses: movement ticks %d, actor ticks %d, sprite ticks %d, batched sprites %d; %s"),
-					Dead, MoveTicks, ActorTicks, SpriteTicks, W->NumSleepingSprites(), *Facing);
+				// the ones still awake: where, how high above their floor, how fast, whether the floor moves
+				FString Awake;
+				int32 Listed = 0;
+				for (const TWeakObjectPtr<ADoomMonster>& M : W->GetMonsters())
+				{
+					if (!M.IsValid() || !M->IsDead() || !M->GetCharacterMovement()->IsComponentTickEnabled() || Listed++ >= 6) continue;
+					const int32 Sec = W->SectorAt(M->GetActorLocation());
+					Awake += FString::Printf(TEXT(" %s(%.0f,%.0f %.1f over the floor, speed %.0f, mode %d%s)"), *M->Def->Name, M->DoomPos().X, M->DoomPos().Y,
+						Sec >= 0 ? M->DoomZ() - W->GetMap()->Sectors[Sec].Floor : -1.f, M->GetVelocity().Size() / Doom::Scale,
+						(int32)M->GetCharacterMovement()->MovementMode, Sec >= 0 && W->IsSectorMoving(Sec) ? TEXT(", floor moving") : TEXT(""));
+				}
+				Msg = FString::Printf(TEXT("%d corpses: movement ticks %d, actor ticks %d, sprite ticks %d, batched sprites %d; %s%s%s"),
+					Dead, MoveTicks, ActorTicks, SpriteTicks, W->NumSleepingSprites(), *Facing, Awake.IsEmpty() ? TEXT("") : TEXT("; awake:"), *Awake);
 				// a few may still be settling (a corpse that fell off a ledge); nearly all must sleep
 				const bool bSleeping = Dead > 0 && MoveTicks * 10 <= Dead && SpriteTicks * 10 <= Dead;
 				return bSleeping && bFacing ? EStep::Pass : EStep::Fail;
+			} });
+	}
+
+	// --- 16. a corpse resting on a lift goes down with it (a sleeping corpse wakes when its floor drops);
+	// after the corpses step, so no live monster sets the lift moving (WR lifts, E1M2)
+	{
+		struct FLiftCorpse { FVector2f Spot = FVector2f::ZeroVector; int32 Line = -1, Sector = -1, Special = 0; TWeakObjectPtr<ADoomMonster> M; bool bAsleep = false; float Low = 1e9f; float Gap = 1e9f; int32 StopTic = 0; };
+		TSharedRef<FLiftCorpse> C = MakeShared<FLiftCorpse>();
+		// picked now: the lift step may use up a W1 lift line, and the renderer step reloads the map (so
+		// the step below looks the map up again rather than keep a pointer)
+		// a lift the corpse fits on: room under the ceiling, and a spot 30 units from all its sector's lines (a thing stands on the
+		// highest floor under its box, so on a strip narrower than a zombieman, E3M1, the corpse rests
+		// on the floors beside it and stays up, as in Doom), the middle of one of its subsectors
+		for (int32 i = 0; i < Map->Lines.Num() && C->Line < 0; ++i)
+		{
+			const FDoomLine& L = Map->Lines[i];
+			if (L.Tag == 0 || !TArray<int32>({ 62, 88, 10, 21, 120, 121, 122, 123 }).Contains(L.Special)) continue;
+			for (int32 Sec : Map->SectorsWithTag(L.Tag))
+			{
+				// and room to stand on it: a lift raised to its ceiling (E3M7's sector 6) has none; and a
+				// lower floor beside it to go down to (MAP21)
+				if (Map->Sectors[Sec].Ceiling - Map->Sectors[Sec].Floor < 56.f) continue;
+				if (Map->LowestFloorSurrounding(Sec) >= Map->Sectors[Sec].Floor - 1.f) continue;
+				float BestClear = 0;
+				for (int32 SsIndex : Map->Sectors[Sec].Subsectors)
+				{
+					const TArray<FVector2f>& Poly = Map->Subsectors[SsIndex].Polygon;
+					if (Poly.Num() < 3) continue;
+					FVector2f Mid = FVector2f::ZeroVector;
+					for (const FVector2f& V : Poly) Mid += V;
+					Mid /= (float)Poly.Num();
+					float Clear = 1e9f;
+					for (int32 Li : Map->Sectors[Sec].Lines) Clear = FMath::Min(Clear, Map->DistanceToLine(Mid, Li));
+					if (Clear > BestClear) { BestClear = Clear; C->Spot = Mid; }
+				}
+				if (BestClear >= 30.f) // the box's corners are 28 out (TNT: a corpse 22 from the lines hung on a neighbour's edge)
+				{
+					C->Line = i;
+					C->Special = L.Special;
+					C->Sector = Sec;
+					break;
+				}
+			}
+		}
+		Run->Steps.Add({ TEXT("liftcorpse"),
+			[W, C, Player](FString& Msg)
+			{
+				if (C->Line < 0) { Msg = TEXT("no lift a zombieman fits on"); return false; }
+				FDoomMap* Map = W->GetMap();
+				Map->Lines[C->Line].Special = C->Special; // the lift step may have used it up
+				const FDoomSector& S = Map->Sectors[C->Sector];
+				if (W->SectorHasMover(C->Sector)) { Msg = TEXT("the lift is busy"); return false; }
+				C->M = W->SpawnMonster(3004, Doom::ToUE(C->Spot, S.Floor), 0.f); // a zombieman on the lift
+				if (!C->M.IsValid()) { Msg = TEXT("could not spawn on the lift"); return false; }
+				UGameplayStatics::ApplyDamage(C->M.Get(), 1000.f, nullptr, nullptr, nullptr);
+				return true;
+			},
+			[W, C, Player](int32 Tics, FString& Msg)
+			{
+				if (!C->M.IsValid()) { Msg = TEXT("the corpse vanished"); return EStep::Fail; }
+				const FDoomSector& S = W->GetMap()->Sectors[C->Sector];
+				if (!C->bAsleep)
+				{
+					if (C->M->IsCorpseAsleep())
+					{
+						C->bAsleep = true;
+						W->ActivateSpecial(C->Line, 0, Player(), EActivation::Use, true); // down it goes
+					}
+					if (Tics <= 200) return EStep::Running;
+					Msg = FString::Printf(TEXT("the corpse never fell asleep: at z %.1f on a floor of %.0f, speed %.1f, sector moving %d"),
+						C->M->DoomZ(), S.Floor, C->M->GetVelocity().Size(), W->SectorHasMover(C->Sector));
+					return EStep::Fail;
+				}
+				// while the lift waits at the bottom the corpse must come to lie on the floor, not float
+				// where the lift was (the gap at the bottom: its smallest value once it has fallen)
+				const float Feet = C->M->DoomZ();
+				if (W->SectorHasMover(C->Sector))
+				{
+					if (S.Floor < C->Low - 0.01f) { C->Low = S.Floor; C->Gap = Feet - S.Floor; }
+					else if (FMath::IsNearlyEqual(S.Floor, C->Low, 0.01f)) { C->Gap = FMath::Min(C->Gap, Feet - S.Floor); }
+				}
+				Msg = FString::Printf(TEXT("sector %d: corpse asleep %d, lowest floor %.0f, corpse settled %.1f units above it, floor now %.0f, corpse %.0f"),
+					C->Sector, C->bAsleep, C->Low, C->Gap, S.Floor, Feet);
+				if (W->SectorHasMover(C->Sector) && Tics < 400) { C->StopTic = Tics; return EStep::Running; }
+				if (Tics - C->StopTic < 4 && Tics < 400) return EStep::Running; // the corpse rides a tic behind the floor (E4M3)
+				const bool bPass = C->Gap < 2.f && FMath::Abs(Feet - S.Floor) < 2.f;
+				C->M->Destroy();
+				return bPass ? EStep::Pass : EStep::Fail;
 			} });
 	}
 
@@ -1035,7 +1259,11 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					return FString::Join(Names, TEXT(" "));
 				};
 				auto Has = [&](const FKey& K) { return Sub->QueryKeysMappedToAction(PC->FireAction).Contains(K); };
-				if (Tics - B->PhaseTic < 3) return EStep::Running; // the subsystem rebuilds its mappings next frame
+				// the subsystem rebuilds its mappings on a later frame, and the query reads no keys at all in
+				// between: wait (up to 2 s) until the change the last phase made shows, then check everything
+				const bool bShows = B->Phase == 0 || B->Phase == 2 || (B->Phase == 1 && Has(EKeys::F)) || (B->Phase == 3 && Has(EKeys::Gamepad_LeftTrigger))
+					|| (B->Phase == 4 && Has(EKeys::LeftMouseButton) && !Has(EKeys::F));
+				if (Tics - B->PhaseTic < 3 || (!bShows && Tics - B->PhaseTic < 70)) return EStep::Running;
 				switch (B->Phase)
 				{
 				case 0:
@@ -1068,14 +1296,18 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 					break;
 				}
 				case 2:
+					// back to the game: while the menu's screen is up it takes the game's mappings away (once
+					// the CommonUI screen exists: after the commonui step), so the keys show only after this
+					W->Menu.Close(*W);
+					break;
+				case 3:
 				{
 					B->Report += FString::Printf(TEXT("; PAD FIRE on LT: %s"), *FireKeys());
 					B->bOk &= Has(EKeys::Gamepad_LeftTrigger) && !Has(EKeys::Gamepad_RightTrigger) && Has(EKeys::F);
-					W->Menu.Close(*W);
 					PC->ResetBindings();
 					break;
 				}
-				case 3:
+				case 4:
 					B->Report += FString::Printf(TEXT("; after reset: %s"), *FireKeys());
 					B->bOk &= Has(EKeys::LeftMouseButton) && Has(EKeys::LeftControl) && !Has(EKeys::F)
 						&& Has(EKeys::Gamepad_RightTrigger) && !Has(EKeys::Gamepad_LeftTrigger);
@@ -1200,6 +1432,8 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			// a generated map has no par time, and the intermission leaves it out
 			uint32 Seed = 0;
 			if (DoomMapGen::ParseName(W->GetMapName(), Seed)) return Par < 0 ? EStep::Pass : EStep::Fail;
+			// nor has episode 4: vanilla draws a par time only for episodes 1-3
+			if (W->GetMapName().StartsWith(TEXT("E4"))) return Par < 0 ? EStep::Pass : EStep::Fail;
 			return Par > 0 ? EStep::Pass : EStep::Fail;
 		} });
 
@@ -1209,20 +1443,52 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 	}
 	if (!OnlyStep.IsEmpty())
 	{
-		Run->Steps.RemoveAll([&OnlyStep](const FPlayStep& S) { return S.Name != OnlyStep; });
+		// one step, or several (-playstep=walk,chase)
+		TArray<FString> Only;
+		OnlyStep.ParseIntoArray(Only, TEXT(","));
+		Run->Steps.RemoveAll([&Only](const FPlayStep& S) { return !Only.Contains(S.Name); });
 	}
 
 	// run the steps one after the other, one poll per Doom tic
 	TSharedRef<FPlayRun> R = Run;
 	GetWorldTimerManager().SetTimer(Run->Timer, [this, W, R, Home, HomeView, GoHome, bQuitWhenDone]()
 	{
+		auto Finish = [this, W, R, bQuitWhenDone]()
+		{
+			UE_LOG(LogDoomTest, Display, TEXT("Playtest: %d passed, %d failed, %d skipped"), R->Passed, R->Failed, R->Skipped);
+			if (bQuitWhenDone)
+			{
+				FPlatformMisc::RequestExit(false, TEXT("playtest"));
+			}
+			else
+			{
+				W->SetInputLocked(false);
+				bPlayTestDone = true;
+			}
+			GetWorldTimerManager().ClearTimer(R->Timer); // last: this frees the lambda's captures
+		};
 		ADoomPlayer* P = W->GetPlayer();
 		const bool bOffPlay = R->Index >= 0 && R->Index < R->Steps.Num() && (R->Steps[R->Index].Name == TEXT("quitprompt") || R->Steps[R->Index].Name == TEXT("rebind")
 			|| R->Steps[R->Index].Name == TEXT("renderer") || R->Steps[R->Index].Name == TEXT("intermission") || R->Steps[R->Index].Name == TEXT("commonui"));
 		if (!P || (W->GetState() != EDoomGameState::Playing && !bOffPlay))
 		{
+			// the level ended under a step and doesn't come back (Plutonia MAP30 hung): after 10 s the
+			// step fails, and the run ends, since the rest need the level
+			const double RealNow = W->GetWorld()->GetRealTimeSeconds();
+			if (R->OffPlaySince < 0) R->OffPlaySince = RealNow;
+			if (R->Index < 0 || R->Index >= R->Steps.Num() || RealNow - R->OffPlaySince < 10.0)
+			{
+				return;
+			}
+			const FString Msg = FString::Printf(TEXT("the game left play during the step (state %d) and didn't come back in 10 s; the remaining steps didn't run"), (int32)W->GetState());
+			UE_LOG(LogDoomTest, Display, TEXT("Playtest %s FAIL: %s"), *R->Steps[R->Index].Name, *Msg);
+			PlayTestResults.Add({ R->Steps[R->Index].Name, TEXT("FAIL"), Msg });
+			++R->Failed;
+			R->Index = R->Steps.Num();
+			Finish();
 			return;
 		}
+		R->OffPlaySince = -1.0;
 		if (R->bHoldForward)
 		{
 			P->AddMovementInput(FRotator(0, P->GetControlRotation().Yaw, 0).Vector(), 1.f);
@@ -1264,23 +1530,15 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			{
 				return;
 			}
-			UE_LOG(LogDoomTest, Display, TEXT("Playtest %s %s: %s"), *S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), *Msg);
-			PlayTestResults.Add({ S.Name, Result == EStep::Pass ? TEXT("PASS") : TEXT("FAIL"), Msg });
-			(Result == EStep::Pass ? R->Passed : R->Failed)++;
+			// a step may also find out only while running that it can't measure here (walk, hit on the way)
+			const TCHAR* Word = Result == EStep::Pass ? TEXT("PASS") : Result == EStep::Skip ? TEXT("SKIP") : TEXT("FAIL");
+			UE_LOG(LogDoomTest, Display, TEXT("Playtest %s %s: %s"), *S.Name, Word, *Msg);
+			PlayTestResults.Add({ S.Name, Word, Msg });
+			(Result == EStep::Pass ? R->Passed : Result == EStep::Skip ? R->Skipped : R->Failed)++;
 			++R->Index;
 			R->bStarted = false;
 			GoHome();
 		}
-		UE_LOG(LogDoomTest, Display, TEXT("Playtest: %d passed, %d failed, %d skipped"), R->Passed, R->Failed, R->Skipped);
-		if (bQuitWhenDone)
-		{
-			FPlatformMisc::RequestExit(false, TEXT("playtest"));
-		}
-		else
-		{
-			W->SetInputLocked(false);
-			bPlayTestDone = true;
-		}
-		GetWorldTimerManager().ClearTimer(R->Timer); // last: this frees the lambda's captures
+		Finish();
 	}, 0.005f, true, 1.f);
 }

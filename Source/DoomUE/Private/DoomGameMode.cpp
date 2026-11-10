@@ -775,7 +775,10 @@ void ADoomGameMode::StartPlay()
 	// -playtest: doors, lifts, splash damage, weapons, monsters (needs -warp); PASS/FAIL per step
 	if (FParse::Param(FCommandLine::Get(), TEXT("playtest")) && W->GetMap())
 	{
-		StartPlayTest();
+		// -playstep=walk,chase: only those steps
+		FString Steps;
+		FParse::Value(FCommandLine::Get(), TEXT("-playstep="), Steps, false);
+		StartPlayTest(Steps);
 	}
 
 	// -savetest: save mid-action, scramble, load, compare (needs -warp)

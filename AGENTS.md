@@ -53,6 +53,10 @@ Tools/run_tests.bat DoomUE -NullRHI
     * Each step is also `DoomUE.PlayTest.<step>` in PIE, run on its own: a new step must set up
       everything it needs (weapons, ammo, position), not rely on the steps before it, and its name
       goes into `ADoomGameMode::PlayTestStepNames` (a `checkf` says so).
+    * A step must not assume E1M1's layout: pick what fits the map (a lift a corpse fits on, a level
+      floor, an open direction) or SKIP saying why. Check changes on the commercial maps with
+      `-playstep=<steps>` (`-iwad=` an absolute path); a step that moves the player directly sets
+      `LastDoomPos` too, or the next tic's crossing check walks the jump.
     * It can't press keys through Enhanced Input (unfocused window): drive the game through
       `UDoomWorld` / the HUD there, and test real keys in `DoomInputTests.cpp` (Slate key events in
       PIE, `FPressKey`: wait for the screen to settle, press, wait for the effect).
