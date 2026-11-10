@@ -152,6 +152,7 @@ bool UDoomWorld::InitWads(const FDoomWadSetup* Setup)
 	bModern = Settings->bModernRenderer;
 	if (FParse::Param(FCommandLine::Get(), TEXT("modern"))) bModern = true;
 	if (FParse::Param(FCommandLine::Get(), TEXT("classic"))) bModern = false;
+	bModern = bModern && CanUseModern();
 	bSmartAI = Settings->bSmartMonsters || FParse::Param(FCommandLine::Get(), TEXT("smartai"));
 	if (FParse::Param(FCommandLine::Get(), TEXT("classicai"))) bSmartAI = false;
 	bNoParticles = FParse::Param(FCommandLine::Get(), TEXT("noparticles"));
@@ -179,8 +180,19 @@ void UDoomWorld::StartNewGame(const FString& MapName, int32 InSkill)
 	LoadMapAsync(MapName, true);
 }
 
+bool UDoomWorld::CanUseModern()
+{
+	// the modern renderer is Lumen's; the web (UE 5.9's Wasm platform) has the mobile renderer only
+#if defined(PLATFORM_WASM) && PLATFORM_WASM
+	return false;
+#else
+	return true;
+#endif
+}
+
 void UDoomWorld::SetModern(bool b)
 {
+	b = b && CanUseModern();
 	if (bModern != b)
 	{
 		bModern = b;

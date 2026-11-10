@@ -4,9 +4,9 @@ rem renderer has distance fields in maps played straight from the WAD too.
 rem
 rem   Tools\package.bat [archive folder] [extra -run=DoomContent options, e.g. -iwad=freedoom2.wad]
 rem
-rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.8\Engine).
+rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.9\Engine).
 setlocal
-set ENGINE=C:\Program Files\Epic Games\UE_5.8\Engine
+set ENGINE=C:\Program Files\Epic Games\UE_5.9\Engine
 if not "%UE_ENGINE%"=="" set ENGINE=%UE_ENGINE%
 set PROJECT=%~dp0..\DoomUE.uproject
 set ARCHIVE=%~1

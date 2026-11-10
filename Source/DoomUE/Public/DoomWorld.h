@@ -422,6 +422,8 @@ public:
 	void StartNewGame(const FString& MapName, int32 InSkill);
 
 	void SetModern(bool b);
+	/** False where the modern renderer can't run (the web: no Lumen); the game stays classic there. */
+	static bool CanUseModern();
 
 private:
 	friend class ADoomGameMode; // the level flow (exits, intermission, next map) uses the internals below

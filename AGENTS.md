@@ -5,7 +5,7 @@ for what the port does; this file covers how to work on it, and the traps alread
 
 ## The project
 
-**DoomUE** is a C++ Unreal Engine 5.8 port of DOOM 1 and 2 that plays any WAD (Freedoom's are in
+**DoomUE** is a C++ Unreal Engine 5.9 port of DOOM 1 and 2 that plays any WAD (Freedoom's are in
 `Content/WADs`). The repository is public: https://github.com/mariuz/unreal-doom. The owner's earlier
 Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 subsectors, area
 6,712,686).
@@ -25,16 +25,22 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
   moving to Verse and Scene Graph), keep content generated, `DoomWadTools` on Core and CoreUObject
   only, and Doom's rules in data tables rather than actor overrides.
 * `Tools/`: `run_tests.bat`, test-WAD generators, the Lyra export scripts and plugin.
+* **The web build** (UE 5.9's Wasm platform): `Tools/package_web.bat`, published by
+  `.github/workflows/web-release.yml` from a self-hosted runner on each release
+  ([docs/WebRelease.md](docs/WebRelease.md)). It needs emscripten 6.0.10 exactly
+  (`WASM_EMSDK_ROOT`, on this machine `F:\Tools\emsdk`). The engine's own guide is
+  `Engine/Platforms/Wasm/Skills/web-deploy/SKILL.md`. Its browser harness (`webrun.py`) looks for
+  Chrome; this machine has Edge only: `set PROBE_CHROME=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`.
 * The roadmap is the "Not done yet" list at the end of the README.
 
 ## Building, running, testing
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:\Work\SessionFolderUnrealClaude\DoomUE.uproject" -WaitMutex -NoHotReload
+"C:/Program Files/Epic Games/UE_5.9/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:\Work\SessionFolderUnrealClaude\DoomUE.uproject" -WaitMutex -NoHotReload
 ```
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -warp=E1M1 -autotest=5 -nomusic -windowed -resx=960 -resy=540
+"C:/Program Files/Epic Games/UE_5.9/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -warp=E1M1 -autotest=5 -nomusic -windowed -resx=960 -resy=540
 ```
 
 ```bash
@@ -61,10 +67,11 @@ Tools/run_tests.bat DoomUE -NullRHI
       `UDoomWorld` / the HUD there, and test real keys in `DoomInputTests.cpp` (Slate key events in
       PIE, `FPressKey`: wait for the screen to settle, press, wait for the effect).
     * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
-  * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
+  * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.9\Engine` for `run_tests.bat` (5.8, for comparing, in `F:\EpicGames\UE_5.8`).
   * `E1M1Modern` compares Lumen lighting: on a GTX 950 with UE 5.8.2 it fails (brighter, 13.8%)
     with the same picture, with or without any changes, so compare against a run without yours. Not
     a settling problem (600 frames change nothing); suspected engine patch (approved on 5.8.1) or GPU.
+    On 5.9.0 it fails the same way (13.7% brighter, the same picture).
   * Make steps wait for conditions, not fixed times: background work such as distance-field builds
     can slow the editor a lot.
 * **Screenshots** land in `Saved/Screenshots/WindowsEditor/`.
@@ -163,6 +170,10 @@ Tools/run_tests.bat DoomUE -NullRHI
   its back key), and the other menu keys too (`UDoomMenuScreen::MenuKey`, from the menu context's
   mappings): UE 5.9's CommonUI stopped routing the menu's action bindings to it. Hovering a row
   chooses it only after the mouse has moved.
+* **The web is compiled by clang with warnings as errors** (emscripten): MSVC accepts things it
+  doesn't (`&&` inside `||` without parentheses). Build `Tools/package_web.bat` after larger changes.
+  The web has the mobile renderer only: the modern renderer is refused there
+  (`UDoomWorld::CanUseModern`, `PLATFORM_WASM`).
 * **The AIAssistant editor plugin stays off** (`DoomUE.uproject`): from UE 5.9 it is on by default
   and takes F1, Doom's Read This! key, in Play In Editor. Draw menu graphics through `FDoomScreenPainter` (shared with the HUD), not the HUD.
 * **The Options and Multiplayer pages' rows are named** (`EOptionsRow`, `EMultiplayerRow` in
@@ -233,6 +244,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * Unreal Engine 5.9 (`engine/5.9`): `EngineAssociation`, the tools' default engine, assets
+    regenerated with 5.9; its fixes in `fix/ue59-compat` (menu keys, AI Assistant off, Nanite usage);
   * `UDoomWorld::MovePlane` returns `EPlaneMove` (`Moving`, `Arrived`, `Blocked`);
   * the menu through CommonUI (`UDoomUILayout`, `UDoomMenuScreen`, `FDoomScreenPainter`, `commonui` step);
   * asset naming: imported levels are `L_<MAP>` (`DoomContent::MapPackage`, `-renamelevels`);

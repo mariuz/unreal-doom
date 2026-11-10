@@ -1,8 +1,8 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.8",
+	"EngineAssociation": "5.9",
 	"Category": "",
-	"Description": "DOOM 1 / DOOM 2 WAD port for Unreal Engine 5.8 (C++)",
+	"Description": "DOOM 1 / DOOM 2 WAD port for Unreal Engine 5.9 (C++)",
 	"Modules": [
 		{ "Name": "DoomUE", "Type": "Runtime", "LoadingPhase": "Default" },
 		{ "Name": "DoomUEEditor", "Type": "Editor", "LoadingPhase": "Default" }

@@ -14,3 +14,6 @@ Build/Windows/
 
 # baked tile sets of WAD maps (-run=DoomContent -baketiles=all; Tools/package.bat bakes them)
 Content/Doom/Tiles/
+
+# the cooker's file-open-order logs, written by every web cook
+Build/Wasm/FileOpenOrder/

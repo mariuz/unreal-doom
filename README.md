@@ -1,6 +1,6 @@
 # DoomUE
 
-DOOM 1 and DOOM 2 levels rendered and played in **Unreal Engine 5.8**, written in C++.
+DOOM 1 and DOOM 2 levels rendered and played in **Unreal Engine 5.9**, written in C++.
 It reads the original WAD format directly. The project is modelled on
 [Castle DOOM](https://github.com/mariuz/castle-doom), the Object Pascal port on
 Castle Game Engine: Doom's data stays in Doom's own structures and runs Doom's 35 Hz game
@@ -18,7 +18,7 @@ with `-iwad=` / `-file=`.
 
 ## Doom → Unreal Engine
 
-| Doom | Unreal Engine 5.8 |
+| Doom | Unreal Engine 5.9 |
 |---|---|
 | WAD lumps, `PLAYPAL`, `COLORMAP` | `FDoomWad` (plain C++), stacked IWAD + PWADs, last lump wins |
 | Patches, `TEXTURE1/2` + `PNAMES`, flats, sprites | `FDoomGraphics` decodes to transient `UTexture2D`s (nearest filtering, box-filtered mip chain uploaded with `UpdateTextureRegions`) |
@@ -71,11 +71,11 @@ with `-iwad=` / `-file=`.
 
 ## Build and run
 
-Requirements: Unreal Engine 5.8, Visual Studio 2022/2026 with the C++ game workload. Windows is
+Requirements: Unreal Engine 5.9, Visual Studio 2022/2026 with the C++ game workload. Windows is
 the platform this was built and tested on.
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -WaitMutex
+"C:/Program Files/Epic Games/UE_5.9/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -WaitMutex
 ```
 
 Open `DoomUE.uproject` in the editor once: it generates `Content/Doom/Materials/*` and
@@ -83,19 +83,26 @@ Open `DoomUE.uproject` in the editor once: it generates `Content/Doom/Materials/
 it to one kind; new materials mean a long shader compile on the next run):
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -run=DoomContent -force
+"C:/Program Files/Epic Games/UE_5.9/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -run=DoomContent -force
 ```
 
 Then press Play, or run standalone:
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -windowed -ResX=1280 -ResY=800
+"C:/Program Files/Epic Games/UE_5.9/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -windowed -ResX=1280 -ResY=800
 ```
 
 The first time each material permutation is used, Unreal compiles shaders on demand. It shows
 "Preparing Shaders" and draws untextured surfaces for a few seconds to a few minutes (longer for
 modern mode). A packaged build precompiles them. When packaging, `Content/WADs` is staged as
 loose files.
+
+### Playing in the browser
+
+Each release has a web build on GitHub Pages, **https://mariuz.github.io/unreal-doom/**: UE 5.9's
+Wasm platform (WebAssembly with WebGPU) in Chrome, Edge or Safari, on the classic renderer (the web
+has no Lumen). `Tools/package_web.bat` builds it, and the `Web release` workflow runs it on a
+self-hosted runner when a release is published; see [docs/WebRelease.md](docs/WebRelease.md).
 
 ### Packaging
 
@@ -200,6 +207,9 @@ Console (`~`): `DoomMap E1M3`, `DoomGod`, `DoomGiveAll`.
 * [docs/EditingMaps.md](docs/EditingMaps.md): the editor workflow for importing and editing maps.
 * [docs/EngineUpgrade.md](docs/EngineUpgrade.md): the checklist for a new engine version
   (`Tools/upgrade_check.bat`), what changed from 5.8 to 5.9, and what is known about Unreal Engine 6.
+* [docs/WebRelease.md](docs/WebRelease.md): the web build (UE 5.9's Wasm platform) and the
+  release workflow that publishes it to GitHub Pages: the self-hosted runner, emscripten, the
+  page's settings, testing it locally.
 * [docs/Lyra.md](docs/Lyra.md): Doom maps as **Lyra Starter Game** arenas (E1M1 as an Elimination
   map with Lyra's heroes, weapon pads, launch pads, bots and materials), and how to build more.
 
@@ -776,6 +786,22 @@ FSR and DLSS are not included: they are separate vendor plugins. `-perftest` on 
 The presets cut the GPU time by half or more, but the frame barely moves: on SM6 the render
 thread (10-17 ms) is the limit now, not the GPU (see "Make SM6 pay off" below).
 
+The web build (`engine/5.9`): `Tools/package_web.bat` packages DoomUE for UE 5.9's Wasm platform
+(a Shipping stage of 273 MB, the game a 135 MB `.wasm`, 25 MB with Brotli), and
+`.github/workflows/web-release.yml` publishes it to GitHub Pages and attaches the zip whenever a
+release is published, from a self-hosted runner ([docs/WebRelease.md](docs/WebRelease.md)). In Edge
+the title screen is up 15 s after the page opens, after 104 MB of downloads, and E1M1 plays with no
+WebGPU errors. The web stays on the classic renderer (`UDoomWorld::CanUseModern`). The port
+needed one clang fix (emscripten treats `&&` within `||` without parentheses as an error) and the
+runtime sprite quad's UV density (an ensure in cooked games).
+
+Unreal Engine 5.9 (`engine/5.9`): the project's engine is 5.9 now (`EngineAssociation`, the
+default engine folder in `Tools/*.bat`). The upgrade check passed on the launcher's 5.9.0 with three
+fixes, merged first: the menu reads its keys from the input mappings (5.9's CommonUI stopped routing
+the menu's action bindings), the AI Assistant editor plugin is off (5.9 turns it on, and it takes
+F1), and the tile materials have Nanite usage. The 71 generated assets were regenerated with 5.9.
+`E1M1Modern` still fails on this machine, as on 5.8.
+
 Engine upgrades (`feature/engine-upgrade`): [docs/EngineUpgrade.md](docs/EngineUpgrade.md) is the
 checklist for a new engine version, and `Tools/upgrade_check.bat` runs it against the engine in
 `UE_ENGINE`. It builds, regenerates the generated assets, rebakes the tiles, then runs validation, the
@@ -831,6 +857,6 @@ Not done yet (roughly in priority order):
 8. **Future engine versions**:
    * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
    * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.
-   * **Finishing the move to UE 5.9**: the check passes on the launcher's 5.9.0 except `E1M1Modern` (Lumen 13.7% brighter); the three fixes it needed are on `main` ([docs/EngineUpgrade.md](docs/EngineUpgrade.md), "The 5.9.0 run"). Left: `-perftest`, a packaged build, a hand play, the version change; then use 5.9's custom-node `Preamble` and material error reporting in the generator.
+   * **After the move to UE 5.9**: `-perftest` numbers on 5.9, a packaged build and a hand play ([docs/EngineUpgrade.md](docs/EngineUpgrade.md), "The 5.9.0 run"); a 5.9 `E1M1Modern` image approved on the machine that approved the current one (Lumen is 13.7% brighter here, as on 5.8); then 5.9's custom-node `Preamble` and material error reporting in the generator.
    * **Unreal Engine 6 readiness**: Verse and Scene Graph replace the C++ gameplay layer; until UE 6 Early Access (end of 2027) shows what a project's C++ may still do, keep content generated, `DoomWadTools` engine-neutral and Doom's rules in data, and don't start a rewrite ([docs/EngineUpgrade.md](docs/EngineUpgrade.md)).
    * **One place for the Niagara builder's engine calls**: the effect builder uses Niagara's editor API, which changes between versions.

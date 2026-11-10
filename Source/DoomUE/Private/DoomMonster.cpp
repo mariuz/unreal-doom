@@ -309,7 +309,7 @@ void ADoomMonster::DoomTic()
 		}
 		break;
 	case EMonsterState::Chase:
-		if (bFrameChanged || Sprite->CurrentSequence().Len() == 1 && (DoomWorld->GetTic() % FMath::Max(1, RunTics())) == 0)
+		if (bFrameChanged || (Sprite->CurrentSequence().Len() == 1 && (DoomWorld->GetTic() % FMath::Max(1, RunTics())) == 0))
 		{
 			Chase();
 		}

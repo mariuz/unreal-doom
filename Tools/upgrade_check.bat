@@ -8,12 +8,12 @@ rem   Tools\upgrade_check.bat                 every step, every test
 rem   Tools\upgrade_check.bat DoomUE.Map      every step, one test group
 rem   Tools\upgrade_check.bat DoomUE -NullRHI no GPU: the DoomUE.Render tests skip
 rem
-rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.8\Engine).
+rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.9\Engine).
 rem SKIP_GAME_BUILD=1 skips building the game target: on a source-built engine that compiles most of
 rem the engine again (hours on a 4-core CPU); the editor build already compiles the project's code.
 rem Regenerating rewrites tracked assets in Content/Doom: review them with git diff afterwards.
 setlocal
-set ENGINE=C:\Program Files\Epic Games\UE_5.8\Engine
+set ENGINE=C:\Program Files\Epic Games\UE_5.9\Engine
 if not "%UE_ENGINE%"=="" set ENGINE=%UE_ENGINE%
 set UE_ENGINE=%ENGINE%
 set PROJECT=%~dp0..\DoomUE.uproject
