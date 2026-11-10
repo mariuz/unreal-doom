@@ -5,7 +5,7 @@ for what the port does; this file covers how to work on it, and the traps alread
 
 ## The project
 
-**DoomUE** is a C++ Unreal Engine 5.8 port of DOOM 1 and 2 that plays any WAD (Freedoom's are in
+**DoomUE** is a C++ Unreal Engine 5.9 port of DOOM 1 and 2 that plays any WAD (Freedoom's are in
 `Content/WADs`). The repository is public: https://github.com/mariuz/unreal-doom. The owner's earlier
 Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 subsectors, area
 6,712,686).
@@ -30,11 +30,11 @@ Pascal port, mariuz/castle-doom, is the reference for map geometry (E1M1: 682 su
 ## Building, running, testing
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:\Work\SessionFolderUnrealClaude\DoomUE.uproject" -WaitMutex -NoHotReload
+"C:/Program Files/Epic Games/UE_5.9/Engine/Build/BatchFiles/Build.bat" DoomUEEditor Win64 Development -Project="E:\Work\SessionFolderUnrealClaude\DoomUE.uproject" -WaitMutex -NoHotReload
 ```
 
 ```bash
-"C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -warp=E1M1 -autotest=5 -nomusic -windowed -resx=960 -resy=540
+"C:/Program Files/Epic Games/UE_5.9/Engine/Binaries/Win64/UnrealEditor.exe" "E:/Work/SessionFolderUnrealClaude/DoomUE.uproject" -game -warp=E1M1 -autotest=5 -nomusic -windowed -resx=960 -resy=540
 ```
 
 ```bash
@@ -61,10 +61,11 @@ Tools/run_tests.bat DoomUE -NullRHI
       `UDoomWorld` / the HUD there, and test real keys in `DoomInputTests.cpp` (Slate key events in
       PIE, `FPressKey`: wait for the screen to settle, press, wait for the effect).
     * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
-  * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.8\Engine` for `run_tests.bat`.
+  * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.9\Engine` for `run_tests.bat` (5.8, for comparing, in `F:\EpicGames\UE_5.8`).
   * `E1M1Modern` compares Lumen lighting: on a GTX 950 with UE 5.8.2 it fails (brighter, 13.8%)
     with the same picture, with or without any changes, so compare against a run without yours. Not
     a settling problem (600 frames change nothing); suspected engine patch (approved on 5.8.1) or GPU.
+    On 5.9.0 it fails the same way (13.7% brighter, the same picture).
   * Make steps wait for conditions, not fixed times: background work such as distance-field builds
     can slow the editor a lot.
 * **Screenshots** land in `Saved/Screenshots/WindowsEditor/`.
@@ -233,6 +234,8 @@ Tools/run_tests.bat DoomUE -NullRHI
 ## Where things stand
 
 * **Done, newest first:**
+  * Unreal Engine 5.9 (`engine/5.9`): `EngineAssociation`, the tools' default engine, assets
+    regenerated with 5.9; its fixes in `fix/ue59-compat` (menu keys, AI Assistant off, Nanite usage);
   * `UDoomWorld::MovePlane` returns `EPlaneMove` (`Moving`, `Arrived`, `Blocked`);
   * the menu through CommonUI (`UDoomUILayout`, `UDoomMenuScreen`, `FDoomScreenPainter`, `commonui` step);
   * asset naming: imported levels are `L_<MAP>` (`DoomContent::MapPackage`, `-renamelevels`);

@@ -150,8 +150,9 @@ Enhanced Input and Dynamic Mesh plugins, and `Engine/Config`.
     picture otherwise (floors and walls textured): Lumen's lighting, as with the known 5.8 failure
     on this machine. Approve a 5.9 image only after comparing on the machine that approved the
     current one.
-  * Steps 7 to 10 of the checklist: `-perftest`, a packaged build, a hand play, then the version
-    change.
+  * Steps 7 to 9 of the checklist: `-perftest`, a packaged build, a hand play.
+* **The switch** (step 10, `engine/5.9`): `EngineAssociation` 5.9, the default engine folder in
+  `Tools/*.bat`, the README and AGENTS.md; the 71 generated assets as 5.9 regenerated them.
 
 ## Unreal Engine 6
 

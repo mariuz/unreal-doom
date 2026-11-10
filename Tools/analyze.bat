@@ -4,11 +4,11 @@ rem reports any warning in the project's own files (the engine's headers are not
 rem
 rem   Tools\analyze.bat
 rem
-rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.8\Engine).
+rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.9\Engine).
 rem It recompiles everything the first time (about 17 minutes); close the editor first (Live Coding
 rem blocks command-line builds). The output goes to Saved\analyze.log.
 setlocal
-set ENGINE=C:\Program Files\Epic Games\UE_5.8\Engine
+set ENGINE=C:\Program Files\Epic Games\UE_5.9\Engine
 if not "%UE_ENGINE%"=="" set ENGINE=%UE_ENGINE%
 set ROOT=%~dp0..
 set LOG=%ROOT%\Saved\analyze.log

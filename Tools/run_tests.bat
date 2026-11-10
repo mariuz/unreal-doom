@@ -5,10 +5,10 @@ rem   Tools\run_tests.bat                     every test, with rendering (screen
 rem   Tools\run_tests.bat DoomUE -NullRHI     no GPU needed (CI agents); the DoomUE.Render tests skip
 rem   Tools\run_tests.bat DoomUE.Game         one group: DoomUE.Map, .Patches, .Game, .Editor, .Render
 rem
-rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.8\Engine).
+rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.9\Engine).
 rem The report goes to Saved\Automation\Report (index.html, index.json).
 setlocal
-set ENGINE=C:\Program Files\Epic Games\UE_5.8\Engine
+set ENGINE=C:\Program Files\Epic Games\UE_5.9\Engine
 if not "%UE_ENGINE%"=="" set ENGINE=%UE_ENGINE%
 set FILTER=%~1
 if "%FILTER%"=="" set FILTER=DoomUE

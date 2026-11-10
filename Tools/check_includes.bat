@@ -8,11 +8,11 @@ rem
 rem   Tools\check_includes.bat            both
 rem   Tools\check_includes.bat names      only the name check (seconds)
 rem
-rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.8\Engine).
+rem UE_ENGINE overrides the engine folder (default: C:\Program Files\Epic Games\UE_5.9\Engine).
 rem The strict build writes its own intermediate files and takes a while (about 10 minutes the first
 rem time); close the editor first (Live Coding blocks command-line builds).
 setlocal
-set ENGINE=C:\Program Files\Epic Games\UE_5.8\Engine
+set ENGINE=C:\Program Files\Epic Games\UE_5.9\Engine
 if not "%UE_ENGINE%"=="" set ENGINE=%UE_ENGINE%
 set PROJECT=%~dp0..\DoomUE.uproject
 
