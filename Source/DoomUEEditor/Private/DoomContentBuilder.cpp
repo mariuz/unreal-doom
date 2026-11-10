@@ -535,6 +535,26 @@ int32 UDoomContentCommandlet::Main(const FString& Params)
 			UE_LOG(LogDoomContent, Display, TEXT("Navtest %s: %d portals built in %.1f ms; from the start %d of %d subsectors joined, %d walkable (imp); %d of %d monsters can walk to the start (%.2f ms a path); no way:%s"),
 				*Name, Nav.NumPortals(), BuildMs, Nav.CountReachable(M, Start, false, 20, 56), M.Subsectors.Num(), Nav.CountReachable(M, Start, true, 20, 56),
 				Reached, Monsters, Monsters ? PathMs / Monsters : 0.0, *Fails.Left(300));
+			if (FParse::Param(*Params, TEXT("navdebug")))
+			{
+				// the joins near the start too narrow for an imp
+				UE_LOG(LogDoomContent, Display, TEXT("  narrow near the start:%s"), *Nav.DescribeNarrow(M, Start, 600.f, 20.f));
+				// the monsters with a way only when clearance is ignored, and the narrow joins on that way
+				for (const FDoomMapThing& T : M.Things)
+				{
+					const FDoomThingDef* Def = DoomInfo::FindThing(T.Type);
+					if (!Def || !(Def->Flags & EThingFlag::CountKill)) continue;
+					const bool bFloat = (Def->Flags & EThingFlag::Float) != 0;
+					if (Nav.FindPath(M, T.P, Start, Def->Radius, Def->Height, bFloat, Path)) continue;
+					FDoomNav::bIgnoreClearance = true;
+					const bool bOld = Nav.FindPath(M, T.P, Start, Def->Radius, Def->Height, bFloat, Path);
+					FDoomNav::bIgnoreClearance = false;
+					if (!bOld) continue;
+					FString Narrow;
+					for (const FVector2f& Wp : Path) Narrow += Nav.DescribeNarrow(M, Wp, 1.f, Def->Radius);
+					UE_LOG(LogDoomContent, Display, TEXT("  lost %s (%.0f,%.0f radius %.0f):%s"), *Def->Name, T.P.X, T.P.Y, Def->Radius, *Narrow);
+				}
+			}
 		}
 		return 0;
 	}

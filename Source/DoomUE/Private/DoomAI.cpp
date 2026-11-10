@@ -99,7 +99,18 @@ void FDoomNav::Build(const FDoomMap& Map)
 					P.P0 = C * T0 + N * Offset;
 					P.P1 = C * T1 + N * Offset;
 					const int32 SecA = Map.Subsectors[P.A].Sector, SecB = Map.Subsectors[P.B].Sector;
-					if (SecA != SecB && Map.Sectors.IsValidIndex(SecA))
+					if (SecA == SecB && Map.Sectors.IsValidIndex(SecA))
+					{
+						// inside one sector: a line with the sector on both sides it lies on (a blocking one
+						// is a rail no monster crosses: E4M1's line 196)
+						const FVector2f Mid = (P.P0 + P.P1) * 0.5f;
+						for (int32 L : Map.Sectors[SecA].Lines)
+						{
+							const FDoomLine& Ln = Map.Lines[L];
+							if (Ln.FrontSector == SecA && Ln.BackSector == SecA && Map.DistanceToLine(Mid, L) < 1.f) { P.Line = L; break; }
+						}
+					}
+					else if (SecA != SecB && Map.Sectors.IsValidIndex(SecA))
 					{
 						// the two-sided line it lies on
 						const FVector2f Mid = (P.P0 + P.P1) * 0.5f;
@@ -120,15 +131,77 @@ void FDoomNav::Build(const FDoomMap& Map)
 			}
 		}
 	}
+	// each portal's clearance from the walls beside it, among its two sectors' lines: one-sided and
+	// blocking lines, and two-sided ones whose opening is lower than any monster (56) unless a door
+	// is on either side (a monster opens a DR door; a shut one is an opening still)
+	TSet<int32> DoorSectors;
+	for (const FDoomLine& L : Map.Lines)
+	{
+		if (L.Special == 1 && L.BackSector != INDEX_NONE) DoorSectors.Add(L.BackSector);
+	}
+	auto IsWall = [&Map, &DoorSectors](int32 Li)
+	{
+		const FDoomLine& L = Map.Lines[Li];
+		if (L.BackSector == INDEX_NONE || L.FrontSector == INDEX_NONE) return true;
+		if (L.Flags & (DoomLineFlags::Blocking | DoomLineFlags::BlockMonsters)) return true;
+		if (DoorSectors.Contains(L.FrontSector) || DoorSectors.Contains(L.BackSector)) return false;
+		const FDoomSector& A = Map.Sectors[L.FrontSector];
+		const FDoomSector& B = Map.Sectors[L.BackSector];
+		return FMath::Min(A.Ceiling, B.Ceiling) - FMath::Max(A.Floor, B.Floor) < 56.f;
+	};
+	for (FPortal& P : Portals)
+	{
+		const int32 SecA = Map.Subsectors[P.A].Sector, SecB = Map.Subsectors[P.B].Sector;
+		TArray<int32, TInlineAllocator<64>> Walls;
+		for (int32 Sec : { SecA, SecB })
+		{
+			if (!Map.Sectors.IsValidIndex(Sec)) continue;
+			for (int32 L : Map.Sectors[Sec].Lines)
+			{
+				if (L != P.Line && IsWall(L)) Walls.AddUnique(L);
+			}
+		}
+		// the clearest of 9 points along it
+		float Best = 0;
+		for (int32 k = 0; k <= 8; ++k)
+		{
+			const FVector2f At = FMath::Lerp(P.P0, P.P1, k / 8.f);
+			float Near = 1e9f;
+			for (int32 L : Walls) Near = FMath::Min(Near, Map.DistanceToLine(At, L));
+			Best = FMath::Max(Best, Near);
+		}
+		P.Clear = Best;
+	}
+}
+
+bool FDoomNav::bIgnoreClearance = false;
+
+FString FDoomNav::DescribeNarrow(const FDoomMap& Map, const FVector2f& P, float Within, float Radius) const
+{
+	FString Out;
+	for (const FPortal& Po : Portals)
+	{
+		const FVector2f Mid = (Po.P0 + Po.P1) * 0.5f;
+		if (Po.Clear >= Radius - 1.f || FVector2f::Distance(Mid, P) > Within) continue;
+		Out += FString::Printf(TEXT(" [(%.0f,%.0f)-(%.0f,%.0f) clear %.1f line %d sectors %d/%d]"), Po.P0.X, Po.P0.Y, Po.P1.X, Po.P1.Y, Po.Clear, Po.Line,
+			Map.Subsectors[Po.A].Sector, Map.Subsectors[Po.B].Sector);
+	}
+	return Out;
 }
 
 bool FDoomNav::CanCross(const FDoomMap& Map, const FPortal& P, int32 FromSs, float Radius, float Height, bool bFloat) const
 {
 	const int32 ToSs = P.A == FromSs ? P.B : P.A;
 	const int32 SecA = Map.Subsectors[FromSs].Sector, SecB = Map.Subsectors[ToSs].Sector;
+	// too narrow for this mover (a gap beside a raised block, a doorway narrower than a mancubus);
+	// a unit of slack for walls the portal's points only just miss
+	if (P.Clear < Radius - 1.f && !bIgnoreClearance)
+	{
+		return false;
+	}
 	if (SecA == SecB)
 	{
-		return true;
+		return P.Line == INDEX_NONE || !(Map.Lines[P.Line].Flags & (DoomLineFlags::Blocking | DoomLineFlags::BlockMonsters));
 	}
 	if (P.Line == INDEX_NONE || !Map.Sectors.IsValidIndex(SecA) || !Map.Sectors.IsValidIndex(SecB))
 	{
@@ -220,6 +293,31 @@ bool FDoomNav::FindPath(const FDoomMap& Map, const FVector2f& From, const FVecto
 	}
 	Out.Add(To);
 	return true;
+}
+
+bool FDoomNav::CanLeaveSector(const FDoomMap& Map, const FVector2f& P, float Radius, float Height, bool bFloat) const
+{
+	const int32 Start = Map.SubsectorAt(P);
+	if (!Map.Subsectors.IsValidIndex(Start) || Adjacent.Num() != Map.Subsectors.Num()) return false;
+	const int32 Home = Map.Subsectors[Start].Sector;
+	TArray<uint8> Seen;
+	Seen.Init(0, Map.Subsectors.Num());
+	TArray<int32> Open = { Start };
+	Seen[Start] = 1;
+	while (Open.Num())
+	{
+		const int32 S = Open.Pop(EAllowShrinking::No);
+		for (int32 Pi : Adjacent[S])
+		{
+			const FPortal& Po = Portals[Pi];
+			const int32 N = Po.A == S ? Po.B : Po.A;
+			if (Seen[N] || !CanCross(Map, Po, S, Radius, Height, bFloat)) continue;
+			if (Map.Subsectors[N].Sector != Home) return true;
+			Seen[N] = 1;
+			Open.Add(N);
+		}
+	}
+	return false;
 }
 
 int32 FDoomNav::CountReachable(const FDoomMap& Map, const FVector2f& P, bool bRules, float Radius, float Height) const

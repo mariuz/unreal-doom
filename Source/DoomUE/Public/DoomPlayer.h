@@ -7,6 +7,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "InputActionValue.h"
+#include "Perception/AISightTargetInterface.h"
 #include "DoomInfo.h"
 #include "DoomPlayerState.h"
 #include "DoomPlayer.generated.h"
@@ -60,7 +61,7 @@ public:
 };
 
 UCLASS()
-class DOOMUE_API ADoomPlayer : public ACharacter
+class DOOMUE_API ADoomPlayer : public ACharacter, public IAISightTargetInterface
 {
 	GENERATED_BODY()
 	friend class UDoomWorld;    // teleports, telefrags
@@ -68,6 +69,12 @@ class DOOMUE_API ADoomPlayer : public ACharacter
 
 public:
 	ADoomPlayer(const FObjectInitializer& ObjectInitializer);
+
+	/** SMART monsters' perception sees the player as Doom's monsters do (P_CheckSight: walls and
+	 *  closed openings block, monsters don't). Unreal's own sight trace stopped at the hit box of a
+	 *  wide monster in the way (E3M4: 5 monsters in Doom's sight, 0 perception events). */
+	virtual UAISense_Sight::EVisibilityResult CanBeSeenFrom(const FCanBeSeenFromContext& Context, FVector& OutSeenLocation, int32& OutNumberOfLoSChecksPerformed,
+		int32& OutNumberOfAsyncLosCheckRequested, float& OutSightStrength, int32* UserData = nullptr, const FOnPendingVisibilityQueryProcessedDelegate* Delegate = nullptr) override;
 
 	void InitForLevel(UDoomWorld* InWorld, bool bPistolStart);
 	void DoomTic();

@@ -121,40 +121,60 @@ first 11 steps failed on E1M1.
 "C:/Program Files/Epic Games/UE_5.8/Engine/Binaries/Win64/UnrealEditor.exe" DoomUE.uproject -game -warp=E1M1 -playtest -nomusic -windowed -resx=960 -resy=540
 ```
 
+`-playstep=walk,chase` runs only those steps (in their usual order), on any map and WAD: how the
+fixes below were checked on the commercial maps.
+
 | Step | Checks |
 |---|---|
 | `door` | A DR door (special 1) opens to the lowest neighbouring ceiling - 4, waits and closes to the floor |
 | `lift` | A lift lowers to the lowest neighbouring floor, waits 3 s and comes back up |
 | `teleport` | A teleporter (39/97) puts the player in the destination sector, freezes them briefly, and fires nothing else |
-| `splash` | A 128-point blast 40 units away does 104 damage (128 - 40 + the player's 16-unit radius); 160 units away, none |
-| `walk` | On the longest level run of the map: top speed about 16 units per tic, and a slide of about 160 units after letting go |
-| `rate_*` | Shots in a fixed time with the trigger held: pistol every 14 tics, chaingun 2 per 8, plasma every 3, shotgun every 37, rockets every 20 |
+| `splash` | A 128-point blast 40 units away does 104 damage (128 - 40 + the player's 16-unit radius); 160 units away, none. Along an axis: Doom measures the larger of the x and y distances, so 40 units ahead on a diagonal start angle is 28 away |
+| `walk` | On the longest level run of the map (level every 16 units, no monster or solid thing near it, no line with a special across it): top speed about 16 units per tic, and a slide of about 160 units after letting go |
+| `rate_*` | Shots in a fixed time with the trigger held: pistol every 14 tics, chaingun 2 per 8, plasma every 3, shotgun every 37, rockets every 20 (ammo spent tic by tic, so a clip picked up on the spot doesn't hide shots) |
 | `flyer` | A cacodemon hit by the player is still flying a second later |
 | `target` | 3 s of plasma at a baron in the open (aim kept on it) takes over 100 health |
 | `sleepers` | Monsters waiting for the player sleep (no actor or movement tick), CLASSIC monsters have no AI controller, and a shot one wakes and ticks again |
-| `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units in 5 s (the rest are shut in closets) |
-| `smartai` | SMART monsters (Unreal's AI framework, [AI.md](AI.md)): every live monster gets the AI controller with its Behavior Tree running, perception senses the player, and 70% of the monsters that can walk to the player close in by 64+ units or get it in sight in 10 s (`-smartbaseline` measures CLASSIC monsters instead) |
-| `automap` | With the map closed, the walls in view become known, beyond the player's own sector; then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |
+| `chase` | 90% of the map's monsters, woken and set on the player, walk over 64 units or attack in 5 s (a monster with the player in sight stands to shoot, as in Doom). Monsters boxed in from the start (no step free and no path out of their sector: closets, pillar tops) are counted apart; one with no step free in a room it could walk out of still counts, as a stuck one |
+| `smartai` | SMART monsters (Unreal's AI framework, [AI.md](AI.md)): every live monster gets the AI controller with its Behavior Tree running, perception senses the player (if any monster has it in Doom's sight), and 70% of the monsters that can walk to the player close in by 64+ units or get it in sight in 10 s (`-smartbaseline` measures CLASSIC monsters instead); it lists the ones that didn't and those with the player in sight |
+| `automap` | With the map closed, the walls in view become known, beyond the player's own sector if an open line leads out of it (a start room shut by doors shows nothing more, in Doom too); then the map opens zoomed out with the grid and a mark (`playtest_automap.png`) |
 | `quitprompt` | A left click on the quit prompt cancels it |
 | `commonui` | The CommonUI menu screen goes up with the menu (`playtest_menu.png`) with a row button per selectable row; moving down, hovering a row, clicking it (Options opens and its buttons replace the main menu's), going back, a prompt (no row buttons) and Esc (the screen comes down) all act on `FDoomMenu` |
 | `renderer` | Switching the renderer from the options mid-level keeps the player, the kills and the corpses; the Options page scrolls to its last row (`playtest_options.png`) |
 | `ammoswitch` | With the pistol up: shells switch to the shotgun, a clip or a rocket doesn't switch (P_GiveAmmo) |
 | `lostsoul` | A killed lost soul plays its death frames, then vanishes |
-| `liftcorpse` | A corpse asleep on a lift goes down with it and settles on the lowered floor |
+| `corpses` | With every monster killed, 90% of the corpses (all, in practice) run no movement, actor or sprite tick, and a sleeping corpse still turns to face the camera when the player steps aside (to whichever side is free, and at least half the turn the step asks) |
+| `liftcorpse` | A corpse asleep on a lift goes down with it and settles on the lowered floor. After `corpses`, so no live monster sets the lift going; on a lift it fits on (30 units from the sector's lines, so the corners of its 40-unit box are on the lift too; room under the ceiling; a lower floor beside it), or it skips |
 | `things` | Every one-frame thing's sprite sleeps (no tick, in the batched facing pass) and every animated one still ticks |
-| `corpses` | With every monster killed, 90% of the corpses (all, in practice) run no movement, actor or sprite tick, and a sleeping corpse still turns to face the camera when the player steps aside |
-| `rebind` | The Controls list has every rebindable control; binding Fire to F makes Enhanced Input map F instead of Mouse1 (Ctrl stays) and the menu row read "FIRE  F, CTRL" (`playtest_controls.png`); binding PAD FIRE to the left trigger replaces the right one; the reset brings Mouse1 and the right trigger back |
+| `rebind` | The Controls list has every rebindable control; binding Fire to F makes Enhanced Input map F instead of Mouse1 (Ctrl stays) and the menu row read "FIRE  F, CTRL" (`playtest_controls.png`); binding PAD FIRE to the left trigger replaces the right one, once back in the game (the menu's screen takes the game's mappings away while it is up); the reset brings Mouse1 and the right trigger back. Each check waits (up to 2 s) for the change to show |
 | `colours` | The marine's frames for players 2-4 have no green left: every green pixel moved to the grey, brown or red ramp |
 | `fast` | With `-fast`, demons take half the frames a step and walk twice as fast |
 | `altdeath` | With deathmatch 2.0 rules, a clip picked up is back where it was 30 s later |
-| `intermission` | The level's vanilla par time is known; screenshot `playtest_intermission.png` |
+| `intermission` | The level's vanilla par time is known (episode 4 has none, as in Ultimate Doom); screenshot `playtest_intermission.png` |
 
 Each step also runs on its own in PIE as `DoomUE.PlayTest.<step>` (`Tools/run_tests.bat
 DoomUE.PlayTest`, about 4 minutes for all 29), through `ADoomGameMode::StartPlayTest(Step, false)`,
 which keeps playing and hands back the results instead of quitting. A step must set up what it needs
-itself: `target` used to rely on the weapon steps before it for its plasma gun. `liftcorpse` failed
-once in three full `-playtest` runs (the corpse rested 0.7 units above the lowered floor); it passes
-on its own.
+itself: `target` used to rely on the weapon steps before it for its plasma gun. A step that moves the
+player puts it there (its last position too, so the move crosses no lines: E2M1's start-to-run move
+crossed a teleporter).
+
+The play-test on the 132 maps of the commercial IWADs (Doom, Doom II, TNT, Plutonia) found game bugs
+as well as steps that assumed E1M1's layout:
+
+* **A teleport crossed lines** when something other than the player's own walk triggered it: the
+  next tic's crossing check ran from the old spot to the destination (E2M4 and E4M8, whose
+  destinations sit in boxes of teleport lines back). `Teleport` now starts the next check at the
+  destination.
+* **Monsters froze in rooms exactly their height** (E1M4's imps and zombiemen, 56; MAP07's mancubi,
+  64): the capsule floats up to 2.4 Unreal units over the floor, so the walking box and the capsule
+  grazed the ceiling. Both are now 4 units under the monster's height.
+* **SMART monsters didn't see the player past another monster** (E3M4): Unreal's sight trace stopped
+  at a wide monster's hit box. Perception now asks Doom's own sight check (`ADoomPlayer::CanBeSeenFrom`).
+* **SMART paths went through gaps narrower than the monster and over blocking rails** inside a sector
+  (E4M1's spectres behind a block, imps past line 196; see [AI.md](AI.md#paths-fdoomnav)).
+* **`corpses` changed the monster list while killing** (a dying pain elemental adds lost souls:
+  MAP08's ensure).
 
 ## Key presses
 

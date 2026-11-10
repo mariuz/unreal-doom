@@ -675,6 +675,17 @@ builder bugs, now fixed: partitions rounded badly in exported maps, and a line w
 on both sides could give its sector to a subsector inside another one (see
 [docs/EditingMaps.md](docs/EditingMaps.md#the-node-builder)).
 
+The play-test on the commercial maps (`fix/playtest-steps`): `-playtest` on all 132 maps of the
+re-release Doom, Doom II, TNT and Plutonia. Before the branch every Doom map failed a step; after
+it 125 of the 132 pass every step (the rest: see the roadmap). It found game bugs: a teleport
+triggered from outside the player's own walk crossed the lines between the two spots (E2M4,
+E4M8); monsters froze in rooms exactly their height (E1M4, MAP07); SMART monsters didn't see the
+player past another monster (E3M4); SMART paths went through gaps narrower than the monster
+(E4M1, MAP02) and over blocking rails; hanging corpses never slept (MAP32). The steps that
+assumed E1M1's layout now pick what fits the map, `-playstep=` runs chosen steps, and a step the
+level ends under fails instead of hanging the run (Plutonia MAP30). See
+[docs/Testing.md](docs/Testing.md#the-scripted-play-test).
+
 The overlay also shows where doors open to and lifts lower to: a dimmer outline at that height with
 corner posts, drawn over the walls (E1M1: 136 such lines); `-edittest` checks they're drawn.
 
@@ -816,6 +827,7 @@ Not done yet (roughly in priority order):
    * **Make SM6 pay off**: the tiles are Nanite now, but SM6 is slower than SM5 on a GTX 1660 Ti (E1M1 modern frame 12.3 ms against 7.7). Virtual shadow maps suffer from the non-Nanite parts: give the moving chunks and sprites cheaper shadows (or none), try `r.Shadow.Virtual.Cache`, and measure Nanite against `r.Nanite 0` again; if SM6 stays slower, default the modern renderer to SM5 and keep SM6 opt-in. The quality presets showed the limit is the render thread (10-17 ms on SM6, against a 4-10 ms GPU): profile it with Unreal Insights first.
    * **Shader warm-up for packaged builds**: a bundled PSO cache (and PSO precaching for the generated materials and Niagara effects), so the first rocket or explosion doesn't hitch.
    * **E1M3's sky**: the modern renderer shows a white open sky there (with or without baked tiles).
+   * **The play-test's last 7 commercial maps**: TNT MAP10, two mancubus corpses end up thousands of units under the map after the renderer switch (the `renderer` step there also sees the player moved 8 units); monsters with free directions that neither walk nor attack in `chase` (Plutonia MAP03 and MAP07, Doom II MAP13); Doom II MAP16's 20 imps behind monster-only teleporters never come through; SMART flyers (pain elementals, cacodemons) drift off their paths on TNT MAP28; TNT MAP11's lift corpse stops 32 units above the lowered floor.
 8. **Future engine versions**:
    * **Fewer custom HLSL nodes**: the generated materials use 22 `UMaterialExpressionCustom` nodes, the part most likely to break across engine versions and with Substrate; standard nodes or material functions where possible, and the generator checked with Substrate on.
    * **Deprecations caught early**: CI (item 6) with deprecation warnings as errors, and later a run against the next engine preview.

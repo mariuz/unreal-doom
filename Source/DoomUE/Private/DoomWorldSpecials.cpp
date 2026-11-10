@@ -515,9 +515,16 @@ void UDoomWorld::Teleport(AActor* Actor, int32 LineIndex, int32 Side)
 			UGameplayStatics::ApplyDamage(V, 10000.f, nullptr, Actor, nullptr);
 		}
 		Actor->SetActorLocation(NewPos, false, nullptr, ETeleportType::TeleportPhysics);
+		// a teleport is not a walk (P_TeleportMove crosses no lines): the next tic's crossings start
+		// here, whoever triggered it (E2M4's destination sits in a box of teleport lines back)
 		if (ADoomPlayer* TP = Cast<ADoomPlayer>(Actor))
 		{
 			TP->ReactionTime = 18; // a short freeze after teleporting
+			TP->LastDoomPos = T.P;
+		}
+		if (ADoomMonster* TM = Cast<ADoomMonster>(Actor))
+		{
+			TM->LastPos = T.P;
 		}
 		if (ACharacter* C = Cast<ACharacter>(Actor))
 		{

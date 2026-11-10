@@ -129,9 +129,10 @@ void ADoomMonster::InitMonster(UDoomWorld* InWorld, const FDoomThingDef* InDef, 
 	// the capsule keeps the monster's real height (so it fits under the ceilings it fits under in Doom
 	// and spawns on the floor); a capsule can't be wider than it is tall, so wide monsters (spider,
 	// arachnotron, mancubus, demons) also get a box of Doom's full width that catches bullets and missiles
-	// (a hair shorter than Doom's height: a 56-unit monster fits a 56-unit opening in Doom, and a capsule
-	// exactly that tall grazes the ceiling, which Character Movement takes for being stuck)
-	const float HalfHeight = Def->Height * 0.5f * S - 1.f;
+	// (4 Unreal units shorter than Doom's height: a 56-unit monster fits a 56-unit opening in Doom, and
+	// Character Movement keeps the capsule up to 2.4 units above the floor, so a capsule only 2 shorter
+	// still grazed the ceiling of a room exactly the monster's height: E1M4's imps, MAP07's mancubi)
+	const float HalfHeight = Def->Height * 0.5f * S - 2.f;
 	GetCapsuleComponent()->SetCapsuleSize(FMath::Min(Def->Radius * S, HalfHeight), HalfHeight);
 	if (Def->Radius > Def->Height * 0.5f && !HitBox)
 	{
@@ -383,8 +384,9 @@ void ADoomMonster::DoomTic()
 		// at rest on the floor for a second, with nothing moving its sector: nothing moves a corpse until
 		// its floor lowers or it rises again. (A moving floor's collision is cooked a few tics behind the
 		// floor itself; a corpse that slept on the lagging collision would hang in the air.)
-		if (!bCorpseAsleep && GetCharacterMovement()->IsMovingOnGround() && GetVelocity().IsNearlyZero(1.f)
-			&& !DoomWorld->IsSectorMoving(DoomWorld->SectorAt(GetActorLocation())))
+		// (a hanging thing, Commander Keen on MAP32, never stands on a floor: it rests where it hangs)
+		if (!bCorpseAsleep && (GetCharacterMovement()->IsMovingOnGround() || GetCharacterMovement()->MovementMode == MOVE_None)
+			&& GetVelocity().IsNearlyZero(1.f) && !DoomWorld->IsSectorMoving(DoomWorld->SectorAt(GetActorLocation())))
 		{
 			++CorpseRestTics;
 		}
@@ -537,8 +539,11 @@ bool ADoomMonster::TestMove(int32 Dir) const
 	const FVector Feet = GetActorLocation() - FVector(0, 0, Half);
 	const float Step = (Def->Flags & EThingFlag::Float) ? 0.f : 24.f * S;
 	// the body above the step height, no taller than the monster: a taller test shape started inside
-	// low ceilings and failed in every direction, freezing monsters in low rooms and doorways
-	const float BodyHalf = FMath::Max((Def->Height * S - Step) * 0.5f - 1.f, 1.f);
+	// low ceilings and failed in every direction, freezing monsters in low rooms and doorways. Its top
+	// is 4 Unreal units under the monster's height above the capsule's bottom, which floats up to 2.4
+	// above the floor: in a room exactly the monster's height (E1M4, MAP07) a box 1 under it started
+	// in the ceiling, every direction failed, and the monsters never moved
+	const float BodyHalf = FMath::Max((Def->Height * S - Step) * 0.5f - 2.5f, 1.f);
 	const FVector From = Feet + FVector(0, 0, Step + BodyHalf + 1.f);
 	const FVector To = From + Dir3 * FMath::Max(Def->Speed, 8.f) * 2.f * S;
 

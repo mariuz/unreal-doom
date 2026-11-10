@@ -692,6 +692,27 @@ void ADoomPlayer::DoomSerialize(FArchive& Ar)
 	}
 }
 
+UAISense_Sight::EVisibilityResult ADoomPlayer::CanBeSeenFrom(const FCanBeSeenFromContext& Context, FVector& OutSeenLocation, int32& OutNumberOfLoSChecksPerformed,
+	int32& OutNumberOfAsyncLosCheckRequested, float& OutSightStrength, int32* UserData, const FOnPendingVisibilityQueryProcessedDelegate* Delegate)
+{
+	OutNumberOfAsyncLosCheckRequested = 0;
+	const ADoomMonster* Observer = Cast<ADoomMonster>(Context.IgnoreActor);
+	OutNumberOfLoSChecksPerformed = 1;
+	OutSeenLocation = GetActorLocation();
+	if (!DoomWorld || !Observer)
+	{
+		// not a monster looking: the trace Unreal's sight sense makes
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(DoomPlayerSeen), true, Context.IgnoreActor);
+		FHitResult Hit;
+		const bool bBlocked = GetWorld()->LineTraceSingleByChannel(Hit, Context.ObserverLocation, OutSeenLocation, ECC_Visibility, Q) && Hit.GetActor() != this;
+		OutSightStrength = bBlocked ? 0.f : 1.f;
+		return bBlocked ? UAISense_Sight::EVisibilityResult::NotVisible : UAISense_Sight::EVisibilityResult::Visible;
+	}
+	const bool bSeen = DoomWorld->CheckSight(Observer, this);
+	OutSightStrength = bSeen ? 1.f : 0.f;
+	return bSeen ? UAISense_Sight::EVisibilityResult::Visible : UAISense_Sight::EVisibilityResult::NotVisible;
+}
+
 bool ADoomPlayer::TryPickup(const FDoomThingDef& Def, bool bDropped)
 {
 	const bool bDoubleAmmo = DoomWorld && (DoomWorld->GetSkill() == 1 || DoomWorld->GetSkill() == 5);

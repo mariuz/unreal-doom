@@ -61,8 +61,14 @@ public:
 	static bool IsClear(const FDoomMap& Map, const FVector2f& P, float Radius);
 
 	int32 NumPortals() const { return Portals.Num(); }
+	/** Debugging: the portals within Within of P narrower than Radius (ends, clearance, line, sectors). */
+	FString DescribeNarrow(const FDoomMap& Map, const FVector2f& P, float Within, float Radius) const;
+	/** Debugging (-navdebug): paths ignore the portals' clearance, as before it was measured. */
+	static bool bIgnoreClearance;
 	/** Subsectors reachable from P: over any portal (bRules false), or as FindPath walks (tests). */
 	int32 CountReachable(const FDoomMap& Map, const FVector2f& P, bool bRules, float Radius, float Height) const;
+	/** Whether a mover of this size can walk out of the sector P is in (a closet, a pillar top: no). */
+	bool CanLeaveSector(const FDoomMap& Map, const FVector2f& P, float Radius, float Height, bool bFloat) const;
 
 private:
 	struct FPortal
@@ -70,6 +76,10 @@ private:
 		int32 A = INDEX_NONE, B = INDEX_NONE; // subsectors
 		FVector2f P0, P1;                     // the shared edge
 		int32 Line = INDEX_NONE;              // the two-sided line it lies on, if any
+		/** How far its clearest point is from the walls no monster passes beside it (one-sided and
+		 *  blocking lines, and openings lower than any monster that aren't doors): a mover of a
+		 *  bigger radius doesn't fit through (E4M1's spectres behind a switch-lowered block). */
+		float Clear = 1e9f;
 	};
 	TArray<FPortal> Portals;
 	TArray<TArray<int32>> Adjacent; // per subsector: portal indices
