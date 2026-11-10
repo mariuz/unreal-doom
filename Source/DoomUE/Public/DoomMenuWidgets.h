@@ -1,11 +1,13 @@
 // The menu through Epic's CommonUI: a layout with an activatable widget stack, and the menu screen
 // pushed on it while the game is in the menu. FDoomMenu stays the menu's logic (pages, rows, sounds);
 // the screen draws it in Doom's look (DoomScreenPainter.h) and gives it CommonUI's input handling:
-//  * each selectable row is an invisible CommonUI button over the row, so the mouse hovers and
-//    clicks rows, and the keyboard, d-pad and stick move the focus between them (through FDoomMenu's
-//    Up / Down / Left / Right, so rows are skipped and sounds play as in Doom);
-//  * CommonUI's click and back actions are IA_MenuSelect and IA_MenuBack (UDoomUIInputData), and
-//    IA_MenuClose (Esc) closes the menu;
+//  * each selectable row is an invisible, unfocusable CommonUI button over the row, for the mouse
+//    (hover and click);
+//  * the screen keeps the focus and reads the keys itself (MenuKey): each key does what the menu
+//    context maps it to, through FDoomMenu's Up / Down / Left / Right / Select / Back, so rows are
+//    skipped and sounds play as in Doom; Esc closes the menu, and the stick navigates the same way;
+//  * CommonUI's click and back actions are IA_MenuSelect and IA_MenuBack (UDoomUIInputData), for
+//    its button prompts;
 //  * the screen asks for menu input (a cursor, no game input) and the layout under it for game input.
 // Typing a save name, the Controls page's key capture and the yes/no prompts take raw keys.
 #pragma once
@@ -51,15 +53,10 @@ public:
 	int32 Row = INDEX_NONE;
 	TWeakObjectPtr<UDoomMenuScreen> Screen;
 
-	/** Arrow keys, d-pad and stick: FDoomMenu moves (and skips rows, and plays the sound). */
-	UFUNCTION()
-	UWidget* Navigate(EUINavigation Direction);
-
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnHovered() override;
 	virtual void NativeOnClicked() override;
-	virtual void HandleFocusReceived() override;
 };
 
 /** The menu while it is open: Doom's graphics, and a row button over each selectable row. */
@@ -75,7 +72,6 @@ public:
 	const TArray<TObjectPtr<UDoomMenuRowButton>>& GetRowButtons() const { return Buttons; }
 	/** What the input would do, without the input (the play-test drives the screen with these). */
 	void RowHovered(int32 Row);
-	void RowFocused(int32 Row);
 	void RowClicked(int32 Row);
 	UWidget* Navigate(int32 Row, EUINavigation Direction);
 	bool HandleBack();
@@ -91,6 +87,7 @@ protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+	virtual FNavigationReply NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply) override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect,
