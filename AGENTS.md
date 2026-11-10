@@ -66,6 +66,9 @@ Tools/run_tests.bat DoomUE -NullRHI
     * It can't press keys through Enhanced Input (unfocused window): drive the game through
       `UDoomWorld` / the HUD there, and test real keys in `DoomInputTests.cpp` (Slate key events in
       PIE, `FPressKey`: wait for the screen to settle, press, wait for the effect).
+    * Movement input is used up each frame, so a step that holds a direction adds it every frame
+      (`FWorldDelegates::OnWorldPreActorTick`, as `bHoldForward` does), not from the step timer: the
+      5 ms timer fires only every other frame above 200 fps, and `walk` measured half the speed.
     * `-savetest` doesn't quit by itself; kill only your own test process, never the owner's editor.
   * The engine may live elsewhere: `UE_ENGINE=F:\EpicGames\UE_5.9\Engine` for `run_tests.bat` (5.8, for comparing, in `F:\EpicGames\UE_5.8`).
   * `E1M1Modern` compares Lumen lighting: on a GTX 950 with UE 5.8.2 it fails (brighter, 13.8%)

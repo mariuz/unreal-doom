@@ -1489,10 +1489,6 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 			return;
 		}
 		R->OffPlaySince = -1.0;
-		if (R->bHoldForward)
-		{
-			P->AddMovementInput(FRotator(0, P->GetControlRotation().Yaw, 0).Vector(), 1.f);
-		}
 		// Doom's tics stop in the menu and the intermission: count 1/35 s of real time there instead
 		const int32 Now = W->GetState() == EDoomGameState::Playing && !bOffPlay ? W->GetTic() : (int32)(W->GetWorld()->GetRealTimeSeconds() * Doom::TicRate);
 		if (Now == R->LastTic)
@@ -1541,4 +1537,23 @@ void ADoomGameMode::StartPlayTest(const FString& OnlyStep, bool bQuitWhenDone)
 		}
 		Finish();
 	}, 0.005f, true, 1.f);
+
+	// movement steps push forward on every frame: input is used up each frame, and the timer above
+	// fires only every other frame above 200 fps (half the thrust: walk measured 9 units per tic)
+	TWeakPtr<FPlayRun> WeakRun = Run;
+	TSharedRef<FDelegateHandle> Hold = MakeShared<FDelegateHandle>();
+	*Hold = FWorldDelegates::OnWorldPreActorTick.AddLambda([WeakRun, Hold, WeakW = TWeakObjectPtr<UDoomWorld>(W)](UWorld* World, ELevelTick, float)
+	{
+		const TSharedPtr<FPlayRun> R = WeakRun.Pin();
+		if (!R || !WeakW.IsValid())
+		{
+			FWorldDelegates::OnWorldPreActorTick.Remove(*Hold); // the run is over
+			return;
+		}
+		ADoomPlayer* P = WeakW->GetPlayer();
+		if (R->bHoldForward && P && World == WeakW->GetWorld())
+		{
+			P->AddMovementInput(FRotator(0, P->GetControlRotation().Yaw, 0).Vector(), 1.f);
+		}
+	});
 }
